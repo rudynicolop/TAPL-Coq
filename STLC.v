@@ -1,5 +1,7 @@
 Set Warnings "-notation-overridden,-parsing".
 Require Import String.
+Require Import Coq.Init.Nat.
+Require Import Coq.Bool.Bool.
 
 (* The Simply-Typed Lambda Calculus *)
 
@@ -36,9 +38,9 @@ Definition gamma := string -> option ltype.
 Definition empty : gamma := fun x => None.
 
 Definition bind (x : string) (t : ltype) (g : gamma) : gamma :=
-    fun y => if eqb x y then Some t else g y.
+    fun y => if String.eqb x y then Some t else g y.
 
-(* Type-Checks *)
+(* Static Semantics *)
 Inductive checks : gamma -> expr -> ltype -> Prop :=
     | natchecks : forall (g : gamma) (n : nat), checks g (ENat n) TNat
     | boolchecks : forall (g : gamma) (b : bool), checks g (EBool b) TBool
@@ -67,3 +69,35 @@ Inductive checks : gamma -> expr -> ltype -> Prop :=
         checks (bind x t g) e t' -> checks g (ELam x t e) (TArrow t t')
     | appchecks : forall (g : gamma) (e1 e2 : expr) (t t' : ltype),
         checks g e1 (TArrow t t') -> checks g e2 t -> checks g (EApp e1 e2) t'.
+
+(* Dynamic Semantics *)
+Inductive step : expr -> expr -> Prop :=
+    | addstep : forall (n1 n2 : nat),
+        step (EBOp EAdd (ENat n1) (ENat n2)) (ENat (n1 + n2))
+    | mulstep : forall (n1 n2 : nat),
+        step (EBOp EMul (ENat n1) (ENat n2)) (ENat (n1 * n2))
+    | substep : forall (n1 n2 : nat),
+        step (EBOp ESub (ENat n1) (ENat n2)) (ENat (n1 - n2))
+    | eqstep : forall (n1 n2 : nat),
+        step (EBOp EEq (ENat n1) (ENat n2)) (EBool (n1 =? n2))
+    | lestep : forall (n1 n2 : nat),
+        step (EBOp ELe (ENat n1) (ENat n2)) (EBool (n1 <? n2))
+    | andstep : forall (b1 b2 : bool),
+        step (EBOp EAnd (EBool b1) (EBool b2)) (EBool (andb b1  b2))
+    | orstep : forall (b1 b2 : bool),
+        step (EBOp EOr (EBool b1) (EBool b2)) (EBool (orb b1  b2))
+    | left_nat_step : forall (op : bop) (n : nat) (e e' : expr),
+        step e e' -> step (EBOp op (ENat n) e) (EBOp op (ENat n) e')
+    | left_bool_step : forall (op : bop) (b : bool) (e e' : expr),
+        step e e' -> step (EBOp op (EBool b) e) (EBOp op (EBool b) e')
+    | right_bop_step : forall (op : bop) (e1 e1' e2 : expr),
+        step e1 e1' -> step (EBOp op e1 e2) (EBOp op e1' e2)
+    | truestep : forall (e2 e3 : expr),
+        step (ECond (EBool true) e2 e3) e2
+    | falsestep : forall (e2 e3 : expr),
+        step (ECond (EBool false) e2 e3) e3
+    | condstep : forall (e1 e1' e2 e3 : expr),
+        step e1 e1' -> step (ECond e1 e2 e3) (ECond e1' e2 e3)
+    | appstep : forall (e1 e1' e2 : expr),
+        step e1 e1' -> step (EApp e1 e2) (EApp e1' e2).
+    
