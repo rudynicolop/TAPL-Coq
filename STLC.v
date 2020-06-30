@@ -42,33 +42,33 @@ Definition bind (x : string) (t : ltype) (g : gamma) : gamma :=
     fun y => if String.eqb x y then Some t else g y.
 
 (* Static Semantics *)
-Inductive checks : gamma -> expr -> ltype -> Prop :=
-    | natchecks : forall (g : gamma) (n : nat), checks g (ENat n) TNat
-    | boolchecks : forall (g : gamma) (b : bool), checks g (EBool b) TBool
-    | varchecks : forall (g : gamma) (x : string) (t : ltype), 
+Inductive checks (g : gamma) : expr -> ltype -> Prop :=
+    | natchecks : forall (n : nat), checks g (ENat n) TNat
+    | boolchecks : forall (b : bool), checks g (EBool b) TBool
+    | varchecks : forall (x : string) (t : ltype), 
         g x = Some t -> checks g (EVar x) t
-    | notchecks : forall (g : gamma) (e : expr), 
+    | notchecks : forall (e : expr), 
         checks g e TBool -> checks g (ENot e) TBool
-    | addchecks : forall (g : gamma) (e1 e2 : expr),
+    | addchecks : forall (e1 e2 : expr),
         checks g e1 TNat -> checks g e2 TNat -> checks g (EBOp EAdd e1 e2) TNat
-    | mulchecks : forall (g : gamma) (e1 e2 : expr),
+    | mulchecks : forall (e1 e2 : expr),
         checks g e1 TNat -> checks g e2 TNat -> checks g (EBOp EMul e1 e2) TNat
-    | subchecks : forall (g : gamma) (e1 e2 : expr),
+    | subchecks : forall (e1 e2 : expr),
         checks g e1 TNat -> checks g e2 TNat -> checks g (EBOp ESub e1 e2) TNat
-    | eqchecks : forall (g : gamma) (e1 e2 : expr),
+    | eqchecks : forall (e1 e2 : expr),
         checks g e1 TNat -> checks g e2 TNat -> checks g (EBOp EEq e1 e2) TBool
-    | lechecks : forall (g : gamma) (e1 e2 : expr),
+    | lechecks : forall (e1 e2 : expr),
         checks g e1 TNat -> checks g e2 TNat -> checks g (EBOp ELe e1 e2) TBool
-    | andchecks : forall (g : gamma) (e1 e2 : expr),
+    | andchecks : forall (e1 e2 : expr),
         checks g e1 TBool -> checks g e2 TBool -> checks g (EBOp EAnd e1 e2) TBool
-    | orchecks : forall (g : gamma) (e1 e2 : expr),
+    | orchecks : forall (e1 e2 : expr),
         checks g e1 TBool -> checks g e2 TBool -> checks g (EBOp EOr e1 e2) TBool
-    | condchecks : forall (g : gamma) (e1 e2 e3 : expr) (t : ltype),
+    | condchecks : forall (e1 e2 e3 : expr) (t : ltype),
         checks g e1 TBool -> checks g e2 t -> checks g e3 t ->
         checks g (ECond e1 e2 e3) t
-    | lamchecks : forall (g : gamma) (x : string) (t t' : ltype) (e : expr),
+    | lamchecks : forall (x : string) (t t' : ltype) (e : expr),
         checks (bind x t g) e t' -> checks g (ELam x t e) (TArrow t t')
-    | appchecks : forall (g : gamma) (e1 e2 : expr) (t t' : ltype),
+    | appchecks : forall (e1 e2 : expr) (t t' : ltype),
         checks g e1 (TArrow t t') -> checks g e2 t -> checks g (EApp e1 e2) t'.
 
 (* Free Variables *)
@@ -83,6 +83,25 @@ Fixpoint fv (e : expr) : Ensemble string :=
     | ELam x _ e => Setminus string (fv e) (Singleton string x)
     | EApp e1 e2 => Union string (fv e1) (fv e2)
     end.
+
+(* Capture-avoiding Substitution *)
+Inductive sub (x : string) (s : expr) : expr -> expr -> Prop :=
+    | natsub : forall (n : nat), sub x s (ENat n) (ENat n)
+    | boolsub : forall (b : bool), sub x s (EBool b) (EBool b)
+    | hitsub : sub x s (EVar x) s
+    | misssub : forall (y : string), y <> x -> sub x s (EVar y) (EVar y)
+    | notsub : forall (e e' : expr), sub x s e e' -> sub x s (ENot e) (ENot e')
+    | bopsub : forall (op : bop) (e1 e1' e2 e2' : expr),
+        sub x s e1 e1' -> sub x s e2 e2' -> sub x s (EBOp op e1 e2) (EBOp op e1' e2')
+    | condsub : forall (e1 e1' e2 e2' e3 e3' : expr),
+        sub x s e1 e1' -> sub x s e2 e2' -> sub x s e3 e3' ->
+        sub x s (ECond e1 e2 e3) (ECond e1' e2' e3')
+    | appsub : forall (e1 e1' e2 e2' : expr),
+        sub x s e1 e1' -> sub x s e2 e2' -> sub x s (EApp e1 e2) (EApp e1' e2')
+    | lam_bound_sub : forall (t : ltype) (e : expr),
+        sub x s (ELam x t e) (ELam x t e)
+    | lam_free_sub : forall (y : string) (t : ltype) (e e' : expr),
+        x <> y -> not (fv s y) -> sub x s e e' -> sub x s (ELam y t e) (ELam y t e').
 
 (* Dynamic Semantics *)
 Inductive step : expr -> expr -> Prop :=
@@ -113,5 +132,7 @@ Inductive step : expr -> expr -> Prop :=
     | condstep : forall (e1 e1' e2 e3 : expr),
         step e1 e1' -> step (ECond e1 e2 e3) (ECond e1' e2 e3)
     | appstep : forall (e1 e1' e2 : expr),
-        step e1 e1' -> step (EApp e1 e2) (EApp e1' e2).
+        step e1 e1' -> step (EApp e1 e2) (EApp e1' e2)
+    | lamstep : forall (x : string) (t : ltype) (e1 e2 e3 : expr),
+        sub x e2 e1 e3 -> step (EApp (ELam x t e1) e2) e3.
     
