@@ -150,23 +150,59 @@ Inductive step : expr -> expr -> Prop :=
         bool_canonical_forms v.
     Proof.
         unfold bool_canonical_forms. intros.
-        inversion H; inversion H0; symmetry in H1; 
-        try discriminate H2; 
-        try (rewrite H1 in H2; discriminate H2);
-        try (rewrite H1 in H3; discriminate H3);
-        try (rewrite H1 in H4; discriminate H4);
-        try (rewrite H1 in H5; discriminate H5).
-        rewrite H1 in H2. exists b0.
-        symmetry. apply H2.
+        inversion H; inversion H0; subst;
+        try discriminate H2;
+        try discriminate H3;
+        try discriminate H4;
+        try discriminate H5.
+        exists b0. symmetry. apply H2.
     Qed.
 
     Definition nat_canonical_forms (v : expr) : Prop := 
         value v -> checks empty v TNat -> exists (n : nat), v = ENat n.
 
+    Lemma nat_canonical_forms_holds : forall v,
+        nat_canonical_forms v.
+    Proof.
+        unfold nat_canonical_forms. intros.
+        inversion H; inversion H0; subst;
+        try discriminate H2;
+        try discriminate H3;
+        try discriminate H4;
+        try discriminate H5.
+        exists n0. symmetry. apply H2.
+    Qed.
+
     Definition lam_canonical_forms (v : expr) : Prop :=
         forall (t t' : ltype),
         value v -> checks empty v (TArrow t t') -> 
         exists (x : string) (e : expr), v = ELam x t e.
+
+    Lemma lam_canonical_forms_holds : forall v,
+        lam_canonical_forms v.
+    Proof.
+        unfold lam_canonical_forms. intros.
+        inversion H; inversion H0; subst;
+        try discriminate H2;
+        try discriminate H3;
+        try discriminate H4;
+        try discriminate H5.
+        exists x0. exists e0. symmetry.
+        apply H3.
+    Qed.
+
+    Lemma canonical_forms : forall v,
+        bool_canonical_forms v /\
+        nat_canonical_forms v /\
+        lam_canonical_forms v.
+    Proof.
+        intros. split.
+        - apply bool_canonical_forms_holds.
+        - split.
+            + apply nat_canonical_forms_holds.
+            + apply lam_canonical_forms_holds.
+    Qed.
+        
 
     Definition preservation (e e' : expr) (t : ltype) : Prop :=
         step e e' -> checks empty e t -> checks empty e' t.
