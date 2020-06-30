@@ -2,6 +2,7 @@ Set Warnings "-notation-overridden,-parsing".
 Require Import String.
 Require Import Coq.Init.Nat.
 Require Import Coq.Bool.Bool.
+Require Import Coq.Sets.Ensembles.
 
 (* The Simply-Typed Lambda Calculus *)
 
@@ -69,6 +70,19 @@ Inductive checks : gamma -> expr -> ltype -> Prop :=
         checks (bind x t g) e t' -> checks g (ELam x t e) (TArrow t t')
     | appchecks : forall (g : gamma) (e1 e2 : expr) (t t' : ltype),
         checks g e1 (TArrow t t') -> checks g e2 t -> checks g (EApp e1 e2) t'.
+
+(* Free Variables *)
+Fixpoint fv (e : expr) : Ensemble string := 
+    match e with
+    | ENat _  => Empty_set string
+    | EBool _ => Empty_set string
+    | EVar x  => Singleton string x
+    | ENot e  => fv e
+    | EBOp _ e1 e2 => Union string (fv e1) (fv e2)
+    | ECond e1 e2 e3 => Union string (Union string (fv e1) (fv e2)) (fv e3)
+    | ELam x _ e => Setminus string (fv e) (Singleton string x)
+    | EApp e1 e2 => Union string (fv e1) (fv e2)
+    end.
 
 (* Dynamic Semantics *)
 Inductive step : expr -> expr -> Prop :=
