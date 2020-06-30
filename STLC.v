@@ -129,8 +129,14 @@ Proof.
     - destruct IHe as [e' h']. destruct (String.eqb x s0) eqn:h.
         + apply String.eqb_eq in h. subst.
             exists (ELam s0 l e). apply lam_bound_sub.
-        + rewrite String.eqb_sym in h. 
-            apply String.eqb_neq in h.
+        + apply String.eqb_neq in h.
+            destruct (set_mem string_dec s0 (fv s)) eqn:mem.
+            * admit.
+            * exists (ELam s0 l e'). apply lam_notfree_sub.
+                apply h. apply mem. apply h'.
+    - destruct IHe1 as [e1' h1]. destruct IHe2 as [e2' h2].
+        exists (EApp e1' e2'). apply appsub.
+        apply h1. apply h2.
 Admitted.
 
 (* Dynamic Semantics *)
@@ -304,8 +310,10 @@ Inductive step : expr -> expr -> Prop :=
             apply IHe1 in H2 as h1; apply IHe2 in H4 as h2; subst.
             destruct h1 as [h1 | [e1' h1]].
             + apply (lam_canonical_forms_holds e1 t0 t h1) in H2 as [x [e v1]]; subst.
-              assert (hsub: exists e3, sub x e2 e e3).
- Admitted.
+              pose proof (sub_exists x e2 e) as [e'' hsub].
+              exists e''. apply lamstep. apply hsub.
+            + exists (EApp e1' e2). apply appstep. apply h1.
+ Qed.
     
 
 Definition preservation (e e' : expr) (t : ltype) : Prop :=
