@@ -136,3 +136,43 @@ Inductive step : expr -> expr -> Prop :=
     | lamstep : forall (x : string) (t : ltype) (e1 e2 e3 : expr),
         sub x e2 e1 e3 -> step (EApp (ELam x t e1) e2) e3.
     
+    (* Values *)
+    Inductive value : expr -> Prop :=
+        | natvalue : forall (n : nat), value (ENat n)
+        | boolvalue : forall (b : bool), value (EBool b)
+        | lamvalue : forall (x : string) (t : ltype) (e : expr),
+            value (ELam x t e).
+
+    Definition bool_canonical_forms (v : expr) : Prop :=
+        value v -> checks empty v TBool -> exists (b : bool), v = EBool b.
+
+    Lemma bool_canonical_forms_holds : forall v,
+        bool_canonical_forms v.
+    Proof.
+        unfold bool_canonical_forms. intros.
+        inversion H; inversion H0; symmetry in H1; 
+        try discriminate H2; 
+        try (rewrite H1 in H2; discriminate H2);
+        try (rewrite H1 in H3; discriminate H3);
+        try (rewrite H1 in H4; discriminate H4);
+        try (rewrite H1 in H5; discriminate H5).
+        rewrite H1 in H2. exists b0.
+        symmetry. apply H2.
+    Qed.
+
+    Definition nat_canonical_forms (v : expr) : Prop := 
+        value v -> checks empty v TNat -> exists (n : nat), v = ENat n.
+
+    Definition lam_canonical_forms (v : expr) : Prop :=
+        forall (t t' : ltype),
+        value v -> checks empty v (TArrow t t') -> 
+        exists (x : string) (e : expr), v = ELam x t e.
+
+    Definition preservation (e e' : expr) (t : ltype) : Prop :=
+        step e e' -> checks empty e t -> checks empty e' t.
+
+    Theorem preservation_holds : forall (e e' : expr) (t : ltype),
+        preservation e e' t.
+    Proof.
+    Admitted.
+    
