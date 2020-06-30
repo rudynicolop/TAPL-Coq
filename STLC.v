@@ -5,9 +5,9 @@ Require Import String.
 
 (* STLC types *)
 Inductive ltype : Type :=
-    | TNat
-    | TBool
-    | TArrow (arg : ltype) (ret : ltype).
+    | TNat : ltype
+    | TBool : ltype
+    | TArrow : ltype -> ltype -> ltype.
 
 (* Binary operators *)
 Inductive bop : Type :=
@@ -21,41 +21,49 @@ Inductive bop : Type :=
 
 (* STLC expressions *)
 Inductive expr : Type :=
-    | ENat (n : nat)
-    | EBool (b : bool)
-    | EVar (x : string)
-    | ENot (e : expr)
-    | EBOp (op : bop) (e1 : expr) (e2 : expr)
-    | ECond (e1 : expr) (e2 : expr) (e3 : expr)
-    | ELam (x : string) (t : ltype) (e : expr)
-    | EApp (e1 : expr) (e2 : expr).
+    | ENat : nat -> expr
+    | EBool : bool -> expr
+    | EVar : string -> expr
+    | ENot : expr -> expr
+    | EBOp : bop -> expr -> expr -> expr
+    | ECond : expr -> expr -> expr -> expr
+    | ELam : string -> ltype -> expr -> expr
+    | EApp : expr -> expr -> expr.
 
-(* Notations *)
+(* Gamma *)
+Definition gamma := string -> option ltype.
 
-Coercion EVar : string >-> expr.
-Coercion ENat : nat >-> expr.
-Coercion EBool : bool >-> expr.
+Definition empty : gamma := fun x => None.
 
-Bind Scope stlc_scope with ltype.
-Bind Scope stlc_scope with expr.
-Delimit Scope stlc_scope with stlc.
+Definition bind (x : string) (t : ltype) (g : gamma) : gamma :=
+    fun y => if eqb x y then Some t else g y.
 
-Notation "'Nat'" := (TNat) (at level 20, no associativity) : stlc_scope.
-Notation "'Bool'" := (TBool) (at level 20, no associativity) : stlc_scope.
-Notation "x --> y" := (TArrow x y) (at level 30, right associativity) : stlc_scope.
-
-Notation "x + y" := (EBOp EAdd x y) (at level 50, left associativity) : stlc_scope.
-Notation "x - y" := (EBOp ESub x y) (at level 50, left associativity) : stlc_scope.
-Notation "x * y" := (EBOp EMul x y) (at level 40, left associativity) : stlc_scope.
-Notation "x < y" := (EBOp ELe x y) (at level 70, no associativity) : stlc_scope.
-Notation "x = y" := (EBOp EEq x y) (at level 70, no associativity) : stlc_scope.
-Notation "x & y" := (EBOp EAnd x y) (at level 74, left associativity) : stlc_scope.
-Notation "x | y" := (EBOp EOr x y) (at level 76, left associativity) : stlc_scope.
-Notation "!! b" := (EBOp EAdd b) (at level 72, right associativity) : stlc_scope.
-Notation "'If' x 'Then' y 'Else' z" := (ECond x y z) (at level 80, no associativity) : stlc_scope.
-Notation "'Fun' x :: t =>> e" := (ELam x t e) (at level 90, no associativity) : stlc_scope.
-Notation "x $ y" := (EApp x y) (at level 10, left associativity) : stlc_scope.
-
-(* Definition arith_ex : expr := Fun x :: (Nat) =>> 4.
-
-Print arith_ex. *)
+(* Type-Checks *)
+Inductive checks : gamma -> expr -> ltype -> Prop :=
+    | natchecks : forall (g : gamma) (n : nat), checks g (ENat n) TNat
+    | boolchecks : forall (g : gamma) (b : bool), checks g (EBool b) TBool
+    | varchecks : forall (g : gamma) (x : string) (t : ltype), 
+        g x = Some t -> checks g (EVar x) t
+    | notchecks : forall (g : gamma) (e : expr), 
+        checks g e TBool -> checks g (ENot e) TBool
+    | addchecks : forall (g : gamma) (e1 e2 : expr),
+        checks g e1 TNat -> checks g e2 TNat -> checks g (EBOp EAdd e1 e2) TNat
+    | mulchecks : forall (g : gamma) (e1 e2 : expr),
+        checks g e1 TNat -> checks g e2 TNat -> checks g (EBOp EMul e1 e2) TNat
+    | subchecks : forall (g : gamma) (e1 e2 : expr),
+        checks g e1 TNat -> checks g e2 TNat -> checks g (EBOp ESub e1 e2) TNat
+    | eqchecks : forall (g : gamma) (e1 e2 : expr),
+        checks g e1 TNat -> checks g e2 TNat -> checks g (EBOp EEq e1 e2) TBool
+    | lechecks : forall (g : gamma) (e1 e2 : expr),
+        checks g e1 TNat -> checks g e2 TNat -> checks g (EBOp ELe e1 e2) TBool
+    | andchecks : forall (g : gamma) (e1 e2 : expr),
+        checks g e1 TBool -> checks g e2 TBool -> checks g (EBOp EAnd e1 e2) TBool
+    | orchecks : forall (g : gamma) (e1 e2 : expr),
+        checks g e1 TBool -> checks g e2 TBool -> checks g (EBOp EOr e1 e2) TBool
+    | condchecks : forall (g : gamma) (e1 e2 e3 : expr) (t : ltype),
+        checks g e1 TBool -> checks g e2 t -> checks g e3 t ->
+        checks g (ECond e1 e2 e3) t
+    | lamchecks : forall (g : gamma) (x : string) (t t' : ltype) (e : expr),
+        checks (bind x t g) e t' -> checks g (ELam x t e) (TArrow t t')
+    | appchecks : forall (g : gamma) (e1 e2 : expr) (t t' : ltype),
+        checks g e1 (TArrow t t') -> checks g e2 t -> checks g (EApp e1 e2) t'.
