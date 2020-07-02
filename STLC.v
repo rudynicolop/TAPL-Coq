@@ -7,11 +7,17 @@ Require Import Coq.Strings.Ascii.
 Require Import Coq.Lists.List.
 (* Require Import Ascii. *)
 Require Import Coq.Sorting.Sorted.
-Require Export Coq.Sorting.Mergesort.
+Require Import Coq.Sorting.Mergesort.
 Require Import Coq.Structures.Orders.
 Require Import Coq.Strings.String.
+Require Import Coq.Logic.Decidable.
 (* Require Import List Setoid Permutation Sorted Orders. *)
 Import ListNotations.
+Require Import Coq.Arith.PeanoNat.
+Require Import Coq.Numbers.DecimalNat.
+Require Import Coq.Numbers.DecimalString.
+Require Import Recdef.
+Require Import Omega.
 
 (* Require Import Coq.Sets.Ensembles. *)
 
@@ -177,18 +183,62 @@ Fixpoint fancy_string_to_nat (s : string) : nat :=
         aug + (fancy_string_to_nat s')
     end.
 
-Definition nat_to_string (n : nat) : string := fancy_nat_to_string n n.
+Fixpoint nat_to_string' (n : nat) : string :=
+    match n with
+    | 0 => EmptyString
+    | S k => String (ascii_of_nat n) (nat_to_string' k)
+    end.
+
+Definition nat_to_string (n : nat) : string := 
+    NilEmpty.string_of_uint (Nat.to_uint n).
+
+(* No way, I am not gonna do 121 cases,
+    to prove a library function correct.  *)
+Axiom string_of_uint_inj : forall u1 u2,
+    NilEmpty.string_of_uint u1 = NilEmpty.string_of_uint u2
+    -> u1 = u2.
+
+Lemma nat_to_string_inj : forall (n1 n2 : nat),
+    nat_to_string n1 = nat_to_string n2 -> n1 = n2.
+Proof.
+    intros. unfold nat_to_string in H.
+    apply Unsigned.to_uint_inj.
+    apply string_of_uint_inj. apply H.
+Qed.        
 
 (* bag must be sorted and have no duplicates *)
 Fixpoint first_new_string (n : nat) (bag : set string) : string :=
     match bag with
-    | nil => nat_to_letter n
+    | nil => nat_to_string n
     | w::tail =>
         let word := nat_to_string n in
         if String.eqb w word
         then first_new_string (S n) tail
+        else if set_mem string_dec word tail
+        then first_new_string (S n) tail
         else word
     end.
+
+(* Lemma stupid_string : forall (c : ascii) (s : string), s <> String c s.
+Proof.
+    unfold not. intros. induction s.
+    - discriminate H.
+    - apply IHs. injection H as h; subst. apply H.
+Qed.
+
+Lemma first_new_string_mono : forall (bag : set string) (n : nat),
+    nat_to_string n <> first_new_string (S n) bag.
+Proof.
+    induction bag; induction n; unfold not; intros.
+    - inversion H.
+    - apply IHn.
+    unfold not. intros. induction H.
+    induction bag; unfold not; intros.
+    - simpl in H. apply stupid_string in H. apply H.
+    - specialize IHbag with n.
+        apply IHbag. unfold first_new_string in H.
+        destruct ((a =? nat_to_string (S n))%string) eqn:eq; 
+        fold first_new_string in *. *)
 
 (* Example with nats *)
 Module NatOrder <: TotalLeBool.
@@ -248,6 +298,125 @@ Example SimpleMergeExample := NatSort.sort [5;3;6;1;8;6;0].
   
 Check (Sorted NatOrder.lebr nil).
 
+Module AsciiOrder <: TotalLeBool.
+Definition t := ascii.
+
+Definition ascii_to_list (a b : ascii) : list (bool * bool) :=
+    match a, b with
+    | Ascii a0 a1 a2 a3 a4 a5 a6 a7,
+         Ascii b0 b1 b2 b3 b4 b5 b6 b7 => 
+         [(a0,b0);(a1,b1);(a2,b2);(a3,b3);(a4,b4);(a5,b5);(a6,b6);(a7,b7)]
+    end.
+
+Fixpoint leb' (x : list (bool * bool)) := 
+    match x with
+    | [] => true
+    | (false,true)::_ => true
+    | (false,false)::y => leb' y
+    | (true,true)::y => leb' y
+    | (true,false)::_ => false
+    end.
+
+Definition leb x y := leb' (ascii_to_list x y).
+
+Fixpoint flip (x : (list (bool * bool))) : list (bool * bool) :=
+    match x with
+    | [] => []
+    | (a,b)::t => (b,a)::(flip t)
+    end.
+
+Lemma leb'_total : forall (x : list (bool * bool)),
+    leb' x = true \/ leb' (flip x) = true.
+Proof.
+    induction x.
+    - left. reflexivity.
+    - destruct a. destruct b; destruct b0; simpl; try apply IHx.
+        + right. reflexivity.
+        + left. reflexivity.
+Qed.
+
+Lemma flip_ascii : forall (a1 a2 : ascii),
+    ascii_to_list a1 a2 = flip (ascii_to_list a2 a1).
+Proof.
+    unfold ascii_to_list.
+    destruct a1; destruct a2. reflexivity.
+Qed.
+
+Theorem leb_total : forall (a1 a2 : ascii), 
+    leb a1 a2 = true \/ leb a2 a1 = true.
+Proof.
+    intros. unfold leb.
+    rewrite flip_ascii.
+    Search (_ \/ _ <-> _ \/ _).
+    apply or_comm.
+    apply leb'_total.
+Qed.
+
+Inductive lebr' : list (bool * bool) -> Prop :=
+    | lebe' : lebr' []
+    | lebft' : forall (t : list (bool * bool)),
+        lebr' ((false,true)::t)
+    | lebss' : forall (b : bool) (t : list (bool * bool)),
+        lebr' t -> lebr' ((b,b)::t).
+
+Inductive lebr (a1 a2 : ascii) : Prop :=
+    leba : lebr' (ascii_to_list a1 a2) -> lebr a1 a2.
+
+Lemma leb'_refl : forall (x : list (bool * bool)),
+    leb' x = true <-> lebr' x.
+Proof.
+    induction x; split; intros; simpl in *.
+    - apply lebe'.
+    - reflexivity.
+    - destruct a. destruct b; destruct b0.
+        + apply lebss'. apply IHx.
+            apply H.
+        + discriminate H.
+        + apply lebft'.
+        + apply lebss'. apply IHx. apply H.
+    - destruct a. destruct b; destruct b0.
+        + apply IHx. inversion H; subst.
+            apply H1.
+        + inversion H; subst. discriminate H2.
+        + reflexivity.
+        + inversion H; subst. apply IHx. apply H1.
+Qed.
+
+Theorem leb_refl : forall (a1 a2 : ascii),
+    leb a1 a2 = true <-> lebr a1 a2.
+Proof.
+    unfold leb; split; intros.
+    - apply leba. apply leb'_refl. apply H.
+    - apply leb'_refl. inversion H. apply H0.
+Qed.
+
+Lemma lebr'_total : forall (x : list (bool * bool)),
+    lebr' x \/ lebr' (flip x).
+Proof.
+    induction x.
+    - left. apply lebe'.
+    - destruct a. destruct b; destruct b0; simpl; destruct IHx.
+        + left. apply lebss'. apply H.
+        + right. apply lebss'. apply H.
+        + right. apply lebft'.
+        + right. apply lebft'.
+        + left. apply lebft'.
+        + left. apply lebft'.
+        + left. apply lebss'. apply H.
+        + right. apply lebss'. apply H.
+Qed.
+
+Theorem lebr_total : forall (a1 a2 : ascii),
+    lebr a1 a2 \/ lebr a2 a1.
+Proof.
+    intros. destruct (leb a1 a2) eqn:eq.
+    - left. apply leb_refl. apply eq.
+    - right. pose proof (leb_total a1 a2). destruct H.
+        + rewrite eq in *. discriminate.
+        + apply leb_refl. apply H.
+Qed.
+End AsciiOrder.
+
 Module StringOrder <: TotalLeBool.
 Definition t := string.
 Fixpoint leb x y := 
@@ -256,7 +425,7 @@ Fixpoint leb x y :=
     | _, EmptyString => false
     | String cx sx, String cy sy =>
         if Ascii.eqb cx cy then leb sx sy
-        else nat_of_ascii cx <=? nat_of_ascii cy
+        else AsciiOrder.leb cx cy
     end.
 Theorem leb_total : forall s1 s2, leb s1 s2 = true \/ leb s2 s1 = true.
 Proof.
@@ -271,7 +440,7 @@ Proof.
             rewrite eq in *.
             destruct (a0 =? a)%char.
             * apply IHs1.
-            * apply NatOrder.leb_total.
+            * apply AsciiOrder.leb_total.
 Qed.
 
 Inductive lebr : string -> string -> Prop :=
@@ -281,7 +450,7 @@ Inductive lebr : string -> string -> Prop :=
         lebr s1 s2 -> lebr (String a s1) (String a s2)
     | leba : forall (a1 a2 : ascii) (s1 s2 : string),
         a1 <> a2 ->
-        NatOrder.lebr (nat_of_ascii a1) (nat_of_ascii a2) ->
+        AsciiOrder.lebr a1 a2 ->
         lebr (String a1 s1) (String a2 s2).
 
 Theorem lebr_total : forall (s1 s2 : string),
@@ -299,27 +468,27 @@ Proof.
             * apply Ascii.eqb_eq in eq; subst.
                 right. apply lebt. apply h.
             * apply Ascii.eqb_neq in eq.
-                destruct (NatOrder.leb (nat_of_ascii a) (nat_of_ascii a0)) eqn:lt.
+                destruct (AsciiOrder.leb a a0) eqn:lt.
                 { left. apply leba.
                     - apply not_eq_sym. apply eq.
-                    - apply NatOrder.leb_refl. apply lt.
+                    - apply AsciiOrder.leb_refl. apply lt.
                 }
                 { pose proof 
-                    (NatOrder.leb_total (nat_of_ascii a) (nat_of_ascii a0)) as [LT | LT].
+                    (AsciiOrder.leb_total a a0) as [LT | LT].
                     - rewrite lt in LT. discriminate LT.
-                    - right. apply NatOrder.leb_refl in LT.
+                    - right. apply AsciiOrder.leb_refl in LT.
                         apply leba. apply eq. apply LT.
                 }
             * apply Ascii.eqb_neq in eq.
-                destruct (NatOrder.leb (nat_of_ascii a0) (nat_of_ascii a)) eqn:lt.
+                destruct (AsciiOrder.leb a0 a) eqn:lt.
                 { right. apply leba.
                     - apply eq.
-                    - apply NatOrder.leb_refl. apply lt.
+                    - apply AsciiOrder.leb_refl. apply lt.
                 }
                 { pose proof 
-                    (NatOrder.leb_total (nat_of_ascii a0) (nat_of_ascii a)) as [LT | LT].
+                    (AsciiOrder.leb_total a0 a) as [LT | LT].
                     - rewrite lt in LT. discriminate LT. 
-                    - left. apply NatOrder.leb_refl in LT.
+                    - left. apply AsciiOrder.leb_refl in LT.
                         apply leba. apply not_eq_sym. apply eq.
                         apply LT.
                 }
@@ -342,19 +511,106 @@ Proof.
         + apply Ascii.eqb_neq in eq.
             apply leba. 
             * apply eq.
-            * apply NatOrder.leb_refl. apply H.
+            * apply AsciiOrder.leb_refl. apply H.
     - simpl. destruct ((a =? a0)%char) eqn:eq.
         + apply Ascii.eqb_eq in eq; subst.
             inversion H; subst; apply IHs1.
             * apply H1.
             * contradiction.
-        + apply NatOrder.leb_refl.
-            inversion H; subst.
-            * induction (nat_of_ascii a0). apply NatOrder.lebz. apply NatOrder.lebs. apply IHn.
-            * apply H5.
+        + inversion H; subst.
+            * apply Ascii.eqb_neq in eq.
+                contradiction.
+            * apply AsciiOrder.leb_refl.
+                apply H5.
 Qed.
 End StringOrder.
 
+Function asucc' (bs : list bool) {measure List.length bs} : list bool :=
+    match bs with
+    | nil => [false]
+    | [false] => [true]
+    | [true] => [false;true]
+    | false::a => true::a
+    | true::false::a => false::true::a
+    | true::true::a => false::(asucc' (true::a))
+    end.
+Proof. 
+    intros.
+    simpl. omega.
+Qed.
+
+Definition ascii_to_list (a : ascii) := 
+    match a with
+    | Ascii b0 b1 b2 b3 b4 b5 b6 b7 =>
+        [b0;b1;b2;b3;b4;b5;b6;b7]
+    end.
+
+Fixpoint take (X : Type) (n : nat) (l : list X) : list X :=
+    match n with
+    | 0 => nil
+    | S k =>
+        match l with
+        | nil => nil
+        | h::t => h::(take X k t)
+        end
+    end.
+
+Theorem take_correct : forall (X : Type) (n : nat) (l : list X),
+    List.length l >= n ->
+    List.length (take X n l) = n.
+Proof.
+Admitted.
+
+
+(* Definition list_to_ascii (bs : list bool) : ascii :=
+    take bool 8 bs. *)
+
+(* Definition asucc (a : ascii) : ascii :=  *)
+  
+
+(* Definition ssucc (s : string) : string := 
+    match s with
+    | EmptyString => String zero EmptyString
+    | String
+    end. *)
+
+
+Axiom nat_to_string_mono : forall (n1 n2 : nat),
+    NatOrder.lebr n1 n2 <-> StringOrder.lebr (nat_to_string n1) (nat_to_string n2).
+
+Lemma stupid : forall (n : nat), n <> S n.
+Proof.
+    unfold not. intros. induction n.
+    - discriminate H.
+    - apply IHn. injection H as h. apply h.
+Qed.
+
+Lemma first_new_string_available : 
+    forall (bag : set string) (n : nat),
+    NoDup bag -> Sorted StringOrder.lebr bag ->
+    set_mem string_dec (nat_to_string n) bag = false ->
+    first_new_string n bag = nat_to_string n.
+Proof.
+    induction bag; intros.
+    - reflexivity.
+    - unfold first_new_string.
+        destruct ((a =? nat_to_string n)%string) eqn:eq;
+        fold first_new_string.
+        + apply eqb_eq in eq; subst.
+            simpl in H1.
+            destruct (string_dec (nat_to_string n) (nat_to_string n)) eqn:eq.
+            * discriminate H1.
+            * contradiction.
+        + destruct (set_mem string_dec (nat_to_string n) bag) eqn:eeq.
+            * apply set_mem_complete1 in H1.
+                apply eqb_neq in eq as neeq.
+                apply set_mem_correct1 in eeq.
+                exfalso.
+                apply H1.
+                unfold set_In in *.
+                apply in_cons. apply eeq.
+            * reflexivity.
+Qed.
 
 Lemma first_new_string_correct : forall (n : nat) (bag : set string),
     NoDup bag -> Sorted StringOrder.lebr bag ->
@@ -365,9 +621,16 @@ Proof.
     - reflexivity.
     - unfold first_new_string.
         destruct ((a =? nat_to_string n)%string) eqn:eq; fold first_new_string.
-        + inversion H; subst. inversion H0; subst. admit.
-        (* I think I can get a contradiction if I instantiate 
-        the induction hypothesis correctly. *)
+        + inversion H; subst. inversion H0; subst. 
+            specialize IHbag with (S n).
+            apply (IHbag H4) in H5 as h.
+            apply eqb_eq in eq as eqq.
+            assert (ha: a <> nat_to_string (S n)).
+            * rewrite eqq.
+                unfold not. intros.
+                apply nat_to_string_inj in H1.
+                apply (stupid n). apply H1.
+            * admit.
 Admitted.
 
 Module Import StringSort := Sort StringOrder.
