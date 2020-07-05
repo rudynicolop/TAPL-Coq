@@ -7,6 +7,8 @@ Require Import Coq.Strings.Ascii.
 Require Import Coq.Lists.List.
 Require Import Coq.Strings.String.
 Import ListNotations.
+Require Import Coq.Program.Equality.
+Require Import Coq.Logic.FunctionalExtensionality.
 
 (* Require Import Coq.Sets.Ensembles. *)
 
@@ -47,6 +49,45 @@ Definition empty : gamma := fun x => None.
 Definition bind (x : string) (t : ltype) (g : gamma) : gamma :=
     fun y => if String.eqb x y then Some t else g y.
 
+Lemma bind_correct : 
+    forall (x : string) (t : ltype) (g : gamma),
+    bind x t g x = Some t.
+Proof.
+    intros. unfold bind. destruct ((x =? x)%string) eqn:eq.
+    - reflexivity.
+    - apply eqb_neq in eq. contradiction.
+Qed. 
+
+Lemma bind_complete :
+    forall (x x' : string) (t t' : ltype) (g : gamma),
+    x' <> x -> (g x = Some t <-> bind x' t' g x = Some t). 
+Proof.
+    intros. unfold bind. apply eqb_neq in H. 
+    rewrite H. split; intros; apply H0.
+Qed.
+
+Lemma rebind_correct : 
+    forall (x : string) (t t' : ltype) (g : gamma),
+    bind x t g = bind x t (bind x t' g).
+Proof.
+    intros. apply functional_extensionality. intros y.
+    unfold bind. destruct ((x =? y)%string); reflexivity.
+Qed.
+
+Lemma bind_diff_comm : 
+    forall (x y : string) (u v : ltype) (g : gamma),
+    x <> y ->
+    bind x u (bind y v g) = bind y v (bind x u g).
+Proof.
+    - intros. apply functional_extensionality. intros z.
+        unfold bind. destruct ((x =? z)%string) eqn:eq.
+        + apply eqb_eq in eq; subst.
+            destruct ((y =? z)%string) eqn:eeq.
+            * apply eqb_eq in eeq; subst. contradiction.
+            * reflexivity.
+        + apply eqb_neq in eq. destruct ((y =? z)%string) eqn:eeq; reflexivity.
+Qed.
+
 (* Static Semantics *)
 Inductive checks (g : gamma) : expr -> ltype -> Prop :=
     | natchecks : forall (n : nat), checks g (ENat n) TNat
@@ -86,9 +127,297 @@ Fixpoint fv (e : expr) : set string :=
     | ENot e  => fv e
     | EBOp _ e1 e2 => set_union string_dec (fv e1) (fv e2)
     | ECond e1 e2 e3 => set_union string_dec (set_union string_dec (fv e1) (fv e2)) (fv e3)
-    | ELam x _ e => set_remove string_dec x (fv e)
+    | ELam x _ e => set_diff string_dec (fv e) (set_add string_dec x (empty_set string))
     | EApp e1 e2 => set_union string_dec (fv e1) (fv e2)
     end.
+        
+
+Lemma bind_unfree_var :
+    forall (e : expr) (x : string) (t' t : ltype) (g : gamma),
+    ~ set_In x (fv e) ->
+    checks g e t <-> checks (bind x t' g) e t.
+Proof.
+    
+    induction e; split; intros; simpl in H; inversion H0; subst.
+    - apply natchecks.
+    - apply natchecks. 
+    - apply boolchecks.
+    - apply boolchecks.
+    - apply varchecks.
+        apply bind_complete.
+        + unfold not in *; intros; subst.
+            apply H. left. reflexivity.
+        + apply H2.
+    - apply varchecks. destruct ((x =? s)%string) eqn:eq.
+        + apply eqb_eq in eq; subst.
+            simpl in H. exfalso. apply H. left. reflexivity.
+        + apply eqb_neq in eq. eapply bind_complete.
+            * apply eq.
+            * apply H2.
+    - apply notchecks. apply (IHe x t' TBool g).
+        + unfold not in *; intros.
+            apply H. apply set_mem_correct1 with string_dec.
+            simpl. apply set_mem_correct2. apply H1.
+        + apply H2.
+    - apply notchecks. eapply IHe.
+        + apply H.
+        + apply H2.
+    - apply addchecks.
+        + apply IHe1.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                left. apply H1.
+            * apply H5.
+        + apply IHe2.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                right. apply H1.
+            * apply H6.
+    - apply mulchecks.
+        + apply IHe1.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                left. apply H1.
+            * apply H5.
+        + apply IHe2.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                right. apply H1.
+            * apply H6.
+    - apply subchecks.
+        + apply IHe1.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                left. apply H1.
+            * apply H5.
+        + apply IHe2.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                right. apply H1.
+            * apply H6.
+    - apply eqchecks.
+        + apply IHe1.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                left. apply H1.
+            * apply H5.
+        + apply IHe2.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                right. apply H1.
+            * apply H6.
+    - apply lechecks.
+        + apply IHe1.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                left. apply H1.
+            * apply H5.
+        + apply IHe2.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                right. apply H1.
+            * apply H6.
+        - unfold fv in H. fold fv in H.
+        apply andchecks.
+        + apply IHe1.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                left. apply H1.
+            * apply H5.
+        + apply IHe2.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                right. apply H1.
+            * apply H6.
+    - apply orchecks.
+        + apply IHe1.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                left. apply H1.
+            * apply H5.
+        + apply IHe2.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                right. apply H1.
+            * apply H6.
+    - apply addchecks.
+        + eapply IHe1.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro1. apply H1.
+            * apply H5.
+        + eapply IHe2.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro2. apply H1.
+            * apply H6.
+    - apply mulchecks.
+        + eapply IHe1.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro1. apply H1.
+            * apply H5.
+        + eapply IHe2.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro2. apply H1.
+            * apply H6.
+    - apply subchecks.
+        + eapply IHe1.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro1. apply H1.
+            * apply H5.
+        + eapply IHe2.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro2. apply H1.
+            * apply H6.
+    - apply eqchecks.
+        + eapply IHe1.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro1. apply H1.
+            * apply H5.
+        + eapply IHe2.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro2. apply H1.
+            * apply H6.
+    - apply lechecks.
+        + eapply IHe1.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro1. apply H1.
+            * apply H5.
+        + eapply IHe2.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro2. apply H1.
+            * apply H6.
+    - apply andchecks.
+        + eapply IHe1.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro1. apply H1.
+            * apply H5.
+        + eapply IHe2.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro2. apply H1.
+            * apply H6.
+    - apply orchecks.
+        + eapply IHe1.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro1. apply H1.
+            * apply H5.
+        + eapply IHe2.
+            * unfold not in *. intros. apply H.
+                apply set_union_intro2. apply H1.
+            * apply H6.
+    - apply condchecks.
+        + apply IHe1.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                left. apply set_union_intro.
+                left. apply H1.
+            * apply H4.
+        + apply IHe2.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                left. apply set_union_intro.
+                right. apply H1.
+            * apply H6.
+        + apply IHe3.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                right. apply H1.
+            * apply H7.
+    - apply condchecks.
+    + eapply IHe1.
+        * unfold not in *. intros. apply H.
+            apply set_union_intro1. 
+            apply set_union_intro1.
+            apply H1.
+        * apply H4.
+    + eapply IHe2.
+        * unfold not in *. intros. apply H.
+            apply set_union_intro1.
+            apply set_union_intro2.
+            apply H1.
+        * apply H6.
+    + eapply IHe3.
+        * unfold not in *; intros. apply H.
+            apply set_union_intro2.
+            apply H1.
+        * apply H7.
+    - apply lamchecks.
+        destruct ((x =? s)%string) eqn:eq.
+        + apply eqb_eq in eq as xs; subst.
+            rewrite <- rebind_correct.
+            apply H5.
+        + apply eqb_neq in eq as xs.
+            pose proof bind_diff_comm.
+            apply not_eq_sym in xs.
+            eapply H1 in xs as nxs.
+            rewrite nxs. apply IHe.
+            * unfold not in *. intros.
+                apply H. apply set_diff_intro.
+                apply H2.
+                unfold set_In.
+                unfold not. intros.
+                apply xs.
+                inversion H3. apply H4.
+                inversion H4. 
+            * apply H5.
+    - apply lamchecks.
+        destruct ((x =? s)%string) eqn:eq.
+        + apply eqb_eq in eq; subst.
+            erewrite rebind_correct.
+            apply H5.
+        + apply eqb_neq in eq.
+            eapply IHe.
+            * unfold not in *. intros.
+                apply H.
+                apply set_diff_intro.
+                apply H1.
+                unfold set_In.
+                unfold not. intros.
+                apply eq. inversion H2; subst.
+                reflexivity.
+                inversion H3.
+            * eapply bind_diff_comm in eq.
+                rewrite eq. apply H5.
+    - eapply appchecks.
+        + apply IHe1.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                left. apply H1.
+            * apply H3.
+        + apply IHe2.
+            * unfold not in *; intros.
+                apply H.
+                apply set_union_intro.
+                right. apply H1.
+            * apply H5.
+    - eapply appchecks.
+        + eapply IHe1.
+            * unfold not in *. intros.
+                apply H. apply set_union_intro1.
+                apply H1.
+            * apply H3.
+        + eapply IHe2.
+            * unfold not in *. intros.
+                apply H. apply set_union_intro2.
+                apply H1.
+            * apply H5.
+Qed.
 
 (* Capture-avoiding Substitution *)
 Inductive sub (x : string) (s : expr) : expr -> expr -> Prop :=
@@ -110,14 +439,134 @@ Inductive sub (x : string) (s : expr) : expr -> expr -> Prop :=
         x <> y -> set_mem string_dec y (fv s) = false -> 
         sub x s e e' -> sub x s (ELam y t e) (ELam y t e')
     | lam_free_sub : forall (y z : string) (t : ltype) (e e' e'' : expr),
-        x <> y -> x <> z ->
+        x <> y -> x <> z -> y <> z ->
+        set_mem string_dec y (fv s) = true -> 
         set_mem string_dec z (fv s) = false ->
         set_mem string_dec z (fv e) = false ->
-        sub y (EVar z) e e' -> sub x s e' e'' -> 
+        sub y (EVar z) e e' -> 
+        sub x s e' e'' -> 
         sub x s (ELam y t e) (ELam z t e'').
 
 Axiom sub_exists : forall (x : string) (s e : expr),
     exists e', sub x s e e'.
+
+
+Lemma sub_free : forall (x : string) (s e e' : expr),
+    ~ set_In x (fv s) -> sub x s e e' ->
+    ~ set_In x (fv e').
+Proof.
+    intros. induction H0; unfold not; 
+    intros; simpl in *; try assumption.
+    - contradiction.
+    - destruct H1; contradiction.
+    - apply IHsub; assumption.
+    - apply set_union_elim in H0 as [h1 | h2].
+        + apply IHsub1; assumption.
+        + apply IHsub2; assumption.
+    - apply set_union_elim in H0 as [H0 | h3].
+        + apply set_union_elim in H0 as [h1 | h2].
+            * apply IHsub1; assumption.
+            * apply IHsub2; assumption.
+        + apply IHsub3; assumption.
+    - apply set_union_elim in H0 as [h1 | h2].
+        + apply IHsub1; assumption.
+        + apply IHsub2; assumption.
+    - apply set_diff_iff in H0 as [_ h].
+        apply h. constructor. reflexivity.
+    - apply set_mem_complete1 in H1.
+        eapply set_diff_iff in H3 as [h1 h2].
+        apply IHsub; assumption.
+    - apply set_mem_correct1 in H3.
+        apply set_mem_complete1 in H4.
+        apply set_mem_complete1 in H5.
+        apply set_diff_iff in H6 as [h1 h2].
+        apply IHsub2; assumption.
+Qed.
+
+Inductive alpha_eq : string -> string -> expr -> expr -> Prop :=
+    alpha_sub : forall (x z : string) (e e' : expr),
+        sub x (EVar z) e e' -> alpha_eq x z e e'.
+
+Theorem alpha_eq_checks : 
+    forall (y z : string) (e e' : expr),
+    ~ set_In z (fv e) -> 
+    y <> z ->
+    alpha_eq y z e e' -> forall (t' t : ltype) (g : gamma),
+    checks (bind y t' g) e t -> checks (bind z t' g) e' t.
+Proof.
+    intros y z e e' H H0 H1.
+    remember (EVar z) as vz.
+    inversion H1; subst. induction H2; intros;
+    try (inversion H2; subst; constructor);
+    try (inversion H1; inversion H2; inversion H3; subst);
+    try (inversion H1; inversion H3; subst); simpl in *;
+    try contradiction;
+    try (apply notchecks; apply IHsub; try assumption;
+         apply alpha_sub; inversion H5; subst; apply H8);
+    try (apply IHsub1; try assumption;
+            try (unfold not; intros;
+            apply H; apply set_union_intro1; apply H5);
+            try (apply alpha_sub; apply H16));
+    try (apply IHsub2; try assumption;
+            try (unfold not; intros;
+            apply H; apply set_union_intro2; apply H5);
+            try (apply alpha_sub; apply H21));
+    try (unfold not; intros; apply H);
+    try (apply alpha_sub; assumption).
+    - apply varchecks. rewrite bind_correct in H9.
+        injection H9 as h9; subst. apply bind_correct.
+    - apply varchecks. apply bind_complete.
+        + unfold not. intros. apply H. left. symmetry. apply H5.
+        + apply not_eq_sym in H2. apply bind_complete in H10; assumption.
+    - apply set_union_intro1. apply set_union_intro1. apply H5.
+    - apply set_union_intro1. apply set_union_intro2. apply H5.
+    - apply IHsub3; try assumption.
+        + unfold not. intros. apply H.
+            apply set_union_intro2. apply H5.
+        + apply alpha_sub. apply H24.
+    - eapply appchecks.
+        + apply IHsub1; try assumption.
+            * unfold not. intros. apply H.
+                apply set_union_intro1. apply H5.
+            * apply alpha_sub. apply H14.
+            * apply H10.
+        + apply IHsub2; try assumption.
+            * unfold not. intros. apply H.
+                apply set_union_intro2. apply H5.
+            * apply alpha_sub. apply H17.
+    - pose proof bind_diff_comm.
+        eapply H5 in H0 as h0. rewrite h0.
+        apply bind_unfree_var.
+        + unfold not. intros. apply H.
+            apply set_diff_intro.
+            * apply H6.
+            * unfold not. intros. apply H0.
+                inversion H8. apply H9.
+                inversion H9.
+        + rewrite <- rebind_correct in H7. apply H7.
+    -  inversion H5; subst. apply lamchecks.
+        pose proof bind_diff_comm.
+        inversion H6; subst; try contradiction.
+        + apply set_mem_complete1 in H15.
+            simpl in H15.
+            assert (y <> z). unfold not.
+            intros. apply H15. left. auto.
+            eapply H7 in H8 as h8. rewrite h8.
+            eapply IHsub; try assumption.
+            * unfold not. intros. apply H.
+                apply set_diff_intro.
+                apply H9. unfold not.
+                intros. inversion H10.
+                contradiction. inversion H13.
+            * apply alpha_sub. apply H16.
+            * pose proof bind_diff_comm.
+                eapply H9 in H14.
+                rewrite H14. apply H11.
+    - inversion H8; subst.
+        apply lamchecks.
+        pose proof bind_diff_comm.
+        admit.
+Admitted.
 
 (* Dynamic Semantics *)
 Inductive step : expr -> expr -> Prop :=
@@ -295,6 +744,77 @@ Inductive step : expr -> expr -> Prop :=
             + exists (EApp e1' e2). apply appstep. apply h1.
  Qed.
     
+Definition substitution_lemma 
+    (t t' : ltype) (x : string) (s e e' : expr) (g : gamma) :=
+    checks (bind x t' g) e t -> 
+    checks g s t' -> 
+    sub x s e e' ->
+    checks g e' t.
+
+Lemma substitution_lemma_holds : 
+    forall (t t' : ltype) (x : string) (s e e' : expr) (g : gamma),
+    substitution_lemma t t' x s e e' g.
+Proof.
+    unfold substitution_lemma.
+    intros t t' x s e.
+    generalize dependent t.
+    generalize dependent t'.
+    generalize dependent x.
+    generalize dependent s.
+    induction e; intros; inversion H; inversion H1; subst.
+    - apply natchecks.
+    - apply boolchecks.
+    - pose proof (bind_correct s t' g).
+        rewrite H2 in H3.
+        injection H3 as h; subst. apply H0.
+    - pose proof (bind_complete).
+        apply not_eq_sym in H6.
+        eapply H2 in H6.
+        apply H6 in H3.
+        apply varchecks. apply H3.
+    - apply notchecks.
+        eapply IHe; eassumption.
+    - apply addchecks.
+        + eapply IHe1; eassumption.
+        + eapply IHe2; eassumption.
+    - apply mulchecks. 
+        + eapply IHe1; eassumption.
+        + eapply IHe2; eassumption.
+    - apply subchecks. 
+        + eapply IHe1; eassumption.
+        + eapply IHe2; eassumption.
+    - apply eqchecks. 
+        + eapply IHe1; eassumption.
+        + eapply IHe2; eassumption.
+    - apply lechecks.
+        + eapply IHe1; eassumption.
+        + eapply IHe2; eassumption.
+    - apply andchecks.
+        + eapply IHe1; eassumption.
+        + eapply IHe2; eassumption.
+    - apply orchecks.
+        + eapply IHe1; eassumption.
+        + eapply IHe2; eassumption.
+    - apply condchecks.
+        + eapply IHe1; eassumption.
+        + eapply IHe2; eassumption.
+        + eapply IHe3; eassumption.
+    - apply lamchecks.
+        erewrite <- rebind_correct in H6.
+        apply H6.
+    - apply lamchecks.
+        apply (IHe s0 x t' t'0 e'0 (bind s l g)).
+        + erewrite bind_diff_comm.
+            * apply H6.
+            * apply H10.
+        + apply set_mem_complete1 in H12.
+            eapply bind_unfree_var.
+            * apply H12.
+            * admit. 
+        + apply H13.
+    - apply lamchecks. admit.
+Admitted.
+        
 
 Definition preservation (e e' : expr) (t : ltype) : Prop :=
     step e e' -> checks empty e t -> checks empty e' t.
