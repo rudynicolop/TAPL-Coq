@@ -835,11 +835,40 @@ Proof.
             apply H3. assumption.
 Qed.    
 
-Definition preservation (e e' : expr) (t : ltype) : Prop :=
-    step e e' -> checks empty e t -> checks empty e' t.
+Definition preservation (e e' : expr) : Prop :=
+    step e e' -> forall (t : ltype),
+    checks empty e t -> checks empty e' t.
 
-Theorem preservation_holds : forall (e e' : expr) (t : ltype),
-    preservation e e' t.
+Theorem preservation_holds : forall (e e' : expr),
+    preservation e e'.
 Proof.
-Admitted.
+    unfold preservation. intros e e' H.
+    induction H; intros.
+    - inversion H; subst. apply boolchecks.
+    - inversion H0; subst. apply notchecks.
+        apply IHstep. assumption.
+    - inversion H; subst. apply natchecks.
+    - inversion H; subst. apply natchecks.
+    - inversion H; subst. apply natchecks.
+    - inversion H; subst. apply boolchecks.
+    - inversion H; subst. apply boolchecks.
+    - inversion H; subst. apply boolchecks.
+    - inversion H; subst. apply boolchecks.
+    - inversion H0; inversion H5; 
+        subst; constructor; auto.
+    - inversion H0; inversion H5; 
+        subst; constructor; auto.
+    - inversion H0; subst; constructor; auto.
+    - inversion H; subst. assumption.
+    - inversion H; subst. assumption.
+    - inversion H0; subst. apply condchecks; auto.
+    - inversion H0; subst. eapply appchecks.
+        + apply IHstep. apply H3.
+        + assumption.
+    - inversion H0; subst. inversion H3; subst.
+        eapply substitution_lemma_holds.
+        + apply H.
+        + apply H2.
+        + assumption.
+Qed.
     
