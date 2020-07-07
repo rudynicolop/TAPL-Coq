@@ -598,75 +598,75 @@ Inductive step : expr -> expr -> Prop :=
     | lamstep : forall (x : string) (t : ltype) (e1 e2 e3 : expr),
         sub x e2 e1 e3 -> step (EApp (ELam x t e1) e2) e3.
     
-    (* Values *)
-    Inductive value : expr -> Prop :=
-        | natvalue : forall (n : nat), value (ENat n)
-        | boolvalue : forall (b : bool), value (EBool b)
-        | lamvalue : forall (x : string) (t : ltype) (e : expr),
-            value (ELam x t e).
+(* Values *)
+Inductive value : expr -> Prop :=
+    | natvalue : forall (n : nat), value (ENat n)
+    | boolvalue : forall (b : bool), value (EBool b)
+    | lamvalue : forall (x : string) (t : ltype) (e : expr),
+        value (ELam x t e).
 
-    Definition bool_canonical_forms (v : expr) : Prop :=
-        value v -> checks empty v TBool -> exists (b : bool), v = EBool b.
+Definition bool_canonical_forms (v : expr) : Prop :=
+    value v -> checks empty v TBool -> exists (b : bool), v = EBool b.
 
-    Lemma bool_canonical_forms_holds : forall v,
-        bool_canonical_forms v.
-    Proof.
-        unfold bool_canonical_forms. intros.
-        inversion H; inversion H0; subst;
-        try discriminate H2;
-        try discriminate H3;
-        try discriminate H4;
-        try discriminate H5.
-        exists b0. symmetry. apply H2.
-    Qed.
+Lemma bool_canonical_forms_holds : forall v,
+    bool_canonical_forms v.
+Proof.
+    unfold bool_canonical_forms. intros.
+    inversion H; inversion H0; subst;
+    try discriminate H2;
+    try discriminate H3;
+    try discriminate H4;
+    try discriminate H5.
+    exists b0. symmetry. apply H2.
+Qed.
 
-    Definition nat_canonical_forms (v : expr) : Prop := 
-        value v -> checks empty v TNat -> exists (n : nat), v = ENat n.
+Definition nat_canonical_forms (v : expr) : Prop := 
+    value v -> checks empty v TNat -> exists (n : nat), v = ENat n.
 
-    Lemma nat_canonical_forms_holds : forall v,
-        nat_canonical_forms v.
-    Proof.
-        unfold nat_canonical_forms. intros.
-        inversion H; inversion H0; subst;
-        try discriminate H2;
-        try discriminate H3;
-        try discriminate H4;
-        try discriminate H5.
-        exists n0. symmetry. apply H2.
-    Qed.
+Lemma nat_canonical_forms_holds : forall v,
+    nat_canonical_forms v.
+Proof.
+    unfold nat_canonical_forms. intros.
+    inversion H; inversion H0; subst;
+    try discriminate H2;
+    try discriminate H3;
+    try discriminate H4;
+    try discriminate H5.
+    exists n0. symmetry. apply H2.
+Qed.
 
-    Definition lam_canonical_forms (v : expr) : Prop :=
-        forall (t t' : ltype),
-        value v -> checks empty v (TArrow t t') -> 
-        exists (x : string) (e : expr), v = ELam x t e.
+Definition lam_canonical_forms (v : expr) : Prop :=
+    forall (t t' : ltype),
+    value v -> checks empty v (TArrow t t') -> 
+    exists (x : string) (e : expr), v = ELam x t e.
 
-    Lemma lam_canonical_forms_holds : forall v,
-        lam_canonical_forms v.
-    Proof.
-        unfold lam_canonical_forms. intros.
-        inversion H; inversion H0; subst;
-        try discriminate H2;
-        try discriminate H3;
-        try discriminate H4;
-        try discriminate H5.
-        exists x0. exists e0. symmetry.
-        apply H3.
-    Qed.
+Lemma lam_canonical_forms_holds : forall v,
+    lam_canonical_forms v.
+Proof.
+    unfold lam_canonical_forms. intros.
+    inversion H; inversion H0; subst;
+    try discriminate H2;
+    try discriminate H3;
+    try discriminate H4;
+    try discriminate H5.
+    exists x0. exists e0. symmetry.
+    apply H3.
+Qed.
 
-    Lemma canonical_forms : forall v,
-        bool_canonical_forms v /\
-        nat_canonical_forms v /\
-        lam_canonical_forms v.
-    Proof.
-        intros. split.
-        - apply bool_canonical_forms_holds.
-        - split.
-            + apply nat_canonical_forms_holds.
-            + apply lam_canonical_forms_holds.
-    Qed.
-        
-    Definition progress (e : expr) (t : ltype) : Prop := 
-        checks empty e t -> value e \/ exists (e' : expr), step e e'.
+Lemma canonical_forms : forall v,
+    bool_canonical_forms v /\
+    nat_canonical_forms v /\
+    lam_canonical_forms v.
+Proof.
+    intros. split.
+    - apply bool_canonical_forms_holds.
+    - split.
+        + apply nat_canonical_forms_holds.
+        + apply lam_canonical_forms_holds.
+Qed.
+    
+Definition progress (e : expr) (t : ltype) : Prop := 
+    checks empty e t -> value e \/ exists (e' : expr), step e e'.
 
     Theorem progress_holds : forall (e : expr) (t : ltype), progress e t.
     Proof.
