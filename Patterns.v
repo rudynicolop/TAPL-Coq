@@ -76,6 +76,12 @@ Proof.
         subst. rewrite H5 in ASS.
         assumption.
 Qed.
+
+Lemma to_list_cons :
+    forall (A : Type) (n : nat) (v : V.t A n) (h : A),
+    V.to_list (V.cons A h n v) = h:: V.to_list v.
+Proof. intros. reflexivity. Qed.
+
 End VectorLemmas.
 
 (* General Signature a Language Must Satisfy *)
@@ -272,26 +278,47 @@ Definition U (m n : nat) (p : pmatrix m n) (q : pvec n) :=
 (* M(p,q): *)
 Definition M (m n : nat) (p : pmatrix m n) (q : pvec n) := {v | upred m n p q v}.
 
-Fixpoint wild_list (n : nat) : list pattern :=
-    match n with
-    | 0 => nil
-    | S k => Wildcard :: wild_list k
-    end.
-
-Lemma wild_list_len : forall (n : nat), length (wild_list n) = n.
-Proof. intros. induction n; simpl; auto. Qed.
-
-Definition wild_vec (n : nat) : pvec n.
+Fixpoint wild_vec (n : nat) : pvec n.
 Proof.
-pose proof (V.of_list (wild_list n)) as WL.
-pose proof (wild_list_len n) as WLL. rewrite WLL in WL.
-unfold pvec. apply WL.
+    induction n.
+    - apply (V.nil pattern).
+    - apply (V.cons pattern Wildcard n (wild_vec n)).
 Defined.
+
+Lemma wild_vinstance : 
+    forall (n : nat) (v : vvec n),
+    vinstance n v (wild_vec n).
+Proof.
+    intros. unfold vinstance.
+    induction v.
+    - apply F2_A_nil.
+    - simpl.
+        pose proof VL.to_list_cons as TLC.
+        pose proof (TLC value n v h) as TLCV.
+        pose proof (TLC pattern n (wild_vec n) Wildcard) as TLCP.
+        rewrite TLCV. rewrite TLCP.
+        apply F2_cons.
+        + apply inst_wild.
+        + assumption.
+Qed.      
 
 (* Proposition 1.1: *)
 Theorem exhaustive_cond : 
     forall (m n : nat) (p : pmatrix m n),
-    exhaustive m n p <-> U m n p (wild_vec n).
+    exhaustive m n p <-> ~ U m n p (wild_vec n).
+Proof.
+    unfold exhaustive; unfold U; 
+    unfold upred; split; intros.
+    - unfold not. intros [v [Hm Hv]].
+        apply Hm.
+        specialize H with v.
+        destruct H as [i [Him Hrf]].
+        unfold row_filters in Hrf.
+        destruct Hrf as [Hvn HNvn].
+        unfold minstance.
+        exists i. exists Him.
+        assumption.
+    - admit.
 Admitted.
 
 (* Proposition 1.2: *)
