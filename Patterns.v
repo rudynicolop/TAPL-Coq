@@ -16,9 +16,10 @@ Require Import Omega.
 Require Import Coq.Program.Equality.
 Require Import Coq.Arith.Lt.
 Require Import Coq.Arith.PeanoNat.
-
 Require Coq.Logic.ClassicalFacts.
 Module CF := Coq.Logic.ClassicalFacts.
+Require Import Coq.Sets.Ensembles.
+
 Axiom proof_irrelevance : CF.proof_irrelevance.
 
 Module VectorLemmas.
@@ -75,16 +76,6 @@ Proof.
         subst. rewrite H5 in ASS.
         assumption.
 Qed.
-
-Lemma vec_len :
-    forall (A : Type) (n : nat) (v : V.t A n),
-    length (V.to_list v) = n.
-Proof.
-    intros. induction v.
-    - reflexivity.
-    - unfold V.to_list in *. simpl. auto.
-Qed.
-
 End VectorLemmas.
 
 (* General Signature a Language Must Satisfy *)
@@ -259,5 +250,57 @@ Proof.
         rewrite <- HY. 
         assumption.
 Qed.
+
+(* Definition 4 (Exhaustiveness): *)
+Definition exhaustive (m n : nat) (p : pmatrix m n) :=
+    forall (v : vvec n), exists (i : nat) (Him : i < m),
+    row_filters i m n p v Him.
+
+(* Definition 5 (Useless Clause): *)
+Definition useless_clause 
+    (i m n : nat) (p : pmatrix m n) (Him : i < m) :=
+    ~ exists (v : vvec n), row_filters i m n p v Him.
+
+(* Definition 6 (Useful Clause): *)
+Definition upred (m n : nat) (p : pmatrix m n) (q : pvec n) (v : vvec n) := 
+    (~ minstance m n p v) /\ vinstance n v q.
+
+(* U(p,q): *)
+Definition U (m n : nat) (p : pmatrix m n) (q : pvec n) := 
+    exists (v : vvec n), upred m n p q v.
+
+(* M(p,q): *)
+Definition M (m n : nat) (p : pmatrix m n) (q : pvec n) := {v | upred m n p q v}.
+
+Fixpoint wild_list (n : nat) : list pattern :=
+    match n with
+    | 0 => nil
+    | S k => Wildcard :: wild_list k
+    end.
+
+Lemma wild_list_len : forall (n : nat), length (wild_list n) = n.
+Proof. intros. induction n; simpl; auto. Qed.
+
+Definition wild_vec (n : nat) : pvec n.
+Proof.
+pose proof (V.of_list (wild_list n)) as WL.
+pose proof (wild_list_len n) as WLL. rewrite WLL in WL.
+unfold pvec. apply WL.
+Defined.
+
+(* Proposition 1.1: *)
+Theorem exhaustive_cond : 
+    forall (m n : nat) (p : pmatrix m n),
+    exhaustive m n p <-> U m n p (wild_vec n).
+Admitted.
+
+(* Proposition 1.2: *)
+Theorem useless_cond : 
+    forall (i m n : nat) (p : pmatrix m n) (Him : i < m),
+    useless_clause i m n p Him <-> 
+    ~ U i n (V.take i (lt_le_weak i m Him) p) (V.nth p (F.of_nat_lt Him)).
+Admitted.
+
+
 
 End StrictPatterns.
