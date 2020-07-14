@@ -227,8 +227,6 @@ Definition minstance
     exists (i : nat) (Him : i < m), 
     vinstance n v (V.nth p (F.of_nat_lt Him)).
 
-Search (_ < _ -> _ <= _).
-
 (* Definition 2 (ML Pattern Matching reformulated with Definition 3) *)
 Definition row_filters' 
     (i m n : nat) (p : pmatrix m n) (v : vvec n) (Him : i < m) :=
@@ -240,68 +238,26 @@ Theorem row_filters_equiv :
     forall (i m n : nat) (p : pmatrix m n) (v : vvec n) (Him : i < m),
     row_filters i m n p v Him <-> row_filters' i m n p v Him.
 Proof.
-    intros i m n.
-    induction p; split;
-    intros; try omega.
-    - unfold row_filters in H.
-        destruct H as [H1 H2].
-        unfold row_filters'. split.
-        + assumption.
-        + unfold not; intros NM.
-            inversion NM; subst.
-            destruct H as [Hxi H].
-            specialize H2 with (j := x) (Hji := Hxi).
-            apply H2.
-            pose proof VL.nth_take as NT.
-            pose proof (NT (pvec n) (S n0) 
-                (VectorDef.cons (pvec n) h n0 p) 
-                x i Hxi Him) as HY.
-            rewrite HY. rewrite HY in H2.
-            assumption.
-    - unfold row_filters' in H.
-        destruct H as [H1 H2].
-        unfold row_filters. split.
-        + assumption.
-        + intros j Hji. 
-            unfold not. intros NV.
-            inversion NV; subst.
-            { unfold vvec in v.
-                assert (n = 0).
-                - symmetry in H0.
-                    apply length_zero_iff_nil in H0.
-                    rewrite VL.vec_len in H0. assumption.
-                - subst. apply H2. unfold minstance.
-                    exists j. exists Hji.
-                    pose proof VL.nth_take as NT.
-                    pose proof (NT (pvec 0) (S n0) 
-                        (VectorDef.cons (pvec 0) h n0 p)
-                        j i Hji Him) as HY.
-                    rewrite <- HY. 
-                    assumption.
-            }
-            { assert (n = 0).
-                - symmetry in H3.
-                    apply length_zero_iff_nil in H3.
-                    rewrite VL.vec_len in H3. assumption.
-                - subst. apply H2. unfold minstance.
-                    exists j. exists Hji.
-                    pose proof VL.nth_take as NT.
-                    pose proof (NT (pvec 0) (S n0) 
-                        (VectorDef.cons (pvec 0) h n0 p)
-                        j i Hji Him) as HY.
-                    rewrite <- HY. 
-                    assumption. 
-            }
-            { unfold vvec in v.
-                apply H2. unfold minstance.
-                    exists j. exists Hji.
-                    pose proof VL.nth_take as NT.
-                    pose proof (NT (pvec n) (S n0) 
-                        (VectorDef.cons (pvec n) h n0 p)
-                        j i Hji Him) as HY.
-                    rewrite <- HY. 
-                    assumption.
-            }
+    unfold row_filters.
+    unfold row_filters'.
+    split; intros; destruct H as [H1 H2]; 
+    split; try assumption;
+    pose proof VL.nth_take as NT.
+    - unfold not; intros NM.
+        inversion NM; subst.
+        destruct H as [Hxi H].
+        specialize H2 with (j := x) (Hji := Hxi).
+        apply H2.  
+        pose proof (NT (pvec n) m p x i Hxi Him) as HY.
+        rewrite HY. rewrite HY in H2.
+        assumption.
+    - intros j Hji. 
+        unfold not. intros NV.
+        apply H2. unfold minstance.
+        exists j. exists Hji.
+        pose proof (NT (pvec n) m p j i Hji Him) as HY.
+        rewrite <- HY. 
+        assumption.
 Qed.
 
 End StrictPatterns.
