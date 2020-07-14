@@ -1,5 +1,5 @@
 (* Here are definitions and proofs of an algorithm to 
-    verify pattern matching is exhaustive.
+    verify a pattern matching is exhaustive.
     See the below for the algorithm specification.
     http://moscova.inria.fr/~maranget/papers/warn/index.html
 *)
@@ -13,6 +13,79 @@ Module F := Coq.Vectors.Fin.
 Require Coq.Vectors.Vector.
 Module V := Coq.Vectors.Vector.
 Require Import Omega.
+Require Import Coq.Program.Equality.
+Require Import Coq.Arith.Lt.
+Require Import Coq.Arith.PeanoNat.
+
+Require Coq.Logic.ClassicalFacts.
+Module CF := Coq.Logic.ClassicalFacts.
+Axiom proof_irrelevance : CF.proof_irrelevance.
+
+Module VectorLemmas.
+
+Lemma nth_cons : 
+    forall (A : Type) (m n : nat) (h : A)
+    (v : V.t A n) (Hmn : m < n),
+    V.nth v (F.of_nat_lt Hmn) =
+    V.nth (V.cons A h n v) (F.of_nat_lt (lt_n_S m n Hmn)).
+Proof.
+    intros A; destruct n as [| n];
+    destruct m as [| m]; intros;
+    try omega; try reflexivity.
+    simpl. pose proof_irrelevance as PI.
+    unfold CF.proof_irrelevance in PI.
+    pose proof (PI (m < n) (lt_S_n m n Hmn)) as H.
+    specialize H with
+        (lt_S_n m n (lt_S_n (S m) (S n) (lt_n_S (S m) (S n) Hmn))).
+    rewrite <- H. reflexivity.
+Qed.
+
+Lemma nth_take :
+    forall (A : Type) (n : nat) (v : V.t A n) (q w : nat)
+    (Hqw : q < w) (Hwn : w < n),
+    V.nth v (F.of_nat_lt (lt_trans q w n Hqw Hwn)) = 
+    V.nth (V.take w (lt_le_weak w n Hwn) v) (F.of_nat_lt Hqw).
+Proof.
+    intros A n v. dependent induction v; 
+    intros; try omega. 
+    pose proof nth_cons as HC.
+    destruct q as [| q].
+    - simpl. destruct w as [| w]; 
+        try omega. reflexivity.
+    - assert (Hqn' : q < n); try omega.
+        assert (Hqn : S q < S n); try omega.
+        pose proof (HC A q n h v Hqn') as HR.
+        pose proof proof_irrelevance as PI.
+        unfold CF.proof_irrelevance in PI.
+        pose proof (PI (S q < S n) Hqn (Nat.lt_trans (S q) w (S n) Hqw Hwn)) as H0.
+        rewrite <- H0.
+        pose proof (PI (S q < S n) Hqn (lt_n_S q n Hqn')) as H00.
+        rewrite <- H00 in HR. rewrite <- HR. 
+        destruct w as [| w]; try omega.
+        assert (Hwn' : w < n); try omega.
+        assert (Hqw' : q < w); try omega.
+        assert (Hwneq' : w <= n); try omega.
+        assert (Hwneq : S w <= S n); try omega.
+        pose proof (IHv q w Hqw' Hwn') as ASS. simpl.
+        pose proof (PI (S w <= S n) Hwneq (Nat.lt_le_incl (S w) (S n) Hwn)) as H1.
+        pose proof (PI (w <= n) Hwneq' (le_S_n w n (Nat.lt_le_incl (S w) (S n) Hwn))) as H2.
+        pose proof (PI (q < w) Hqw' (lt_S_n q w Hqw)) as H3.
+        pose proof (PI (q < n) Hqn' (Nat.lt_trans q w n (lt_S_n q w Hqw) Hwn')) as H4.
+        pose proof (PI (w <= n) (Nat.lt_le_incl w n Hwn') (le_S_n w n (Nat.lt_le_incl (S w) (S n) Hwn))) as H5.
+        subst. rewrite H5 in ASS.
+        assumption.
+Qed.
+
+Lemma vec_len :
+    forall (A : Type) (n : nat) (v : V.t A n),
+    length (V.to_list v) = n.
+Proof.
+    intros. induction v.
+    - reflexivity.
+    - unfold V.to_list in *. simpl. auto.
+Qed.
+
+End VectorLemmas.
 
 (* General Signature a Language Must Satisfy *)
 Module Type Language.
@@ -100,6 +173,7 @@ Inductive Forall2 (A B : Type) (P : A -> B -> Prop) : list A -> list B -> Prop :
 Module StrictPatterns (L : Language).
 
 Import L.
+Module VL := VectorLemmas.
 
 Definition vvec (n : nat) := V.t value n.
 
@@ -111,7 +185,6 @@ Inductive pattern : Type :=
     | OrPattern : pattern -> pattern -> pattern.  
 
 Definition pvec (n : nat) := V.t pattern n.
-
 
 (* Definition 1 (The Instance Relation): *)
 Inductive instance (v : value) : pattern -> Prop :=
@@ -146,7 +219,7 @@ Definition row_filters
     (vinstance n v (V.nth p (F.of_nat_lt Him))
     /\ 
     forall (j : nat) (Hji : j < i),
-        ~ vinstance n v (V.nth p (F.of_nat_lt (PeanoNat.Nat.lt_trans j i m Hji Him)))).
+        ~ vinstance n v (V.nth p (F.of_nat_lt (lt_trans j i m Hji Him)))).
 
 (* Definition 3 (Instance Relation for Matrices): *)
 Definition minstance
@@ -160,8 +233,9 @@ Search (_ < _ -> _ <= _).
 Definition row_filters' 
     (i m n : nat) (p : pmatrix m n) (v : vvec n) (Him : i < m) :=
     (vinstance n v (V.nth p (F.of_nat_lt Him))
-    /\ ~ minstance i n (V.take i (PeanoNat.Nat.lt_le_incl i m Him) p) v).
+    /\ ~ minstance i n (V.take i (lt_le_weak i m Him) p) v).
 
+(* The Versions of Definition 2 are Equivalent *)
 Theorem row_filters_equiv : 
     forall (i m n : nat) (p : pmatrix m n) (v : vvec n) (Him : i < m),
     row_filters i m n p v Him <-> row_filters' i m n p v Him.
@@ -178,6 +252,56 @@ Proof.
             destruct H as [Hxi H].
             specialize H2 with (j := x) (Hji := Hxi).
             apply H2.
-Admitted.
+            pose proof VL.nth_take as NT.
+            pose proof (NT (pvec n) (S n0) 
+                (VectorDef.cons (pvec n) h n0 p) 
+                x i Hxi Him) as HY.
+            rewrite HY. rewrite HY in H2.
+            assumption.
+    - unfold row_filters' in H.
+        destruct H as [H1 H2].
+        unfold row_filters. split.
+        + assumption.
+        + intros j Hji. 
+            unfold not. intros NV.
+            inversion NV; subst.
+            { unfold vvec in v.
+                assert (n = 0).
+                - symmetry in H0.
+                    apply length_zero_iff_nil in H0.
+                    rewrite VL.vec_len in H0. assumption.
+                - subst. apply H2. unfold minstance.
+                    exists j. exists Hji.
+                    pose proof VL.nth_take as NT.
+                    pose proof (NT (pvec 0) (S n0) 
+                        (VectorDef.cons (pvec 0) h n0 p)
+                        j i Hji Him) as HY.
+                    rewrite <- HY. 
+                    assumption.
+            }
+            { assert (n = 0).
+                - symmetry in H3.
+                    apply length_zero_iff_nil in H3.
+                    rewrite VL.vec_len in H3. assumption.
+                - subst. apply H2. unfold minstance.
+                    exists j. exists Hji.
+                    pose proof VL.nth_take as NT.
+                    pose proof (NT (pvec 0) (S n0) 
+                        (VectorDef.cons (pvec 0) h n0 p)
+                        j i Hji Him) as HY.
+                    rewrite <- HY. 
+                    assumption. 
+            }
+            { unfold vvec in v.
+                apply H2. unfold minstance.
+                    exists j. exists Hji.
+                    pose proof VL.nth_take as NT.
+                    pose proof (NT (pvec n) (S n0) 
+                        (VectorDef.cons (pvec n) h n0 p)
+                        j i Hji Him) as HY.
+                    rewrite <- HY. 
+                    assumption.
+            }
+Qed.
 
 End StrictPatterns.
