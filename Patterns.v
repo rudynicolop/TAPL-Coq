@@ -19,8 +19,14 @@ Require Import Coq.Arith.PeanoNat.
 Require Coq.Logic.ClassicalFacts.
 Module CF := Coq.Logic.ClassicalFacts.
 Require Import Coq.Sets.Ensembles.
+Require Coq.Logic.Classical_Pred_Type.
+Module CPT := Coq.Logic.Classical_Pred_Type.
+Require Coq.Logic.Classical_Prop.
+Module CP := Coq.Logic.Classical_Prop.
+Require Import Coq.Logic.Decidable.
 
 Axiom proof_irrelevance : CF.proof_irrelevance.
+Axiom excluded_middle : CF.excluded_middle.
 
 Module VectorLemmas.
 
@@ -227,8 +233,8 @@ Definition minstance
 (* Definition 2 (ML Pattern Matching reformulated with Definition 3) *)
 Definition row_filters' 
     (i m n : nat) (p : pmatrix m n) (v : vvec n) (Him : i < m) :=
-    (vinstance n v (V.nth p (F.of_nat_lt Him))
-    /\ ~ minstance i n (V.take i (lt_le_weak i m Him) p) v).
+    (vinstance n v (V.nth p (F.of_nat_lt Him)) /\ 
+    ~ minstance i n (V.take i (lt_le_weak i m Him) p) v).
 
 (* The Versions of Definition 2 are Equivalent *)
 Theorem row_filters_equiv : 
@@ -257,12 +263,29 @@ Proof.
         assumption.
 Qed.
 
+(* If P <= v, then there exists a row i in P
+    such that i is the first such row to filter v. *)
+Lemma minstance_row_filters :
+    forall (m n : nat) (p : pmatrix m n) (v : vvec n),
+    minstance m n p v <-> 
+    exists (i : nat) (Him : i < m), row_filters i m n p v Him.
+Proof.
+Admitted.
+
 (* Definition 4 (Exhaustiveness): *)
+Definition exhaustive' (m n : nat) (p : pmatrix m n) := 
+    forall (v : vvec n), exists (i : nat) (Him : i < m),
+    row_filters' i m n p v Him.
+
 Definition exhaustive (m n : nat) (p : pmatrix m n) :=
     forall (v : vvec n), exists (i : nat) (Him : i < m),
     row_filters i m n p v Him.
 
 (* Definition 5 (Useless Clause): *)
+Definition useless_clause'
+    (i m n : nat) (p : pmatrix m n) (Him : i < m) := 
+    ~ exists (v : vvec n), row_filters' i m n p v Him.
+
 Definition useless_clause 
     (i m n : nat) (p : pmatrix m n) (Him : i < m) :=
     ~ exists (v : vvec n), row_filters i m n p v Him.
@@ -303,13 +326,30 @@ Proof.
 Qed.      
 
 (* Proposition 1.1: *)
+Theorem exhaustive_cond' :
+    forall (m n : nat) (p : pmatrix m n),
+    exhaustive' m n p <-> ~ U m n p (wild_vec n).
+Proof.
+    split.
+    - intros. unfold exhaustive' in H. unfold U.
+        unfold upred. unfold not. 
+        intros [v [HMI HVI]].
+        apply HMI. unfold minstance.
+        specialize H with v.
+        destruct H as [i [Him [HVI' HNMI]]].
+        exists i. exists Him.
+        assumption.
+    - admit.
+Admitted.
+
 Theorem exhaustive_cond : 
     forall (m n : nat) (p : pmatrix m n),
     exhaustive m n p <-> ~ U m n p (wild_vec n).
 Proof.
-    unfold exhaustive; unfold U; 
-    unfold upred; split; intros.
-    - unfold not. intros [v [Hm Hv]].
+    split; intros.
+    - unfold exhaustive in *; unfold U in *; 
+        unfold upred in *; 
+        unfold not in *. intros [v [Hm Hv]].
         apply Hm.
         specialize H with v.
         destruct H as [i [Him Hrf]].
@@ -327,7 +367,5 @@ Theorem useless_cond :
     useless_clause i m n p Him <-> 
     ~ U i n (V.take i (lt_le_weak i m Him) p) (V.nth p (F.of_nat_lt Him)).
 Admitted.
-
-
 
 End StrictPatterns.
