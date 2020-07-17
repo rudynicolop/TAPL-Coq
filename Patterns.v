@@ -4,6 +4,8 @@
     http://moscova.inria.fr/~maranget/papers/warn/index.html
 *)
 
+Require Coq.Program.Wf.
+(* Require Import Recdef. *)
 Require Import Coq.Strings.String.
 Require Import Coq.Lists.List.
 Import ListNotations.
@@ -24,9 +26,41 @@ Module CPT := Coq.Logic.Classical_Pred_Type.
 Require Coq.Logic.Classical_Prop.
 Module CP := Coq.Logic.Classical_Prop.
 Require Import Coq.Logic.Decidable.
+Require Import Coq.Bool.Bool.
 
 Axiom proof_irrelevance : CF.proof_irrelevance.
 Axiom excluded_middle : CF.excluded_middle.
+
+Definition curry {A B C : Type} (f : A -> B -> C) (ab : A * B) := 
+    match ab with (a,b) => f a b end.
+
+Definition uncurry {A B C : Type} (f : A * B -> C) (a : A) (b : B) := f (a,b).
+
+Inductive tree : Type :=
+    | Leaf
+    | Node (bs : list tree).
+
+Fixpoint height (t : tree) :=
+    match t with
+    | Leaf => 0
+    | Node bs => S (fold_left (fun m b => max m (height b)) bs 0)
+    end.
+
+(* Fixpoint tree_eq (t1 t2 : tree) : bool :=
+    match t1, t2 with
+    | Leaf, Leaf => true
+    | Node bs1, Node bs2 =>
+        forallb (curry tree_eq) (combine bs1 bs2)
+    | _, _ => false
+    end. *)
+
+Module Type HasRefl.
+Parameter A : Type.
+Parameter B : Type.
+Parameter P : A -> B -> Prop.
+Parameter f : A -> B -> bool.
+Axiom refl : forall (a : A) (b : B), P a b <-> f a b = true.
+End HasRefl.
 
 Module VectorLemmas.
 
@@ -88,23 +122,83 @@ Lemma to_list_cons :
     V.to_list (V.cons A h n v) = h:: V.to_list v.
 Proof. intros. reflexivity. Qed.
 
+Definition forall2b {n : nat} {A B : Type}
+    (f : A -> B -> bool) (va : V.t A n) (vb : V.t B n) : bool.
+Proof.
+    induction n.
+    - apply true.
+    - inversion va; inversion vb; subst.
+        apply ((f h h0) && IHn X X0).
+Defined.
+
+(* Fixpoint vmem {A : Type} {n : nat} (e : A) (v : V.t A n) : bool.
+Proof.
+    induction v eqn:eqv.
+    - apply false.
+    - pose proof (vmem A n e t) as tail.
+        pose proof () *)
+
 End VectorLemmas.
+
+Module Vecotr_Forall2_refl (M : HasRefl).
+    
+Import VectorLemmas.
+Import V.VectorNotations.
+
+(* this is really ass to prove *)
+Axiom vect_nil : 
+    forall {A : Type} (v : V.t A 0), v = V.nil A.
+
+(* also incredibly ass,
+    if you don't believe me
+    then try it yourself *)
+Axiom vect_cons : forall {A : Type} {n : nat}
+    (v : V.t A (S n)), exists (h : A) (t : V.t A n),
+    v = V.cons A h n t.
+
+Theorem forall2_refl : 
+    forall {n : nat} (va : V.t M.A n) (vb : V.t M.B n),
+    V.Forall2 M.P va vb <-> forall2b M.f va vb = true.
+Proof.
+    induction n; split; intros.
+    - reflexivity.
+    - pose proof (vect_nil va) as VA.
+        pose proof (vect_nil vb)as VB.
+        subst. constructor.
+    - pose proof (vect_cons va) as [ha [ta VA]].
+        pose proof (vect_cons vb) as [hb [tb VB]].
+        subst. inversion H; subst.
+        apply IHn in H6. apply M.refl in H4.
+        simpl. unfold eq_rect_r. simpl.
+        Search (existT _ _ _ = existT _ _ _ -> _ = _).
+        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+        apply STUPID in H2; apply STUPID in H5; 
+        subst; try apply Nat.eq_dec.
+        rewrite H4. rewrite H6. reflexivity.
+    - pose proof (vect_cons va) as [ha [ta VA]].
+        pose proof (vect_cons vb) as [hb [tb VB]].
+        subst. simpl in H. unfold eq_rect_r in H. simpl in H.
+        apply andb_true_iff in H as [H1 H2]. constructor.
+        + apply M.refl. assumption.
+        + apply IHn. assumption.
+Qed.
+
+End Vecotr_Forall2_refl.
 
 (* General Signature a Language Must Satisfy *)
 Module Type Language.
 Parameter constructor : Type.
 Parameter constructor_arity : constructor -> nat.
+Parameter constructor_eqb : constructor -> constructor -> bool.
+Axiom ceqb_refl : forall (c1 c2 : constructor),
+    c1 = c2 <-> constructor_eqb c1 c2 = true.
 Parameter value: Type.
-Parameter sub_values: value -> list value.
 Parameter vconstruct : value -> constructor -> Prop.
 Parameter value_to_constructor : value -> constructor.
+Parameter sub_values : forall (v : value), V.t value (constructor_arity (value_to_constructor v)).
 Axiom construct_refl : 
     forall (v : value) (c : constructor),
     vconstruct v c <-> value_to_constructor v = c.
-Axiom sub_arity : 
-    forall (v : value) (c : constructor),
-    vconstruct v c ->
-    constructor_arity c = length (sub_values v).
 End Language.
 
 (* Example Language with just numbers and pairs *)
@@ -113,23 +207,34 @@ Module PairLang <: Language.
 Inductive constructor' : Type :=
     | Base
     | Pair.
+
 Definition constructor := constructor'.
+
 Definition constructor_arity (c : constructor) : nat := 
     match c with
     | Base => 0
     | Pair => 2
     end.
 
+Definition constructor_eqb (c1 c2 : constructor) := 
+    match c1, c2 with
+    | Base, Base
+    | Pair, Pair => true
+    | _,_ => false
+    end.
+
+Theorem ceqb_refl : forall (c1 c2 : constructor),
+    c1 = c2 <-> constructor_eqb c1 c2 = true.
+Proof.
+    destruct c1; destruct c2; split;
+    simpl; intros;
+    try reflexivity; try inversion H.
+Qed.
+
 Inductive value' : Type :=
     | VBase (n : nat)
     | VPair (v1 v2 :value').
 Definition value := value'.
-
-Definition sub_values (v : value) := 
-    match v with
-    | VBase _ => []
-    | VPair v1 v2 => [v1;v2]
-    end.
 
 Inductive vconstruct' : value -> constructor -> Prop :=
     | vcbase : forall (n : nat), vconstruct' (VBase n) Base
@@ -145,6 +250,14 @@ Definition value_to_constructor (v : value) : constructor :=
     | VPair _ _ => Pair
     end.
 
+Definition sub_values (v : value) : 
+    (V.t value (constructor_arity (value_to_constructor v))).
+Proof.
+    destruct v eqn:eqv.
+    - apply (V.nil value).
+    - apply (V.cons value v0_1 1 (V.cons value v0_2 0 (V.nil value))).
+Defined.
+
 Theorem construct_refl : 
     forall (v : value) (c : constructor),
     vconstruct v c <-> value_to_constructor v = c.
@@ -156,14 +269,6 @@ Proof.
         + apply IHv1. reflexivity.
         + apply IHv2. reflexivity.
 Qed.
-
-Theorem sub_arity : 
-    forall (v : value) (c : constructor),
-    vconstruct v c ->
-    constructor_arity c = length (sub_values v).
-Proof.
-    induction v; intros; inversion H; subst; reflexivity.
-Qed.
 End PairLang.
 
 Inductive Forall2 (A B : Type) (P : A -> B -> Prop) : list A -> list B -> Prop :=
@@ -171,6 +276,13 @@ Inductive Forall2 (A B : Type) (P : A -> B -> Prop) : list A -> list B -> Prop :
     | F2_B_nil : forall (la : list A), Forall2 A B P la nil
     | F2_cons  : forall (ha : A) (hb : B) (ta : list A) (tb : list B),
         P ha hb -> Forall2 A B P ta tb -> Forall2 A B P (ha::ta) (hb::tb).
+
+Fixpoint forall2b {A B : Type} (f : A -> B -> bool) (a : list A) (b : list B) :=
+    match a,b with
+    | nil,_
+    | _,nil => true
+    | ha::ta,hb::tb => f ha hb && forall2b f ta tb
+    end.
 
 (* Exhaustive-Pattern Checking for a Strict Language *)
 Module StrictPatterns (L : Language).
@@ -189,6 +301,24 @@ Inductive pattern : Type :=
 
 Definition pvec (n : nat) := V.t pattern n.
 
+Fixpoint pattern_to_nat (p : pattern) : nat :=
+    match p with
+    | Wildcard | VarPattern _ => 1
+    | OrPattern p1 p2 => S ((pattern_to_nat p1) + (pattern_to_nat p2))
+    | Constructor _ ps =>
+        S (V.fold_left (fun acc p' => acc + (pattern_to_nat p')) 0 ps)
+    end.
+
+Fixpoint pattern_height (p : pattern) : nat :=
+    match p with
+    | Wildcard
+    | VarPattern _ => 1
+    | Constructor _ ps =>
+        S (V.fold_left (fun max' p' => Nat.max max' (pattern_height p')) 0 ps)
+    | OrPattern p1 p2 =>
+        S (Nat.max (pattern_height p1) (pattern_height p2))
+    end.
+
 (* Definition 1 (The Instance Relation): *)
 Inductive instance (v : value) : pattern -> Prop :=
     | inst_wild : instance v Wildcard
@@ -198,11 +328,72 @@ Inductive instance (v : value) : pattern -> Prop :=
         instance v p1 \/ instance v p2 ->
         instance v (OrPattern p1 p2)
     | inst_construct : 
-        forall (c : constructor) 
-        (ps : pvec (constructor_arity c)),
-        vconstruct v c ->
-        Forall2 value pattern instance (sub_values v) (V.to_list ps) ->
-        instance v (Constructor c ps).
+       forall (ps : pvec (constructor_arity (value_to_constructor v))),
+        V.Forall2 instance (sub_values v) ps ->
+        instance v (Constructor (value_to_constructor v) ps).
+
+Definition instanceb' 
+    (f : value -> pattern -> bool) 
+    (c : constructor) (v : value) (ps : pvec (constructor_arity c)) : bool.
+Proof.
+    destruct (constructor_eqb (value_to_constructor v) c) eqn:eqc.
+    + apply ceqb_refl in eqc; subst.
+        apply (VL.forall2b f (sub_values v) ps).
+    + apply false.
+Defined.
+
+Inductive pcompare (v : value) : Type :=
+    | PFalse
+    | PTrue (ps : pvec (constructor_arity (value_to_constructor v))).
+
+Definition pcv 
+    (c : constructor) (v : value) (ps : pvec (constructor_arity c)) : pcompare v.
+Proof.
+    destruct (constructor_eqb (value_to_constructor v) c) eqn:eqc.
+    - apply ceqb_refl in eqc; subst. apply (PTrue v ps).
+    - apply (PFalse v).
+Defined.
+Program Fixpoint instanceb (v : value) (p : pattern) {measure (pattern_to_nat p)} : bool :=
+    match p with
+    | Wildcard => true
+    | VarPattern _ => true
+    | OrPattern p1 p2 => instanceb v p1 || instanceb v p2
+    | Constructor c ps => 
+        match pcv c v ps with
+        | PFalse _ => false
+        | PTrue _ ps => 
+        VL.forall2b (fun v' p' => instanceb v' p') (sub_values v) ps 
+        end 
+    end.
+Next Obligation.
+Proof. simpl. omega. Qed.
+Next Obligation.
+Proof. simpl. omega. Qed.
+Admit Obligations.
+
+Theorem instance_refl : forall (v : value) (p : pattern),
+    instance v p <-> instanceb v p = true.
+Proof.
+    split; intros; induction p; 
+    try reflexivity.
+    - inversion H; subst.
+        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+        apply STUPID in H2; subst.
+        + unfold instanceb.
+            
+Qed.
+
+
+(* Fixpoint instanceb (v : value) (p : pattern) {struct p} : bool.
+    induction p eqn:eqp.
+    - apply true.
+    - apply true.
+    - destruct (constructor_eqb (value_to_constructor v) c) eqn:eqc.
+        + apply ceqb_refl in eqc; subst.
+            apply (VL.forall2b instanceb (sub_values v) t).
+        + apply false.
+    - apply ((instanceb v p0_1) || (instanceb v p0_2)).
+Defined. *)
 
 (* Definition 1 (Vector Instance Relation) *)
 Definition vinstance 
@@ -211,7 +402,6 @@ Definition vinstance
 
 (* An m x n pattern matrix *)
 Definition pmatrix (m n : nat) : Type := V.t (pvec n) m.
-
 
 (* Definition 2 (ML Pattern Matching)
     A Row  i in P filters v iff
