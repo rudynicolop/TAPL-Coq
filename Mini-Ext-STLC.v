@@ -90,6 +90,65 @@ Proof. intros. reflexivity. Qed.
 
 End VectorLemmas.
 
+Definition forall2b {n : nat} {A B : Type}
+    (f : A -> B -> bool) (va : V.t A n) (vb : V.t B n) : bool.
+Proof.
+    induction n.
+    - apply true.
+    - inversion va; inversion vb; subst.
+        apply ((f h h0) && IHn X X0).
+Defined.
+
+Module Type HasRefl.
+Parameter A : Type.
+Parameter B : Type.
+Parameter P : A -> B -> Prop.
+Parameter f : A -> B -> bool.
+Axiom refl : forall (a : A) (b : B), P a b <-> f a b = true.
+End HasRefl.
+
+Module VectorForall2Refl (M : HasRefl).
+Import V.VectorNotations.
+
+(* this is really ass to prove *)
+Axiom vect_nil : 
+    forall {A : Type} (v : V.t A 0), v = V.nil A.
+
+(* also incredibly ass,
+    if you don't believe me
+    then try it yourself *)
+Axiom vect_cons : forall {A : Type} {n : nat}
+    (v : V.t A (S n)), exists (h : A) (t : V.t A n),
+    v = V.cons A h n t.
+
+Theorem forall2_refl : 
+    forall {n : nat} (va : V.t M.A n) (vb : V.t M.B n),
+    V.Forall2 M.P va vb <-> forall2b M.f va vb = true.
+Proof.
+    induction n; split; intros.
+    - reflexivity.
+    - pose proof (vect_nil va) as VA.
+        pose proof (vect_nil vb)as VB.
+        subst. constructor.
+    - pose proof (vect_cons va) as [ha [ta VA]].
+        pose proof (vect_cons vb) as [hb [tb VB]].
+        subst. inversion H; subst.
+        apply IHn in H6. apply M.refl in H4.
+        simpl. unfold eq_rect_r. simpl.
+        Search (existT _ _ _ = existT _ _ _ -> _ = _).
+        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+        apply STUPID in H2; apply STUPID in H5; 
+        subst; try apply Nat.eq_dec.
+        rewrite H4. rewrite H6. reflexivity.
+    - pose proof (vect_cons va) as [ha [ta VA]].
+        pose proof (vect_cons vb) as [hb [tb VB]].
+        subst. simpl in H. unfold eq_rect_r in H. simpl in H.
+        apply andb_true_iff in H as [H1 H2]. constructor.
+        + apply M.refl. assumption.
+        + apply IHn. assumption.
+Qed.
+End VectorForall2Refl.
+
 Module VL := VectorLemmas.
 
 Definition id := string.
@@ -222,6 +281,25 @@ Definition vinstance
     {n : nat} (p : pvec n) (v : vvec n) := 
     V.Forall2 instance p v.
 
+Definition vinstanceb 
+    {n : nat} (p : pvec n) (v : vvec n) : bool :=
+    forall2b instanceb p v.
+
+Module InstanceRefl <: HasRefl.
+Definition A := pattern.
+Definition B := value.
+Definition P := instance.
+Definition f := instanceb.
+Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
+Proof. apply instance_refl. Qed.
+End InstanceRefl.
+
+Module PV := VectorForall2Refl(InstanceRefl).
+
+Theorem vinstance_refl : forall {n : nat} (p : pvec n) (v : vvec n),
+    vinstance p v <-> vinstanceb p v = true. 
+Proof. intros. apply (PV.forall2_refl p v). Qed.
+
 (* Definition 2 (ML Pattern Matching)
     A Row  i in P filters v iff
     - Pi <= v
@@ -299,3 +377,12 @@ Definition U {m n : nat} (p : pmatrix m n) (q : pvec n) :=
 
 (* M(p,q): *)
 Definition M {m n : nat} (p : pmatrix m n) (q : pvec n) := {v : vvec n | upred p q v}.
+
+(* If P <= v, then there exists a row i in P
+    such that i is the first such row to filter v. *)
+Theorem minstance_row_filters :
+    forall {m n : nat} (p : pmatrix m n) (v : vvec n),
+    minstance p v <-> 
+    exists (i : nat) (Him : i < m), row_filters i p v Him.
+Proof.
+Admitted.
