@@ -25,9 +25,89 @@ Require Coq.Logic.Classical_Prop.
 Module CP := Coq.Logic.Classical_Prop.
 Require Import Coq.Logic.Decidable.
 Require Import Coq.Bool.Bool.
+Require Coq.Program.Wf.
 
 Axiom proof_irrelevance : CF.proof_irrelevance.
 Axiom excluded_middle : CF.excluded_middle.
+
+Inductive tree := 
+    | Leaf (n : nat)
+    | Branch (ts : list tree).
+
+Inductive tree_eq : tree -> tree -> Prop :=
+    | eq_leaf : forall (n : nat), tree_eq (Leaf n) (Leaf n)
+    | eq_branch : forall (t1 t2 : list tree),
+        Forall2 tree_eq t1 t2 ->
+        tree_eq (Branch t1) (Branch t2).
+ 
+Fixpoint tree_to_nat (t : tree) : nat :=
+    match t with
+    | Leaf _ => S 0
+    | Branch ts => 
+        S (fold_right (fun t' n => n + (tree_to_nat t')) 0 ts)
+    end.
+
+Lemma tree_to_nat_pos :
+    forall (t : tree), tree_to_nat t > 0.
+Proof. induction t; simpl; omega. Qed.
+
+Program Fixpoint tree_eqb (t1 t2 : tree) {measure (tree_to_nat t1)} : bool :=
+    match t1, t2 with
+    | Leaf n1, Leaf n2 => n1 =? n2
+    | Branch nil, Branch nil => true
+    | Branch (h1::ts1), Branch (h2::ts2) =>
+        tree_eqb h1 h2 &&
+        tree_eqb (Branch ts1) (Branch ts2)
+    | _, _ => false
+    end.
+Next Obligation.
+Proof. simpl. omega. Qed.
+Next Obligation.
+Proof. simpl. pose proof (tree_to_nat_pos h1). omega. Qed.
+Next Obligation.
+Proof.
+    split.
+    - unfold not; intros [h _]. inversion h.
+    - split; intros; subst.
+        + unfold not. intros [h _]. inversion h.
+        + unfold not. intros [_ h]. inversion h.
+Qed.
+Next Obligation.
+Proof.
+    split.
+    - unfold not; intros [_ h]. inversion h.
+    - split; intros; subst.
+        + unfold not. intros [h _]. inversion h.
+        + unfold not. intros [h _]. inversion h.
+Qed.
+Next Obligation.
+Proof.
+    split.
+    - unfold not; intros [_ h]. inversion h.
+    - split; intros; subst.
+        + unfold not. intros [h _]. inversion h.
+        + unfold not. intros [h _]. inversion h.
+Qed.
+Next Obligation.
+Proof.
+    split.
+    - unfold not; intros [_ h]. inversion h.
+    - split; intros; subst.
+        + unfold not. intros [_ h]. inversion h.
+        + unfold not. intros [h _]. inversion h.
+Qed.
+Next Obligation.
+Proof.
+    split.
+    - unfold not; intros [h _]. inversion h.
+    - split; intros; subst.
+        + unfold not. intros [_ h]. inversion h.
+        + unfold not. intros [h _]. inversion h.
+Qed.
+
+Theorem tree_eq_refl : forall (t1 t2 : tree),
+    tree_eq t1 t2 <-> tree_eqb t1 t2 = true.
+Admitted.
 
 Definition id := string.
 
@@ -130,49 +210,139 @@ End StrictLang.
 Module ExtendedSTLC <: StrictLang.
 
 Inductive type : Type :=
-    | TTup (n : nat) (ts : V.t type n)
+    | TTup (ts : list type)
     | TFun (t t' : type).
 
 Inductive pattern : Type :=
-    | PTup (n : nat) (ps : V.t pattern n)
+    | PWild
     | PVar (x : id)
-    | PWild.
+    | PTup (ps : list pattern).
 
 Inductive expr : Type :=
     | Var (x : id)
     | Fun (p : pattern) (t : type) (e : expr)
     | App (e1 e2 : expr)
-    | Tup (n : nat) (es : V.t expr n)
+    | Tup (es : list expr)
     | Proj (e : expr) (n : nat)
     | Match (e : expr) (cases : list (pattern * expr)).
 
 Inductive value : Type :=
-    | VTup (n : nat) (v : V.t value n)
+    | VTup (vs : list value)
     | VFun (p : pattern) (t : type) (e : expr).
 
 Inductive instance : pattern -> value -> Prop :=
     | instancewild : forall (v : value), instance PWild v
     | instancevar : forall (x : id) (v : value), instance (PVar x) v
-    | instancetup : forall {n : nat} (p : V.t pattern n) (v : V.t value n),
-        V.Forall2 instance p v -> instance (PTup n p) (VTup n v).
+    | instancetup : forall (ps : list pattern) (vs : list value),
+        length ps = length vs ->
+        Forall2 instance ps vs -> instance (PTup ps) (VTup vs).
 
-Definition ib' {np nv : nat} 
-    (f : pattern -> value -> bool) 
-    (ps : V.t pattern np) (vs : V.t value nv) : bool.
-Proof.
-    destruct (np =? nv) eqn:eq.
-    - apply Nat.eqb_eq in eq; subst.
-        apply (forall2b f ps vs).
-    - apply false.
-Defined.
+Fixpoint pat_to_nat (p : pattern) {struct p} : nat :=
+    match p with
+    | PWild
+    | PVar _ => S 0
+    | PTup ps => S (fold_right (fun p' n => (pat_to_nat p') + n) 0 ps)
+    end.
 
-Definition ib (fib : pattern -> value -> bool) (p : pattern) (v : value) : bool :=
+Lemma pat_to_nat_pos : forall (p : pattern),
+    pat_to_nat p > 0.
+Proof. intros. induction p; try (simpl; omega). Qed.
+
+Program Fixpoint instanceb (p : pattern) (v : value) {measure (pat_to_nat p)} : bool :=
     match p,v with
-    | PWild, _ => true
-    | PVar _, _ => true
-    | PTup np ps, VTup nv vs => ib' fib ps vs
+    | PWild, _
+    | PVar _, _ 
+    | PTup nil, VTup nil => true
+    | PTup (hp::tp), VTup (hv::tv) =>
+        instanceb hp hv && instanceb (PTup tp) (VTup tv)
     | _,_ => false
     end.
+Next Obligation.
+Proof. simpl. unfold fold_right. omega. Qed.
+Next Obligation.
+Proof. simpl. pose proof (pat_to_nat_pos hp). omega. Qed.
+Next Obligation.
+Proof.
+    split; intros.
+    - unfold not; intros [h _]. inversion h.
+    - split.
+        + unfold not; intros [_ h].
+            inversion h.
+        + split; intros; unfold not; 
+            subst; intros [H3 _]; 
+            inversion H3.
+Qed.
+Next Obligation.
+Proof.
+    split; intros.
+    - unfold not. intros [h _].
+        inversion h.
+    - split.
+        + unfold not; intros [_ h].
+            inversion h.
+        + split; intros; unfold not;
+            subst; intros [H3 _];
+            inversion H3.
+Qed.
+Next Obligation.
+Proof.
+    split; intros.
+    - unfold not. intros [h _].
+        inversion h.
+    - split.
+        + unfold not; intros [h _].
+            inversion h.
+        + split; intros; unfold not; subst; intros [H3 H4].
+            * inversion H4.
+            * inversion H3.
+Qed.
+Next Obligation.
+Proof.
+    split; intros.
+    - unfold not. intros [h _].
+        inversion h.
+    - split.
+        + unfold not; intros [h _].
+            inversion h.
+        + split; intros; unfold not; subst; intros [H5 H6].
+            * inversion H6.
+            * inversion H5.
+Qed.
+
+Lemma length_eq : 
+    forall {A : Type} (l1 l2 : list A),
+    l1 = l2 -> length l1 = length l2.
+Proof.
+    induction l1; induction l2; intros.
+    + reflexivity.
+    + inversion H.
+    + inversion H.
+    + inversion H; subst. reflexivity.
+Qed.
+
+Theorem instance_refl : 
+    forall (p : pattern) (v : value),
+    instance p v <-> instanceb p v = true.
+Proof.
+    intros. split.
+    - intros H; inversion H; subst.
+        + destruct v; simpl.
+    split; intros.
+    dependent induction p;
+    dependent induction v; split; intros.
+    - unfold instanceb.
+    destruct p; destruct v; split.
+    - admit.
+    - intros. dependent induction vs.
+        + constructor.
+        +
+    split.
+    -
+    split; intros.
+    - admit.
+    - destruct 
+Qed.
+
 
 End ExtendedSTLC.
 
