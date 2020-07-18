@@ -187,8 +187,15 @@ Proof.
         + right. apply IHn. eapply STUPID in H3; 
             subst; try apply Nat.eq_dec.
             assumption.
-Admitted.
-
+    - pose proof (vect_cons v) as [h [t V]]; subst.
+        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+        simpl in H. unfold eq_rect_r in H; simpl in H.
+        apply orb_true_iff in H. destruct H.
+        + apply V.Exists_cons_hd. apply M.refl.
+            assumption.
+        + apply V.Exists_cons_tl. apply IHn.
+            assumption. 
+Qed.
 End VectorExistsRefl.
 
 Module VectorForall2Refl (M : HasRefl2).
@@ -389,9 +396,49 @@ Definition minstance
     vinstance (V.nth p (F.of_nat_lt Him)) v.
 
 Definition minstanceb
-    {m n : nat} (p : pmatrix m n) (v : vvec n) : bool.
-Admitted.
+    {m n : nat} (p : pmatrix m n) (v : vvec n) : bool :=
+    existsb (fun p' => vinstanceb p' v) p.
 
+Theorem minstance_refl : 
+    forall {m n : nat} (p : pmatrix m n) (v : vvec n),
+    minstance p v <-> minstanceb p v = true.
+Proof.
+    unfold minstance. unfold minstanceb. 
+    induction m; split; intros.
+    - destruct H as [i [Him HV]].
+        inversion Him.
+    - discriminate H.
+    - destruct H as [i [Him HV]].
+        pose proof (vect_cons p) as [h [t VC]]; subst.
+        simpl. unfold eq_rect_r. simpl.
+        apply orb_true_iff.
+        induction i.
+        + simpl in HV. left. apply vinstance_refl.
+            assumption.
+        + right. apply IHm. exists i.
+            assert (HO : i < m); try omega.
+            exists HO. simpl in HV.
+            pose proof proof_irrelevance as PI.
+            unfold CF.proof_irrelevance in PI.
+            pose proof (PI (i < m) HO ((lt_S_n i m Him))) as PIHim.
+            rewrite PIHim. assumption.
+    - pose proof (vect_cons p) as [h [t VC]]; subst.
+        simpl in H. unfold eq_rect_r in H.
+        simpl in H. apply orb_true_iff in H as [H| H].
+        + exists 0. assert (Him : 0 < S m); try omega.
+            exists Him. simpl. apply vinstance_refl.
+            assumption.
+        + apply IHm in H. destruct H as [i [Him H]].
+            exists (S i). assert (HSiSm : S i < S m); try omega.
+            exists HSiSm. 
+            pose proof proof_irrelevance as PI.
+            unfold CF.proof_irrelevance in PI.
+            pose proof VL.nth_cons as NC.
+            pose proof (NC (pvec n) i m h t Him).
+            pose proof (PI (S i < S m) HSiSm (lt_n_S i m Him)).
+            rewrite H1. rewrite <- H0.
+            assumption.
+Qed.
 
 (* Definition 2 (ML Pattern Matching reformulated with Definition 3) *)
 Definition row_filters' {m n : nat} 
