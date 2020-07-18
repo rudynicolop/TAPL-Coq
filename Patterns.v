@@ -24,9 +24,158 @@ Module CPT := Coq.Logic.Classical_Pred_Type.
 Require Coq.Logic.Classical_Prop.
 Module CP := Coq.Logic.Classical_Prop.
 Require Import Coq.Logic.Decidable.
+Require Import Coq.Bool.Bool.
 
 Axiom proof_irrelevance : CF.proof_irrelevance.
 Axiom excluded_middle : CF.excluded_middle.
+
+Definition id := string.
+
+Inductive type : Type :=
+    | Base
+    | Fun (t1 t2 : type).
+
+Inductive expr : Type :=
+    | Var (x : id)
+    | Lam (x : id) (t : type) (e : expr)
+    | App (e1 e2 : expr).
+
+Definition gamma := id -> option type.
+
+Definition empty : gamma := fun _ => None.
+
+Definition bind (x : id) (t : type) (g : gamma) : gamma := 
+    fun y => if (y =? x)%string then Some t else g y.
+
+Inductive check (g : gamma) : expr -> type -> Prop :=
+    | checkvar : forall (x : id) (t : type), 
+        g x = Some t -> check g (Var x) t
+    | checklam : forall (x : id) (t t' : type) (e : expr),
+        check (bind x t g) e t' -> check g (Lam x t e) (Fun t t')
+    | checkapp : forall (e1 e2 : expr) (t t' : type),
+        check g e1 (Fun t t') -> check g e2 t -> check g (App e1 e2) t'.
+
+Definition well_typed (e : expr) := exists (t : type), check empty e t.
+
+Definition wf_expr := {e : expr | well_typed e}.
+
+Definition forall2b {n : nat} {A B : Type}
+    (f : A -> B -> bool) (va : V.t A n) (vb : V.t B n) : bool.
+Proof.
+    induction n.
+    - apply true.
+    - inversion va; inversion vb; subst.
+        apply ((f h h0) && IHn X X0).
+Defined.
+
+Module Type HasRefl.
+Parameter A : Type.
+Parameter B : Type.
+Parameter P : A -> B -> Prop.
+Parameter f : A -> B -> bool.
+Axiom refl : forall (a : A) (b : B), P a b <-> f a b = true.
+End HasRefl.
+
+Module VectorForall2Refl (M : HasRefl).
+Import V.VectorNotations.
+
+(* this is really ass to prove *)
+Axiom vect_nil : 
+    forall {A : Type} (v : V.t A 0), v = V.nil A.
+
+(* also incredibly ass,
+    if you don't believe me
+    then try it yourself *)
+Axiom vect_cons : forall {A : Type} {n : nat}
+    (v : V.t A (S n)), exists (h : A) (t : V.t A n),
+    v = V.cons A h n t.
+
+Theorem forall2_refl : 
+    forall {n : nat} (va : V.t M.A n) (vb : V.t M.B n),
+    V.Forall2 M.P va vb <-> forall2b M.f va vb = true.
+Proof.
+    induction n; split; intros.
+    - reflexivity.
+    - pose proof (vect_nil va) as VA.
+        pose proof (vect_nil vb)as VB.
+        subst. constructor.
+    - pose proof (vect_cons va) as [ha [ta VA]].
+        pose proof (vect_cons vb) as [hb [tb VB]].
+        subst. inversion H; subst.
+        apply IHn in H6. apply M.refl in H4.
+        simpl. unfold eq_rect_r. simpl.
+        Search (existT _ _ _ = existT _ _ _ -> _ = _).
+        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+        apply STUPID in H2; apply STUPID in H5; 
+        subst; try apply Nat.eq_dec.
+        rewrite H4. rewrite H6. reflexivity.
+    - pose proof (vect_cons va) as [ha [ta VA]].
+        pose proof (vect_cons vb) as [hb [tb VB]].
+        subst. simpl in H. unfold eq_rect_r in H. simpl in H.
+        apply andb_true_iff in H as [H1 H2]. constructor.
+        + apply M.refl. assumption.
+        + apply IHn. assumption.
+Qed.
+End VectorForall2Refl.
+
+Module Type StrictLang.
+Parameter value : Type.
+Parameter pattern : Type.
+Parameter instance : pattern -> value -> Prop.
+Parameter instanceb : pattern -> value -> bool.
+Axiom instance_refl : forall (p : pattern) (v : value),
+    instance p v <-> instanceb p v = true.
+End StrictLang.
+
+Module ExtendedSTLC <: StrictLang.
+
+Inductive type : Type :=
+    | TTup (n : nat) (ts : V.t type n)
+    | TFun (t t' : type).
+
+Inductive pattern : Type :=
+    | PTup (n : nat) (ps : V.t pattern n)
+    | PVar (x : id)
+    | PWild.
+
+Inductive expr : Type :=
+    | Var (x : id)
+    | Fun (p : pattern) (t : type) (e : expr)
+    | App (e1 e2 : expr)
+    | Tup (n : nat) (es : V.t expr n)
+    | Proj (e : expr) (n : nat)
+    | Match (e : expr) (cases : list (pattern * expr)).
+
+Inductive value : Type :=
+    | VTup (n : nat) (v : V.t value n)
+    | VFun (p : pattern) (t : type) (e : expr).
+
+Inductive instance : pattern -> value -> Prop :=
+    | instancewild : forall (v : value), instance PWild v
+    | instancevar : forall (x : id) (v : value), instance (PVar x) v
+    | instancetup : forall {n : nat} (p : V.t pattern n) (v : V.t value n),
+        V.Forall2 instance p v -> instance (PTup n p) (VTup n v).
+
+Definition ib' {np nv : nat} 
+    (f : pattern -> value -> bool) 
+    (ps : V.t pattern np) (vs : V.t value nv) : bool.
+Proof.
+    destruct (np =? nv) eqn:eq.
+    - apply Nat.eqb_eq in eq; subst.
+        apply (forall2b f ps vs).
+    - apply false.
+Defined.
+
+Definition ib (fib : pattern -> value -> bool) (p : pattern) (v : value) : bool :=
+    match p,v with
+    | PWild, _ => true
+    | PVar _, _ => true
+    | PTup np ps, VTup nv vs => ib' fib ps vs
+    | _,_ => false
+    end.
+
+End ExtendedSTLC.
+
 
 Module VectorLemmas.
 
