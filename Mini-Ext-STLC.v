@@ -24,6 +24,8 @@ Require Coq.Logic.Classical_Prop.
 Module CP := Coq.Logic.Classical_Prop.
 Require Import Coq.Logic.Decidable.
 Require Import Coq.Program.Equality.
+Require Import Coq.Arith.Lt.
+Require Import Coq.Arith.PeanoNat.
 
 Axiom proof_irrelevance : CF.proof_irrelevance.
 Axiom excluded_middle : CF.excluded_middle.
@@ -90,6 +92,23 @@ Proof. intros. reflexivity. Qed.
 
 End VectorLemmas.
 
+Definition existsb {n : nat} {A : Type}
+    (f : A -> bool) (v : V.t A n) : bool.
+Proof.
+    induction n.
+    - apply false.
+    - inversion v; subst. apply (f h || IHn X).
+Defined.
+
+Definition forallb {n : nat} {A : Type}
+    (f : A -> bool) (va : V.t A n) : bool.
+Proof.
+    induction n.
+    - apply true.
+    - inversion va; subst.
+        apply (f h && IHn X).
+Defined.
+
 Definition forall2b {n : nat} {A B : Type}
     (f : A -> B -> bool) (va : V.t A n) (vb : V.t B n) : bool.
 Proof.
@@ -101,14 +120,18 @@ Defined.
 
 Module Type HasRefl.
 Parameter A : Type.
+Parameter P : A -> Prop.
+Parameter f : A -> bool.
+Axiom refl : forall (a : A), P a <-> f a = true.
+End HasRefl.
+
+Module Type HasRefl2.
+Parameter A : Type.
 Parameter B : Type.
 Parameter P : A -> B -> Prop.
 Parameter f : A -> B -> bool.
 Axiom refl : forall (a : A) (b : B), P a b <-> f a b = true.
-End HasRefl.
-
-Module VectorForall2Refl (M : HasRefl).
-Import V.VectorNotations.
+End HasRefl2.
 
 (* this is really ass to prove *)
 Axiom vect_nil : 
@@ -121,6 +144,55 @@ Axiom vect_cons : forall {A : Type} {n : nat}
     (v : V.t A (S n)), exists (h : A) (t : V.t A n),
     v = V.cons A h n t.
 
+Module VectorForallRefl (M : HasRefl).
+Import V.VectorNotations.
+Theorem forall_refl :
+    forall {n : nat} (v : V.t M.A n),
+    V.Forall M.P v <-> forallb M.f v = true.
+Proof.
+    induction n; split; intros.
+    - reflexivity.
+    - pose proof (vect_nil v) as V; subst. constructor.
+    - pose proof (vect_cons v) as [h [t V]]; subst.
+        inversion H; subst.
+        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+        eapply STUPID in H2; try apply Nat.eq_dec; subst.
+        simpl. unfold eq_rect_r. simpl.
+        apply andb_true_iff. split.
+        + apply M.refl. assumption.
+        + apply IHn. assumption.
+    - pose proof (vect_cons v) as [h [t V]]; subst.
+        simpl in H. unfold eq_rect_r in H. simpl in H.
+        apply andb_true_iff in H as [H1 H2]. constructor.
+        + apply M.refl. assumption.
+        + apply IHn. assumption.
+Qed.
+End VectorForallRefl.
+
+Module VectorExistsRefl (M : HasRefl).
+Import V.VectorNotations.
+Theorem exists_refl : 
+    forall {n : nat} (v : V.t M.A n),
+    V.Exists M.P v <-> existsb M.f v = true.
+Proof.
+    induction n; split; intros.
+    - inversion H.
+    - pose proof (vect_nil v) as V; subst. discriminate H.
+    - pose proof (vect_cons v) as [h [t V]]; subst.
+        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+        inversion H; subst; simpl; 
+        unfold eq_rect_r; simpl;
+        apply orb_true_iff.
+        + left. apply M.refl. assumption.
+        + right. apply IHn. eapply STUPID in H3; 
+            subst; try apply Nat.eq_dec.
+            assumption.
+Admitted.
+
+End VectorExistsRefl.
+
+Module VectorForall2Refl (M : HasRefl2).
+Import V.VectorNotations.
 Theorem forall2_refl : 
     forall {n : nat} (va : V.t M.A n) (vb : V.t M.B n),
     V.Forall2 M.P va vb <-> forall2b M.f va vb = true.
@@ -285,7 +357,7 @@ Definition vinstanceb
     {n : nat} (p : pvec n) (v : vvec n) : bool :=
     forall2b instanceb p v.
 
-Module InstanceRefl <: HasRefl.
+Module InstanceRefl <: HasRefl2.
 Definition A := pattern.
 Definition B := value.
 Definition P := instance.
@@ -315,6 +387,11 @@ Definition minstance
     {m n : nat} (p : pmatrix m n) (v : vvec n) :=
     exists (i : nat) (Him : i < m), 
     vinstance (V.nth p (F.of_nat_lt Him)) v.
+
+Definition minstanceb
+    {m n : nat} (p : pmatrix m n) (v : vvec n) : bool.
+Admitted.
+
 
 (* Definition 2 (ML Pattern Matching reformulated with Definition 3) *)
 Definition row_filters' {m n : nat} 
