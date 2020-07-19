@@ -349,6 +349,13 @@ Proof.
         constructor. assumption.
 Qed.
 
+
+(* Below are is the full-formulation of 
+    exhaustiveness, as a matrix based 
+    algoeithm. It is simply an asbtracted
+    formulation of exhaustiveness *)
+Module AdvancedExhaustiveness.
+
 Definition pvec (n : nat) := V.t pattern n.
 
 Definition pmatrix (m n : nat) := V.t (pvec n) m.
@@ -502,6 +509,20 @@ Definition U {m n : nat} (p : pmatrix m n) (q : pvec n) :=
 (* M(p,q): *)
 Definition M {m n : nat} (p : pmatrix m n) (q : pvec n) := {v : vvec n | upred p q v}.
 
+Import V.VectorNotations.
+
+Fixpoint minstance_row 
+    {m n : nat} (pmat : pmatrix m n) (v : vvec n) : option nat :=
+    match pmat with
+    | [] => None
+    | p::t => 
+        if vinstanceb p v then Some 0
+        else match minstance_row t v with
+        | None => None
+        | Some k => Some (S k)
+        end
+    end.
+
 (* If P <= v, then there exists a row i in P
     such that i is the first such row to filter v. *)
 Theorem minstance_row_filters :
@@ -509,4 +530,89 @@ Theorem minstance_row_filters :
     minstance p v <-> 
     exists (i : nat) (Him : i < m), row_filters i p v Him.
 Proof.
+    (* intros. dependent induction p; split; intros.
+    - inversion H; subst. destruct H0 as [Him _].
+        inversion Him.
+    - destruct H as [i [Him _]].
+        inversion Him.
+    - inversion H. destruct H0 as [Him HV].
+        apply minstance_refl in H as MR.
+        simpl in MR. unfold eq_rect_r in MR. 
+        simpl in MR. apply orb_true_iff in MR as [MR | MR].
+        + exists 0. assert (HiSn0 : 0 < S n0); try omega.
+            exists HiSn0. unfold row_filters. split.
+            * simpl. apply vinstance_refl. assumption.
+            * intros. inversion Hji.
+        + destruct x as [| i].
+            { exists 0. exists Him.
+                unfold row_filters. split.
+                - assumption.
+                - intros. inversion Hji. }
+            { exists (S i). exists Him.
+                apply minstance_refl in MR as MRR.
+                apply IHp in MRR as IH.
+                unfold row_filters. split.
+                + assumption.
+                + intros. unfold not. intros HVI.
+                    destruct IH as [k [Hkn0 [IH1 IH2]]].
+                    eapply IH2.
+            }
+        
+        exists x. exists Him.
+            unfold row_filters.
+        destruct x as [| i].
+        + exists 0. exists Him.
+            unfold row_filters. split.
+            * simpl. simpl in HV. assumption.
+            * intros. inversion Hji.
+        + simpl in HV.
+            apply minstance_refl in H as MR.   
+            exists (S i). exists Him.
+            simpl in MR. unfold eq_rect_r in MR.
+            simpl in MR. apply orb_true_iff in MR.
+            destruct MR.
+            * simpl in HV.
+            unfold row_filters. split.
+            * assumption.
+            * intros. unfold not.
+                intros HVI. *)
 Admitted.
+
+Fixpoint wild_vec (n : nat) : pvec n :=
+    match n with
+    | 0 => []
+    | S k => PWild::wild_vec k
+    end.
+
+Lemma wild_vinstance : 
+    forall (n : nat) (v : vvec n),
+    vinstance (wild_vec n) v.
+Proof.
+    intros. induction v; constructor.
+    - apply instance_wild.
+    - fold wild_vec. unfold vinstance in IHv.
+        assumption.
+Qed.
+
+(* Proposition 1.1: *)
+Theorem exhaustive_cond' :
+    forall {m n : nat} (p : pmatrix m n),
+    exhaustive' p <-> ~ U p (wild_vec n).
+Proof.
+Admitted.
+
+Theorem exhaustive_cond : 
+    forall {m n : nat} (p : pmatrix m n),
+    exhaustive p <-> ~ U p (wild_vec n).
+Proof.
+Admitted.
+
+(* Proposition 1.2: *)
+Theorem useless_cond : 
+    forall {m n : nat} (p : pmatrix m n) (i : nat) (Him : i < m),
+    useless_clause p i Him <-> 
+    ~ U (V.take i (lt_le_weak i m Him) p) (V.nth p (F.of_nat_lt Him)).
+Proof.
+Admitted.
+
+End AdvancedExhaustiveness.
