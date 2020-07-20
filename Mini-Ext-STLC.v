@@ -35,26 +35,27 @@ Module VectorLemmas.
 Lemma nth_cons : 
     forall (A : Type) (m n : nat) (h : A)
     (v : V.t A n) (Hmn : m < n),
-    V.nth v (F.of_nat_lt Hmn) =
-    V.nth (V.cons A h n v) (F.of_nat_lt (lt_n_S m n Hmn)).
+    V.nth_order v Hmn =
+    V.nth_order (V.cons A h n v) (lt_n_S m n Hmn).
 Proof.
     intros A; destruct n as [| n];
     destruct m as [| m]; intros;
     try omega; try reflexivity.
-    simpl. pose proof_irrelevance as PI.
+    unfold V.nth_order. simpl.
+    pose proof_irrelevance as PI.
     unfold CF.proof_irrelevance in PI.
-    pose proof (PI (m < n) (lt_S_n m n Hmn)) as H.
-    specialize H with
-        (lt_S_n m n (lt_S_n (S m) (S n) (lt_n_S (S m) (S n) Hmn))).
-    rewrite <- H. reflexivity.
+    pose proof (PI (S m < S n) Hmn) as H.
+    specialize H with (lt_S_n (S m) (S n) (lt_n_S (S m) (S n) Hmn)).
+    rewrite <- H. reflexivity. 
 Qed.
 
 Lemma nth_take :
     forall (A : Type) (n : nat) (v : V.t A n) (q w : nat)
     (Hqw : q < w) (Hwn : w < n),
-    V.nth v (F.of_nat_lt (lt_trans q w n Hqw Hwn)) = 
-    V.nth (V.take w (lt_le_weak w n Hwn) v) (F.of_nat_lt Hqw).
+    V.nth_order v (lt_trans q w n Hqw Hwn) = 
+    V.nth_order (V.take w (lt_le_weak w n Hwn) v) Hqw.
 Proof.
+    unfold V.nth_order.
     intros A n v. dependent induction v; 
     intros; try omega. 
     pose proof nth_cons as HC.
@@ -69,7 +70,8 @@ Proof.
         pose proof (PI (S q < S n) Hqn (Nat.lt_trans (S q) w (S n) Hqw Hwn)) as H0.
         rewrite <- H0.
         pose proof (PI (S q < S n) Hqn (lt_n_S q n Hqn')) as H00.
-        rewrite <- H00 in HR. rewrite <- HR. 
+        rewrite <- H00 in HR. unfold V.nth_order in *.
+        rewrite <- HR. 
         destruct w as [| w]; try omega.
         assert (Hwn' : w < n); try omega.
         assert (Hqw' : q < w); try omega.
@@ -349,6 +351,87 @@ Proof.
         constructor. assumption.
 Qed.
 
+Definition pvec (n : nat) := V.t pattern n.
+
+(* Definition 2 (ML Pattern Matching)
+    A Row  i in P filters v iff
+    - Pi <= v
+    - forall j < i, ~ Pj <= v *)
+Definition filters {n : nat} (p : pvec n) (v : value) (i : nat) (Hin : i < n) :=
+    instance (V.nth_order p Hin) v /\
+    forall (j : nat) (Hji : j < i), ~ instance (V.nth_order p (lt_trans j i n Hji Hin)) v.
+
+(* Definition 3: (Instance Relation, vector) *)
+Definition vinstance {n : nat} (ps : pvec n) (v : value) :=
+    V.Exists (fun p => instance p v) ps.
+
+Definition vinstanceb {n : nat} (ps : pvec n) (v : value) := 
+    existsb (fun p => instanceb p v) ps.
+
+Theorem vinstance_refl : forall {n : nat} (ps : pvec n) (v : value),
+    vinstance ps v <-> vinstanceb ps v = true.
+Proof.
+    intros. unfold vinstance. unfold vinstanceb.
+    induction ps; split; intros.
+    - inversion H.
+    - discriminate H.
+    - simpl. unfold eq_rect_r. simpl.
+        apply orb_true_iff.
+        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+        inversion H; subst.
+        + left. apply instance_refl. assumption.
+        + right. apply IHps.
+            apply STUPID in H3; subst;
+            try apply Nat.eq_dec. assumption.
+    - simpl in H. unfold eq_rect_r in H. simpl in H.
+        apply orb_true_iff in H as [H | H].
+        + apply V.Exists_cons_hd. apply instance_refl.
+            assumption.
+        + apply V.Exists_cons_tl. apply IHps.
+            assumption.
+Qed.
+
+Definition vinstance_row {n : nat} (ps : pvec n) (v : value) :=
+    exists (i : nat) (Hin : i < n), 
+    instance (V.nth_order ps Hin) v.
+
+Import V.VectorNotations.
+
+(* Definition vinstanceb_row {n : nat} (ps : pvec n) (v : value) : (option nat) :=
+    match ps with
+    | [] => None
+    | h::t =>
+        match instanceb h v with
+        | true => 0
+        end
+    end. *)
+
+(* Definition 2 (ML Pattern Matching reformulated with Definition 3) *)
+Definition filters' {n : nat} 
+    (p : pvec n) (v : value) (i : nat) (Hin : i < n) :=
+    (instance (V.nth_order p Hin) v /\ 
+    ~ vinstance (V.take i (lt_le_weak i n Hin) p) v).
+
+(* The Versions of Definition 2 are Equivalent *)
+Theorem filters_equiv : 
+    forall {n : nat} (p : pvec n) (v : value) (i : nat) (Hin : i < n),
+    filters p v i Hin <-> filters' p v i Hin.
+Proof.
+    unfold filters.
+    unfold filters'.
+    split; intros; destruct H as [H1 H2]; 
+    split; try assumption;
+    pose proof VL.nth_take as NT.
+    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+    - unfold not. intros NV.
+        unfold vinstance in NV.
+        inversion NV; subst.
+        + apply STUPID in H4; try apply Nat.eq_dec; subst.
+            rewrite <- H4 in NV.
+            assert (H0Sm : 0 < S m); try omega.
+            pose proof (H2 0 H0Sm) as SAD.
+            apply SAD.
+Admitted.
 
 (* Below are is the full-formulation of 
     exhaustiveness, as a matrix based 
@@ -392,15 +475,15 @@ Proof. intros. apply (PV.forall2_refl p v). Qed.
     - forall j < i, ~ Pj <= v *)
 Definition row_filters 
     {m n : nat} (i : nat) (p : pmatrix m n) (v : vvec n) (Him : i < m) :=
-    (vinstance (V.nth p (F.of_nat_lt Him)) v /\ 
+    (vinstance (V.nth_order p Him) v /\ 
     forall (j : nat) (Hji : j < i),
-    ~ vinstance (V.nth p (F.of_nat_lt (lt_trans j i m Hji Him))) v).
+    ~ vinstance (V.nth_order p (lt_trans j i m Hji Him)) v).
 
 (* Definition 3 (Instance Relation for Matrices): *)
 Definition minstance
     {m n : nat} (p : pmatrix m n) (v : vvec n) :=
     exists (i : nat) (Him : i < m), 
-    vinstance (V.nth p (F.of_nat_lt Him)) v.
+    vinstance (V.nth_order p Him) v.
 
 Definition minstanceb
     {m n : nat} (p : pmatrix m n) (v : vvec n) : bool :=
@@ -450,7 +533,7 @@ Qed.
 (* Definition 2 (ML Pattern Matching reformulated with Definition 3) *)
 Definition row_filters' {m n : nat} 
     (i : nat) (p : pmatrix m n) (v : vvec n) (Him : i < m) :=
-    (vinstance (V.nth p (F.of_nat_lt Him)) v /\ 
+    (vinstance (V.nth_order p Him) v /\ 
     ~ minstance (V.take i (lt_le_weak i m Him) p) v).
 
 (* The Versions of Definition 2 are Equivalent *)
