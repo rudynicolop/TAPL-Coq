@@ -26,6 +26,7 @@ Require Import Coq.Logic.Decidable.
 Require Import Coq.Program.Equality.
 Require Import Coq.Arith.Lt.
 Require Import Coq.Arith.PeanoNat.
+Require Import Coq.Init.Specif.
 
 Axiom proof_irrelevance : CF.proof_irrelevance.
 Axiom excluded_middle : CF.excluded_middle.
@@ -127,6 +128,18 @@ Parameter f : A -> bool.
 Axiom refl : forall (a : A), P a <-> f a = true.
 End HasRefl.
 
+Module NotRefl (M : HasRefl).
+Theorem not_refl : forall (a : M.A), ~ M.P a <-> M.f a = false.
+Proof.
+    pose proof M.refl as R.
+    unfold not; split; intros.
+    - destruct (M.f a) eqn:eq.
+        + apply R in eq. contradiction.
+        + reflexivity.
+    - apply R in H0. rewrite H in H0. discriminate.
+Qed.
+End NotRefl.
+
 Module Type HasRefl2.
 Parameter A : Type.
 Parameter B : Type.
@@ -134,6 +147,19 @@ Parameter P : A -> B -> Prop.
 Parameter f : A -> B -> bool.
 Axiom refl : forall (a : A) (b : B), P a b <-> f a b = true.
 End HasRefl2.
+
+Module NotRefl2 (M : HasRefl2).
+Theorem not_refl2 : forall (a : M.A) (b : M.B),
+    ~ M.P a b <-> M.f a b = false.
+Proof.
+    pose proof M.refl as R.
+    unfold not; split; intros.
+    - destruct (M.f a b) eqn:eq.
+        + apply R in eq. contradiction.
+        + reflexivity.
+    - apply R in H0. rewrite H in H0. discriminate.
+Qed.
+End NotRefl2.
 
 (* this is really ass to prove *)
 Axiom vect_nil : 
@@ -263,6 +289,26 @@ Proof.
         subst; reflexivity).
 Qed.
 
+Module TypeEqRefl <: HasRefl2.
+Definition A := type.
+Definition B := type.
+Definition P (a b : type) := a = b.
+Definition f := type_eqb.
+Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
+Proof. intros. apply type_eq_refl. Qed.
+End TypeEqRefl.
+
+Module TypeNotEq := NotRefl2(TypeEqRefl).
+
+Theorem type_eq_dec : forall a b : type, { a = b } + { a <> b }.
+Proof. 
+    intros. destruct (type_eqb a b) eqn:eq.
+    - left. apply type_eq_refl. assumption.
+    - right. unfold not. intros H.
+        apply type_eq_refl in H.
+        rewrite H in eq. discriminate.
+Qed.
+
 Inductive pattern : Type :=
     | PWild
     | PVar (x : id)
@@ -301,6 +347,26 @@ Inductive instance : pattern -> value -> Prop :=
         instance p v -> instance (PLeft t1 t2 p) (VLeft t1 t2 v)
     | instance_right : forall (t1 t2 : type) (p : pattern) (v : value),
         instance p v -> instance (PRight t1 t2 p) (VRight t1 t2 v).
+
+Theorem instance_dec : 
+    forall (p : pattern) (v : value),
+    {instance p v} + {~ instance p v}.
+Proof.
+    pose proof type_eq_dec as TED.
+    induction p; destruct v;
+    try (left; apply instance_wild);
+    try (left; apply instance_var);
+    try pose proof (IHp1 v1) as IH1;
+    try pose proof (IHp2 v2) as IH2;
+    try destruct IH1 as [IH1A | IH1B];
+    try destruct IH2 as [IH2A | IH2B];
+    try (pose proof (TED t1 t0) as TED1;
+        pose proof (TED t2 t3) as TED2;
+        pose proof (IHp v) as IHI; inversion IHI;
+        inversion TED1; inversion TED2; subst);
+    try (right; intros HF; inversion HF; auto; assumption);
+    try (left; constructor; try assumption).
+Qed.
 
 Fixpoint instanceb (p : pattern) (v : value) : bool :=
     match p, v with
@@ -351,6 +417,20 @@ Proof.
         constructor. assumption.
 Qed.
 
+Module InstanceRefl <: HasRefl2.
+Definition A := pattern.
+Definition B := value.
+Definition P := instance.
+Definition f := instanceb.
+Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
+Proof. intros. apply instance_refl. Qed.
+End InstanceRefl.
+
+Module NotInstanceRefl := NotRefl2(InstanceRefl).
+
+(* Baby steps for more general exhaustiveness for matrices *)
+Module BabyExhaustiveness.
+
 Definition pvec (n : nat) := V.t pattern n.
 
 (* Definition 2 (ML Pattern Matching)
@@ -361,9 +441,29 @@ Definition filters {n : nat} (p : pvec n) (v : value) (i : nat) (Hin : i < n) :=
     instance (V.nth_order p Hin) v /\
     forall (j : nat) (Hji : j < i), ~ instance (V.nth_order p (lt_trans j i n Hji Hin)) v.
 
-(* Definition 3: (Instance Relation, vector) *)
+(* Definition 3: (Vector Instance Relation) *)
 Definition vinstance {n : nat} (ps : pvec n) (v : value) :=
     V.Exists (fun p => instance p v) ps.
+
+Theorem vinstance_dec :
+    forall {n : nat} (ps : pvec n) (v : value),
+    {vinstance ps v} + {~ vinstance ps v}.
+Proof.
+    intros. induction ps.
+    - right. intros H. inversion H.
+    - destruct IHps as [IH | IH].
+        + left. apply V.Exists_cons_tl.
+            assumption.
+        + pose proof (instance_dec h v) as ID.
+            destruct ID as [I | NI].
+            * left. apply V.Exists_cons_hd.
+                assumption.
+            * right. intros H. inversion H; subst.
+                apply NI. assumption.
+                pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+                apply STUPID in H3; try apply Nat.eq_dec; subst.
+                apply IH. assumption.
+Qed.
 
 Definition vinstanceb {n : nat} (ps : pvec n) (v : value) := 
     existsb (fun p => instanceb p v) ps.
@@ -397,14 +497,99 @@ Definition vinstance_row {n : nat} (ps : pvec n) (v : value) :=
 
 Import V.VectorNotations.
 
-(* Definition vinstanceb_row {n : nat} (ps : pvec n) (v : value) : (option nat) :=
+Fixpoint vinstanceb_row {n : nat} (ps : pvec n) (v : value) : (option nat) :=
     match ps with
     | [] => None
     | h::t =>
         match instanceb h v with
-        | true => 0
+        | true => Some 0
+        | false =>
+            match vinstanceb_row t v with
+            | None => None
+            | Some k => Some (S k)
+            end
         end
-    end. *)
+    end.
+
+Lemma vinstance_vinstance_row_refl :
+    forall {n : nat} (ps : pvec n) (v : value),
+    vinstance ps v <-> vinstance_row ps v.
+Proof.
+    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+    pose proof_irrelevance as PI.
+    unfold CF.proof_irrelevance in PI.
+    intros. induction ps; split; intros;
+    inversion H; subst.
+    - destruct H0 as [Hin _]. inversion Hin.
+    - apply STUPID in H3; try apply Nat.eq_dec; subst.
+        unfold vinstance_row. exists 0. 
+        assert (H0Sn : 0 < S n); try omega.
+        exists H0Sn. unfold V.nth_order.
+        simpl. assumption.
+    - apply STUPID in H3; try apply Nat.eq_dec; subst.
+        apply IHps in H2. unfold vinstance_row in H2.
+        destruct H2 as [i [Hin HI]].
+        unfold vinstance_row. exists (S i).
+        assert (HSiSn : S i < S n); try omega.
+        exists HSiSn. unfold V.nth_order.
+        simpl. unfold V.nth_order in HI.
+        pose proof (PI (i < n) Hin (lt_S_n i n HSiSn)) as HPI; subst.
+        assumption.
+    - destruct H0 as [Hin HI].
+        unfold vinstance in *.
+        unfold vinstance_row in *.
+        destruct x as [| x]; cbn in HI.
+        + apply V.Exists_cons_hd. assumption.
+        + apply V.Exists_cons_tl. apply IHps.
+            exists x. exists ((lt_S_n x n Hin)).
+            unfold V.nth_order. assumption.
+Qed.
+
+Lemma vinstanceb_vinstanceb_row_refl :
+    forall {n : nat} (ps : pvec n) (v : value),
+    vinstanceb ps v = true <-> 
+    exists (i : nat) (Hin : i < n), vinstanceb_row ps v = Some i.
+Proof.
+    intros. induction ps; split; intros.
+    - discriminate H.
+    - destruct H as [i [Hi0 _]]. omega.
+    - simpl in H. unfold eq_rect_r in H. simpl in H.
+        pose proof (instance_dec h v) as ID.
+        apply orb_true_iff in H.
+        destruct ID as [I | NI] eqn:eqi;
+        destruct H as [H' | H'] eqn:eqh; subst.
+        + exists 0. assert (H0Sn : 0 < S n); try omega.
+            exists H0Sn. simpl.
+            rewrite H'. reflexivity.
+        + exists 0. assert (H0Sn : 0 < S n); try omega.
+            exists H0Sn. simpl.
+            apply instance_refl in I.
+            rewrite I. reflexivity.
+        + apply instance_refl in H'. contradiction.
+        + apply IHps in H'. destruct H' as [i [Hin HIV]].
+            exists (S i). assert (HSiSn : S i < S n); try omega.
+            exists HSiSn. simpl.
+            apply NotInstanceRefl.not_refl2 in NI.
+            unfold InstanceRefl.f in NI.
+            rewrite NI. rewrite HIV.
+            reflexivity.
+    - destruct H as [i [HiSn HIVR]]. simpl.
+        unfold eq_rect_r. simpl. apply orb_true_iff.
+        simpl in HIVR. destruct (instanceb h v) eqn:eqib.
+        + left. reflexivity.
+        + right. destruct (vinstanceb_row ps v) eqn:eqvbr.
+            injection HIVR; intros; subst.
+            * apply IHps. exists n0.
+                assert (Hn0n : n0 < n); try omega.
+                exists Hn0n. auto.
+            * discriminate.
+Qed.
+
+Lemma vinstance_row_refl :
+    forall {n : nat} (ps : pvec n) (v : value),
+    vinstance_row ps v <-> exists (i : nat) (Hin : i < n), vinstanceb_row ps v = Some i.
+Proof.
+Admitted.
 
 (* Definition 2 (ML Pattern Matching reformulated with Definition 3) *)
 Definition filters' {n : nat} 
@@ -432,6 +617,8 @@ Proof.
             pose proof (H2 0 H0Sm) as SAD.
             apply SAD.
 Admitted.
+
+End BabyExhaustiveness.
 
 (* Below are is the full-formulation of 
     exhaustiveness, as a matrix based 
