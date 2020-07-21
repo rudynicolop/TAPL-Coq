@@ -29,12 +29,13 @@ Require Import Coq.Arith.PeanoNat.
 Require Import Coq.Init.Specif.
 Require Coq.Structures.Equalities.
 Module SE := Coq.Structures.Equalities.
-(* Require Import Coq.MSets.MSetInterface. *)
 Require Coq.MSets.MSetWeakList.
 Module WS := Coq.MSets.MSetWeakList.
+Require Import Coq.Logic.FunctionalExtensionality.
 
 Axiom proof_irrelevance : CF.proof_irrelevance.
 Axiom excluded_middle : CF.excluded_middle.
+Axiom prop_extensionality : CF.prop_extensionality.
 
 Module VectorLemmas.
 
@@ -887,6 +888,15 @@ Definition filter_eithers (a b : type) (p : PS.t) : PS.t * PS.t :=
             | _ => acc
             end) p (PS.empty, PS.empty).
 
+Definition predb_var (p : pattern) : bool := 
+    match p with
+    | PVar _ => true
+    | _ => false
+    end.
+
+Inductive pred_var : pattern -> Prop := 
+    pred_var_constr : forall (x : id), pred_var (PVar x).
+
 (* Complete Signature Sigma:
     This was not defined explicitly so I have
     invented a definition to suit my purposes.
@@ -898,8 +908,8 @@ Inductive sigma (p : PS.t) : type -> Prop :=
     | sigma_wild : forall (t : type), 
         PS.In PWild p -> 
         sigma p t
-    | sigma_var : forall (t : type) (x : id), 
-        PS.In (PVar x) p -> 
+    | sigma_var : forall (t : type), 
+        PS.Exists pred_var p ->
         sigma p t
     | sigma_unit :
         PS.In PUnit p -> sigma p TUnit
@@ -914,30 +924,119 @@ Inductive sigma (p : PS.t) : type -> Prop :=
         sigma p2 t2 ->
         sigma p (TEither t1 t2).
 
+Definition sigmab_catchall (p  : PS.t) :=
+    PS.mem PWild p || PS.exists_ predb_var p.
+
 Fixpoint sigmab (p : PS.t) (t : type) : bool :=
-    if PS.mem PWild p then true
-    else if PS.exists_ 
-        (fun (p : pattern) =>
-            match p with
-            | PVar _ => true
-            | _ => false
-            end) p then true
-    else match t with
-    | TUnit => PS.mem PUnit p
+    match t with
+    | TUnit => PS.mem PUnit p || sigmab_catchall p
     | TPair t1 t2 => 
         let (p1,p2) := filter_pairs p in
-        sigmab p1 t1 && sigmab p2 t2
+        (sigmab p1 t1 && sigmab p2 t2) || sigmab_catchall p
     | TEither t1 t2 =>
-        let (p1,p2) := filter_eithers t1 t2 p in
-        sigmab p1 t1 && sigmab p2 t2
-    | _ => false
+        (let (p1,p2) := filter_eithers t1 t2 p in sigmab p1 t1 && sigmab p2 t2)
+        || sigmab_catchall p
+    | TFun _ _ => sigmab_catchall p
     end.
+
+Lemma pred_var_refl :
+    forall (p : pattern),
+    pred_var p <-> predb_var p = true.
+Proof. split; intros.
+    - inversion H; subst. reflexivity.
+    - destruct p; simpl in *; 
+        try discriminate; constructor.
+Qed.
+
+Lemma pred_var_predb :
+    pred_var = (fun x : PS.elt => predb_var x = true).
+Proof.
+    pose proof proof_irrelevance as PI.
+    apply functional_extensionality. intros.
+    apply prop_extensionality. apply pred_var_refl.
+Qed.
+
+Ltac proper :=
+    unfold Morphisms.Proper;
+    unfold Morphisms.respectful;
+    intros; subst; reflexivity.
+
+Module ProveRight.
+Ltac prove_wild :=
+    right; unfold sigmab_catchall;
+    apply orb_true_iff; left;
+    apply PS.mem_spec; assumption.
+Ltac prove_var :=
+    right; unfold sigmab_catchall;
+    apply orb_true_iff; right;
+    apply PS.exists_spec;
+    try proper;
+    pose proof pred_var_predb as PVP;
+    rewrite <- PVP; assumption.
+Ltac try_prove_wv := try prove_wild; try prove_var; try left.
+End ProveRight.
+
+Module ProveLeft.
+Ltac prove_wild := apply sigma_wild; apply PS.mem_spec; assumption.
+Ltac prove_var H := 
+    apply sigma_var; apply PS.exists_spec in H;
+    try (rewrite pred_var_predb; assumption); proper.
+Ltac try_prove_wv H :=
+    unfold sigmab_catchall in H;
+    apply orb_true_iff in H as [H | H];
+    try prove_wild; try prove_var H.
+End ProveLeft.
 
 Theorem sigma_refl : 
     forall (p : PS.t) (t : type),
     sigma p t <-> sigmab p t = true.
 Proof.
-Admitted.
+    intros. generalize dependent p. 
+    dependent induction t;
+    split; intros; simpl in *.
+    - apply orb_true_iff. inversion H; subst;
+        ProveRight.try_prove_wv.
+        apply PS.mem_spec. assumption.
+    - apply orb_true_iff in H. destruct H.
+        + apply sigma_unit. apply PS.mem_spec.
+            assumption.
+        + ProveLeft.try_prove_wv H.
+    - apply orb_true_iff. inversion H; subst.
+        + left. apply PS.mem_spec. assumption.
+        + right. apply PS.exists_spec.
+            * proper.
+            * rewrite <- pred_var_predb.
+                assumption.
+    - ProveLeft.try_prove_wv H.
+    - destruct (filter_pairs p) as [p1 p2] eqn:eq. 
+        apply orb_true_iff. inversion H; subst;
+        ProveRight.try_prove_wv. apply andb_true_iff.
+        rewrite eq in H2. inversion H2; subst. split.
+        + apply IHt1. assumption.
+        + apply IHt2. assumption.
+    - destruct (filter_pairs p) as [p1 p2] eqn:eq.
+        apply orb_true_iff in H. destruct H.
+        + apply andb_true_iff in H as [H1 H2].
+            eapply sigma_pair.
+            * symmetry. apply eq.
+            * apply IHt1. assumption.
+            * apply IHt2. assumption.
+        + ProveLeft.try_prove_wv H.
+    - destruct (filter_eithers t1 t2 p) as [p1 p2] eqn:eq.
+        apply orb_true_iff. inversion H; subst;
+        ProveRight.try_prove_wv. apply andb_true_iff.
+        rewrite eq in H2. inversion H2; subst. split.
+        + apply IHt1. assumption.
+        + apply IHt2. assumption.
+    - destruct (filter_eithers t1 t2 p) as [p1 p2] eqn:eq.
+        apply orb_true_iff in H. destruct H.
+            + apply andb_true_iff in H as [H1 H2].
+                eapply sigma_either.
+                * symmetry. apply eq.
+                * apply IHt1. assumption.
+                * apply IHt2. assumption.
+            + ProveLeft.try_prove_wv H.
+Qed. 
 
 (* URec *)
 (* Fixpoint URecb {n : nat} (p : pvec n) (q : pattern) :=
