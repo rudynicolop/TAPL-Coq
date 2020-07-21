@@ -778,12 +778,18 @@ Qed.
     
 (* Proposition 1.2: *)
 Theorem useless_cond : 
-    forall {m n : nat} (p : pmatrix m n) (i : nat) (Him : i < m),
-    useless_clause p i Him <-> 
-    ~ U (V.take i (lt_le_weak i m Him) p) (V.nth p (F.of_nat_lt Him)).
+    forall {n : nat} (p : pvec n) (i : nat) (Hin : i < n),
+    useless_clause p i Hin <-> 
+    ~ U (V.take i (lt_le_weak i n Hin) p) (V.nth p (F.of_nat_lt Hin)).
 Proof.
-Admitted.
-
+    unfold useless_clause; unfold U; 
+    unfold upred; split; intros.
+    - intros [v [NV IP]]. apply H. exists v.
+        apply filters_equiv. split; try assumption.
+    - intros [v FH]. apply filters_equiv in FH. 
+        apply H. exists v. 
+        destruct FH as [FH1 FH2]. split; assumption. 
+Qed.
 
 End BabyExhaustiveness.
 
