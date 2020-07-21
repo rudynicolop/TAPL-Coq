@@ -29,6 +29,9 @@ Require Import Coq.Arith.PeanoNat.
 Require Import Coq.Init.Specif.
 Require Coq.Structures.Equalities.
 Module SE := Coq.Structures.Equalities.
+(* Require Import Coq.MSets.MSetInterface. *)
+Require Coq.MSets.MSetWeakList.
+Module WS := Coq.MSets.MSetWeakList.
 
 Axiom proof_irrelevance : CF.proof_irrelevance.
 Axiom excluded_middle : CF.excluded_middle.
@@ -859,6 +862,31 @@ Proof.
 Qed.
 End PatternDec.
 
+Module PatternSet := WS.Make(PatternDec).
+Module PS := PatternSet.
+
+Definition filter_pairs (p : PS.t) : PS.t * PS.t :=
+    PS.fold (fun (p : PS.elt) (acc : PS.t * PS.t) => 
+            match p with
+            | PPair pa pb => 
+                let (a,b) := acc in (PS.add pa a, PS.add pb b)
+            | _ => acc 
+            end) p (PS.empty, PS.empty).
+
+Definition filter_eithers (a b : type) (p : PS.t) : PS.t * PS.t :=
+    PS.fold (fun (p : PS.elt) (acc : PS.t * PS.t) => 
+            match p with 
+            | PLeft a' b' p =>
+                if type_eqb a a' && type_eqb b b' 
+                then let (pa,pb) := acc in (PS.add p pa, pb)
+                else acc
+            | PRight a' b' p =>
+                if type_eqb a a' && type_eqb b b' 
+                then let (pa,pb) := acc in (pa, PS.add p pb)
+                else acc
+            | _ => acc
+            end) p (PS.empty, PS.empty).
+
 (* Complete Signature Sigma:
     This was not defined explicitly so I have
     invented a definition to suit my purposes.
@@ -866,23 +894,50 @@ End PatternDec.
     this is completeness not correctness. 
     The notion of correctness will be defined
     separately with the typing judgment. *)
-Inductive sigma : forall {n : nat}, pvec n -> type -> Prop :=
-    | sigma_wild : forall {n : nat} (p : pvec n) (t : type), 
-        V.In PWild p -> sigma p t
-    | sigma_var : forall {n : nat} (p : pvec n) (t : type) (x : id), 
-        V.In (PVar x) p -> sigma p t
-    | sigma_unit : forall {n : nat} (p : pvec n), 
-        V.In PUnit p -> sigma p TUnit
-    | sigma_pair : forall {n : nat} (p : pvec n) (t1 t2 : type) (p1 p2 : pattern),
-        V.In (PPair p1 p2) p ->
-        sigma [p1] t1 -> sigma [p2] t2 ->
+Inductive sigma (p : PS.t) : type -> Prop :=
+    | sigma_wild : forall (t : type), 
+        PS.In PWild p -> 
+        sigma p t
+    | sigma_var : forall (t : type) (x : id), 
+        PS.In (PVar x) p -> 
+        sigma p t
+    | sigma_unit :
+        PS.In PUnit p -> sigma p TUnit
+    | sigma_pair : forall (t1 t2 : type) (p1 p2 : PS.t),
+        (p1,p2) = filter_pairs p ->
+        sigma p1 t1 -> 
+        sigma p2 t2 ->
         sigma p (TPair t1 t2)
-    | sigma_either : forall {n : nat} (p : pvec n) (t1 t2 : type) (p1 p2 : pattern),
-        V.In (PLeft t1 t2 p1) p ->
-        V.In (PRight t1 t2 p2) p ->
-        sigma [p1] t1 ->
-        sigma [p2] t2 ->
+    | sigma_either : forall (t1 t2 : type) (p1 p2 : PS.t),
+        (p1,p2) = filter_eithers t1 t2 p ->
+        sigma p1 t1 ->
+        sigma p2 t2 ->
         sigma p (TEither t1 t2).
+
+Fixpoint sigmab (p : PS.t) (t : type) : bool :=
+    if PS.mem PWild p then true
+    else if PS.exists_ 
+        (fun (p : pattern) =>
+            match p with
+            | PVar _ => true
+            | _ => false
+            end) p then true
+    else match t with
+    | TUnit => PS.mem PUnit p
+    | TPair t1 t2 => 
+        let (p1,p2) := filter_pairs p in
+        sigmab p1 t1 && sigmab p2 t2
+    | TEither t1 t2 =>
+        let (p1,p2) := filter_eithers t1 t2 p in
+        sigmab p1 t1 && sigmab p2 t2
+    | _ => false
+    end.
+
+Theorem sigma_refl : 
+    forall (p : PS.t) (t : type),
+    sigma p t <-> sigmab p t = true.
+Proof.
+Admitted.
 
 (* URec *)
 (* Fixpoint URecb {n : nat} (p : pvec n) (q : pattern) :=
