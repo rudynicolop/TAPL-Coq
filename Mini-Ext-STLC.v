@@ -656,6 +656,8 @@ Lemma vinstanceb_row_first :
     vinstanceb_row ps v = Some i ->
     exists (Hin : pred i <= n), ~ vinstance (V.take (pred i) Hin ps) v.
 Proof.
+    pose proof_irrelevance as PI.
+    unfold CF.proof_irrelevance in PI.
     intros. dependent induction ps.
     - discriminate H.
     - apply vinstanceb_row_bounded in H as VB.
@@ -665,14 +667,20 @@ Proof.
         + injection H; intros; subst. 
             simpl in HF. inversion HF.
         + destruct (vinstanceb_row ps v) eqn:eqvbr.
-            * injection H; intros; subst.
-                pose proof (IHps v n0) eqvbr.
+            { injection H; intros; subst.
+                simpl in HF. pose proof (IHps v n0) eqvbr.
                 destruct H0 as [Hn0n NV].
-                apply NV. inversion HF; subst.
-                { pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-                    apply STUPID in H3; try apply Nat.eq_dec.
-                }
-Admitted.
+                destruct n0 as [| k].
+                - inversion HF.
+                - apply NV. simpl.
+                    eapply vinstance_take_cons.
+                    + eapply NotInstanceRefl.not_refl2.
+                        unfold InstanceRefl.f.
+                        apply eqib.
+                    + pose proof (PI (S k <= S n) Hin (le_n_S k n Hn0n)) as POOF.
+                        rewrite <- POOF. assumption. }
+            { discriminate H. }
+Qed.
 
 (* Definition 2 (ML Pattern Matching reformulated with Definition 3) *)
 Definition filters' {n : nat} 
@@ -691,14 +699,18 @@ Proof.
     split; intros; destruct H as [H1 H2]; 
     split; try assumption.
     - unfold not. intros NV.
-        unfold vinstance in NV.
-        inversion NV; subst.
-        + apply STUPID in H4; try apply Nat.eq_dec; subst.
-            rewrite <- H4 in NV.
-            assert (H0Sm : 0 < S m); try omega.
-            pose proof (H2 0 H0Sm) as SAD.
-            apply SAD.
-Admitted.
+        apply vinstance_vinstance_row_refl in NV.
+        unfold vinstance_row in NV.
+        destruct NV as [j [Hji HIV]].
+        pose proof (H2 j Hji). apply H.
+        pose proof (NT pattern n p j i Hji Hin) as NTH.
+        rewrite NTH. assumption.
+    - intros. intros VI. apply H2.
+        pose proof (NT pattern n p j i Hji Hin) as NTH.
+        apply vinstance_vinstance_row_refl.
+        unfold vinstance_row. exists j. exists Hji.
+        rewrite <- NTH. assumption.
+Qed.
 
 End BabyExhaustiveness.
 
