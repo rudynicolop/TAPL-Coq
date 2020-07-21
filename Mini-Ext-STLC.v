@@ -27,6 +27,8 @@ Require Import Coq.Program.Equality.
 Require Import Coq.Arith.Lt.
 Require Import Coq.Arith.PeanoNat.
 Require Import Coq.Init.Specif.
+Require Coq.Structures.Equalities.
+Module SE := Coq.Structures.Equalities.
 
 Axiom proof_irrelevance : CF.proof_irrelevance.
 Axiom excluded_middle : CF.excluded_middle.
@@ -790,6 +792,72 @@ Proof.
         apply H. exists v. 
         destruct FH as [FH1 FH2]. split; assumption. 
 Qed.
+
+Module PatternDec <: SE.DecidableType.
+Import SE.
+Require Import RelationClasses.
+Definition t := pattern.
+Definition eq (p1 p2 : t) := p1 = p2.
+Declare Instance eq_equiv : Equivalence eq.
+Theorem eq_dec : forall (p1 p2 : pattern),
+    {p1 = p2} + {p1 <> p2}.
+Proof.
+    induction p1; destruct p2;
+    try (pose proof (IHp1_1 p2_1) as IH1;
+        pose proof (IHp1_2 p2_2) as IH2;
+        destruct IH1 as [IH1 | IH1]; 
+        destruct IH2 as [IH2 | IH2]; subst;
+        try (right; intros NE; inversion NE; 
+        subst; try apply IH1; try apply IH2; reflexivity));
+    try (pose proof (string_dec x x0) as [H | H]; subst;
+        try (right; intros NE; inversion NE; subst; apply H; reflexivity));
+    try (pose proof (IHp1 p2) as IH;
+        pose proof (type_eq_dec t1 t0) as TED1;
+        pose proof (type_eq_dec t2 t3) as TED2;
+        destruct IH as [IH | IH];
+        destruct TED1 as [TED1 | TED1];
+        destruct TED2 as [TED2 | TED2]; subst;
+        try (right; intros NE; inversion NE; contradiction));
+    try (left; reflexivity);
+    try (right; intros H; inversion H).
+Qed.
+Fixpoint pattern_eqb (a b : pattern) : bool :=
+    match a,b with
+    | PWild, PWild  
+    | PUnit, PUnit => true
+    | PVar x, PVar y => (x =? y)%string
+    | PPair a1 a2, PPair b1 b2 =>
+        pattern_eqb a1 b1 && pattern_eqb a2 b2
+    | PLeft a1 a2 a', PLeft b1 b2 b'
+    | PRight a1 a2 a', PRight b1 b2 b' =>
+        type_eqb a1 b1 && type_eqb a2 b2 && pattern_eqb a' b'
+    | _, _ => false
+    end.
+Theorem pattern_eq_refl :
+    forall (a b : pattern), a = b <-> pattern_eqb a b = true.
+Proof.
+    induction a; destruct b; split;
+    intros; try inversion H; subst;
+    try (apply andb_true_iff in H1 as [HT HP];
+        apply andb_true_iff in HT as [HT1 HT2];
+        apply type_eq_refl in HT1;
+        apply type_eq_refl in HT2;
+        apply IHa in HP; subst; reflexivity);
+    try (apply andb_true_iff; split;
+        try (apply andb_true_iff; split;
+            apply type_eq_refl; reflexivity);
+        try (apply IHa; reflexivity));
+    try reflexivity; simpl;
+    fold pattern_eqb.
+    - apply String.eqb_eq. reflexivity.
+    - apply String.eqb_eq in H1; subst. reflexivity.
+    - apply IHa1. reflexivity.
+    - apply IHa2. reflexivity.
+    - apply andb_true_iff in H1 as [H1 H2].
+        apply IHa1 in H1. apply IHa2 in H2.
+        subst. reflexivity.
+Qed.
+End PatternDec.
 
 (* Complete Signature Sigma:
     This was not defined explicitly so I have
