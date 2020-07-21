@@ -791,6 +791,42 @@ Proof.
         destruct FH as [FH1 FH2]. split; assumption. 
 Qed.
 
+(* Complete Signature Sigma:
+    This was not defined explicitly so I have
+    invented a definition to suit my purposes.
+    Note this relation does not enforce type-checking,
+    this is completeness not correctness. 
+    The notion of correctness will be defined
+    separately with the typing judgment. *)
+Inductive sigma : forall {n : nat}, pvec n -> type -> Prop :=
+    | sigma_wild : forall {n : nat} (p : pvec n) (t : type), 
+        V.In PWild p -> sigma p t
+    | sigma_var : forall {n : nat} (p : pvec n) (t : type) (x : id), 
+        V.In (PVar x) p -> sigma p t
+    | sigma_unit : forall {n : nat} (p : pvec n), 
+        V.In PUnit p -> sigma p TUnit
+    | sigma_pair : forall {n : nat} (p : pvec n) (t1 t2 : type) (p1 p2 : pattern),
+        V.In (PPair p1 p2) p ->
+        sigma [p1] t1 -> sigma [p2] t2 ->
+        sigma p (TPair t1 t2)
+    | sigma_either : forall {n : nat} (p : pvec n) (t1 t2 : type) (p1 p2 : pattern),
+        V.In (PLeft t1 t2 p1) p ->
+        V.In (PRight t1 t2 p2) p ->
+        sigma [p1] t1 ->
+        sigma [p2] t2 ->
+        sigma p (TEither t1 t2).
+
+(* URec *)
+(* Fixpoint URecb {n : nat} (p : pvec n) (q : pattern) :=
+    match q with
+    | PWild
+    | PVar (x : id)
+    | PUnit
+    | PPair (p1 p2 : pattern)
+    | PLeft (t1 t2 : type) (p : pattern)
+    | PRight (t1 t2 : type) (p : pattern)
+    end. *)
+
 End BabyExhaustiveness.
 
 (* Below are is the full-formulation of 
