@@ -589,6 +589,89 @@ Lemma vinstance_row_refl :
     forall {n : nat} (ps : pvec n) (v : value),
     vinstance_row ps v <-> exists (i : nat) (Hin : i < n), vinstanceb_row ps v = Some i.
 Proof.
+    split; intros.
+    - apply vinstanceb_vinstanceb_row_refl. apply vinstance_refl.
+        apply vinstance_vinstance_row_refl. assumption.
+    - apply vinstance_vinstance_row_refl. apply vinstance_refl.
+        apply vinstanceb_vinstanceb_row_refl. assumption.
+Qed.
+
+Lemma vinstanceb_row_bounded :
+    forall {n : nat} (ps : pvec n) (v : value) (i : nat),
+    vinstanceb_row ps v = Some i -> i < n.
+Proof.
+    intros. dependent induction ps.
+    - discriminate H.
+    - simpl in H. destruct (instanceb h v).
+        + injection H; intros; subst. omega.
+        + destruct (vinstanceb_row ps v) eqn:eq.
+            * injection H; intros; subst.
+                apply IHps in eq. omega.
+            * discriminate H.
+Qed.
+
+Lemma vinstance_take_cons :
+    forall {n : nat} (p : pattern) (ps : pvec n) 
+    (v : value) (m : nat) (HmSn : m <= n),
+    ~ instance p v ->
+    vinstance (V.take (S m) (le_n_S m n HmSn) (p::ps)) v ->
+    vinstance (V.take m HmSn ps) v.
+Proof.
+    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+    intros. dependent induction ps.
+    - assert (m = 0); try omega; subst.
+        simpl in H0. exfalso. apply H.
+        inversion H0; subst.
+        + assumption.
+        + apply STUPID in H4; try apply Nat.eq_dec; subst.
+            inversion H3.
+    - destruct m as [| m].
+        + cbn in H0. inversion H0; 
+            subst; apply STUPID in H4; 
+            try apply Nat.eq_dec; subst.
+            * contradiction.
+            * inversion H3.
+        + simpl. simpl in H0. 
+            pose proof (instance_dec h v) as [I | NI].
+            * apply V.Exists_cons_hd. assumption.
+            * apply V.Exists_cons_tl.
+                apply IHps; try assumption.
+                inversion H0; subst.
+                { contradiction. }
+                { apply STUPID in H4; try apply Nat.eq_dec; subst.
+                    inversion H3; subst. 
+                    - contradiction.
+                    - apply STUPID in H5; try apply Nat.eq_dec; subst.
+                    simpl. apply V.Exists_cons_tl.
+                    pose proof proof_irrelevance as PI.
+                    unfold CF.proof_irrelevance in PI.
+                    pose proof (PI (S m <= S n) 
+                        (le_n_S m n (le_S_n m n HmSn)) 
+                        (le_S_n (S m) (S n) (le_n_S (S m) (S n) HmSn))) as POOF.
+                        rewrite POOF. assumption. }
+Qed.
+
+Lemma vinstanceb_row_first :
+    forall {n : nat} (ps : pvec n) (v : value) (i : nat),
+    vinstanceb_row ps v = Some i ->
+    exists (Hin : pred i <= n), ~ vinstance (V.take (pred i) Hin ps) v.
+Proof.
+    intros. dependent induction ps.
+    - discriminate H.
+    - apply vinstanceb_row_bounded in H as VB.
+        assert (Hin : pred i <= S n); try omega.
+        exists Hin. intros HF.
+        cbn in H. destruct (instanceb h v) eqn:eqib.
+        + injection H; intros; subst. 
+            simpl in HF. inversion HF.
+        + destruct (vinstanceb_row ps v) eqn:eqvbr.
+            * injection H; intros; subst.
+                pose proof (IHps v n0) eqvbr.
+                destruct H0 as [Hn0n NV].
+                apply NV. inversion HF; subst.
+                { pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+                    apply STUPID in H3; try apply Nat.eq_dec.
+                }
 Admitted.
 
 (* Definition 2 (ML Pattern Matching reformulated with Definition 3) *)
@@ -602,12 +685,11 @@ Theorem filters_equiv :
     forall {n : nat} (p : pvec n) (v : value) (i : nat) (Hin : i < n),
     filters p v i Hin <-> filters' p v i Hin.
 Proof.
-    unfold filters.
-    unfold filters'.
-    split; intros; destruct H as [H1 H2]; 
-    split; try assumption;
     pose proof VL.nth_take as NT.
     pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+    unfold filters. unfold filters'.
+    split; intros; destruct H as [H1 H2]; 
+    split; try assumption.
     - unfold not. intros NV.
         unfold vinstance in NV.
         inversion NV; subst.
