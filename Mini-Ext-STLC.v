@@ -1038,16 +1038,34 @@ Proof.
             + ProveLeft.try_prove_wv H.
 Qed. 
 
-(* URec *)
-(* Fixpoint URecb {n : nat} (p : pvec n) (q : pattern) :=
-    match q with
-    | PWild
-    | PVar (x : id)
-    | PUnit
-    | PPair (p1 p2 : pattern)
-    | PLeft (t1 t2 : type) (p : pattern)
-    | PRight (t1 t2 : type) (p : pattern)
-    end. *)
+Definition pvec_to_set {n : nat} (p : pvec n) := 
+    V.fold_right PS.add p PS.empty.
+
+(* is a pattern a constructed pattern? *)
+Inductive cp : pattern -> Prop :=
+    | cp_unit : cp PUnit
+    | cp_pair : forall (p1 p2 : pattern), cp (PPair p1 p2)
+    | cp_left : forall (t1 t2 : type) (p : pattern), cp (PLeft t1 t2 p)
+    | cp_right : forall (t1 t2 : type) (p : pattern), cp (PRight t1 t2 p).
+
+Definition cpb (p : pattern) : bool :=
+    match p with
+    | PUnit 
+    | PPair _ _
+    | PLeft _ _ _
+    | PRight _ _ _ => true
+    | PWild 
+    | PVar _ => false
+    end.
+
+Theorem cp_refl : forall (p : pattern), cp p <-> cpb p = true.
+Proof.
+    destruct p; split; intros; 
+    try inversion H; try discriminate;
+    try reflexivity; try constructor.
+Qed.
+
+Definition constructor_pattern := {p : pattern | cp p}.
 
 End BabyExhaustiveness.
 
