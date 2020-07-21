@@ -654,32 +654,32 @@ Qed.
 Lemma vinstanceb_row_first :
     forall {n : nat} (ps : pvec n) (v : value) (i : nat),
     vinstanceb_row ps v = Some i ->
-    exists (Hin : pred i <= n), ~ vinstance (V.take (pred i) Hin ps) v.
+    exists (Hin : i <= n), ~ vinstance (V.take i Hin ps) v.
 Proof.
+    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
     pose proof_irrelevance as PI.
     unfold CF.proof_irrelevance in PI.
     intros. dependent induction ps.
     - discriminate H.
     - apply vinstanceb_row_bounded in H as VB.
-        assert (Hin : pred i <= S n); try omega.
+        assert (Hin : i <= S n); try omega.
         exists Hin. intros HF.
         cbn in H. destruct (instanceb h v) eqn:eqib.
         + injection H; intros; subst. 
             simpl in HF. inversion HF.
         + destruct (vinstanceb_row ps v) eqn:eqvbr.
             { injection H; intros; subst.
-                simpl in HF. pose proof (IHps v n0) eqvbr.
-                destruct H0 as [Hn0n NV].
-                destruct n0 as [| k].
-                - inversion HF.
-                - apply NV. simpl.
-                    eapply vinstance_take_cons.
-                    + eapply NotInstanceRefl.not_refl2.
-                        unfold InstanceRefl.f.
-                        apply eqib.
-                    + pose proof (PI (S k <= S n) Hin (le_n_S k n Hn0n)) as POOF.
-                        rewrite <- POOF. assumption. }
-            { discriminate H. }
+                simpl in HF.
+                apply vinstance_refl in HF.
+                simpl in HF. unfold eq_rect_r in HF.
+                simpl in HF. apply orb_true_iff in HF.
+                destruct HF as [HH | HT].
+                - rewrite HH in eqib. discriminate.
+                - apply vinstance_refl in HT.
+                    pose proof (IHps v n0 eqvbr) as [Hn0n IH].
+                    apply IH. pose proof (PI (n0 <= n) Hn0n (le_S_n n0 n Hin)).
+                    rewrite H0. assumption. }
+            { discriminate. } 
 Qed.
 
 (* Definition 2 (ML Pattern Matching reformulated with Definition 3) *)
@@ -711,6 +711,79 @@ Proof.
         unfold vinstance_row. exists j. exists Hji.
         rewrite <- NTH. assumption.
 Qed.
+
+(* Definition 4 (Exhaustiveness): *)
+Definition exhaustive {n : nat} (p : pvec n) :=
+    forall (v : value), exists (i : nat) (Hin : i < n),
+    filters p v i Hin.
+
+(* Definition 5 (Useless Clause): *)
+Definition useless_clause 
+    {n : nat} (p : pvec n) (i : nat) (Hin : i < n) :=
+    ~ exists (v : value), filters p v i Hin.
+
+(* Definition 6 (Useful Clause): *)
+Definition upred {n : nat} (p : pvec n) (q : pattern) (v : value) := 
+    (~ vinstance p v) /\ instance q v.
+
+(* U(p,q): *)
+Definition U {n : nat} (p : pvec n) (q : pattern) := 
+    exists (v : value), upred p q v.
+
+(* M(p,q): *)
+Definition M {n : nat} (p : pvec n) (q : pattern) := {v : value | upred p q v}.
+
+Lemma vinstanceb_row_instance :
+    forall {n : nat} (p : pvec n) (v : value) (i : nat) (Hin : i < n),
+    vinstanceb_row p v = Some i -> instance (V.nth_order p Hin) v.
+Proof.
+    intros. dependent induction p; try omega.
+    simpl in H. destruct (instanceb h v) eqn:eqihv.
+    - injection H; intros; subst. cbn. 
+        apply instance_refl. assumption.
+    - destruct (vinstanceb_row p v) eqn:eqvrow.
+        + injection H; intros; subst.
+            cbn. apply IHp. assumption.
+        + discriminate.
+Qed.
+
+(* Proposition 1.1: *)
+Theorem exhaustive_cond : 
+    forall {n : nat} (p : pvec n),
+    exhaustive p <-> ~ U p PWild.
+Proof.
+    unfold exhaustive; unfold U; unfold upred; 
+    (* unfold filters;  *)
+    split; intros.
+    - intros [v UP]. specialize H with (v := v).
+        destruct H as [i [Hin [H1 H2]]].
+        apply UP. apply vinstance_vinstance_row_refl.
+        exists i. exists Hin. assumption.
+    - eapply CPT.not_ex_all_not in H.
+        eapply CP.not_and_or in H as [H | H].
+        + apply CP.NNPP in H.
+            unfold vinstance in H.
+            eapply vinstance_vinstance_row_refl in H.
+            eapply vinstance_row_refl in H as VRR.
+            destruct VRR as [i [Hin VBR]].
+            exists i. exists Hin. apply filters_equiv. split.
+            * apply vinstanceb_row_instance. apply VBR.
+            * apply vinstanceb_row_first in VBR.
+                destruct VBR as [Hin' NV].
+                pose proof_irrelevance as PI.
+                pose proof (PI (i <= n) Hin' (Nat.lt_le_incl i n Hin)).
+                rewrite <- H0. apply NV.
+        + exfalso. apply H. constructor.
+Qed.
+    
+(* Proposition 1.2: *)
+Theorem useless_cond : 
+    forall {m n : nat} (p : pmatrix m n) (i : nat) (Him : i < m),
+    useless_clause p i Him <-> 
+    ~ U (V.take i (lt_le_weak i m Him) p) (V.nth p (F.of_nat_lt Him)).
+Proof.
+Admitted.
+
 
 End BabyExhaustiveness.
 
