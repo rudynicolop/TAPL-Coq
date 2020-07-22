@@ -323,6 +323,77 @@ Inductive pattern : Type :=
     | PLeft (t1 t2 : type) (p : pattern)
     | PRight (t1 t2 : type) (p : pattern).
 
+Inductive pat_type : pattern -> type -> Prop :=
+    | pt_wild : forall (t : type),
+        pat_type PWild t
+    | pt_var : forall (x : id) (t : type),
+        pat_type (PVar x) t
+    | pt_unit : pat_type PUnit TUnit
+    | pt_pair : forall (p1 p2 : pattern) (t1 t2 : type),
+        pat_type p1 t1 ->
+        pat_type p2 t2 ->
+        pat_type (PPair p1 p2) (TPair t1 t2)
+    | pt_left : forall (t1 t2 : type) (p : pattern),
+        pat_type p t1 ->
+        pat_type (PLeft t1 t2 p) (TEither t1 t2)
+    | pt_right : forall (t1 t2 : type) (p : pattern),
+        pat_type p t2 ->
+        pat_type (PRight t1 t2 p) (TEither t1 t2).
+
+Fixpoint pat_typeb (p : pattern) (t : type) : bool :=
+    match p,t with
+    | PWild, _
+    | PVar _, _
+    | PUnit, TUnit => true
+    | PPair p1 p2, TPair t1 t2 =>
+        pat_typeb p1 t1 && pat_typeb p2 t2
+    | PLeft tp1 tp2 p, TEither t1 t2 =>
+        type_eqb tp1 t1 &&
+        type_eqb tp2 t2 &&
+        pat_typeb p t1
+    | PRight tp1 tp2 p, TEither t1 t2 =>
+        type_eqb tp1 t1 &&
+        type_eqb tp2 t2 &&
+        pat_typeb p t2
+    | _, _ => false
+    end.
+
+Theorem pat_type_refl : 
+    forall (p : pattern) (t : type),
+    pat_type p t <-> pat_typeb p t = true.
+Proof.
+    induction p; destruct t; split; intros H;
+    try inversion H; subst; try discriminate;
+    try reflexivity; simpl in *; try constructor.
+    - apply andb_true_iff. split.
+        + apply IHp1. assumption.
+        + apply IHp2. assumption.
+    - apply andb_true_iff in H1 as [H1 H2].
+        apply IHp1. assumption.
+    - apply andb_true_iff in H1 as [H1 H2].
+        apply IHp2. assumption.
+    - apply andb_true_iff. split.
+        + apply andb_true_iff. split;
+            apply type_eq_refl; reflexivity.
+        + apply IHp. assumption.
+    - apply andb_true_iff in H1 as [HT H3].
+        apply andb_true_iff in HT as [HT1 HT2].
+        apply type_eq_refl in HT1.
+        apply type_eq_refl in HT2.
+        apply IHp in H3. subst.
+        constructor. assumption.
+    - apply andb_true_iff. split.
+        + apply andb_true_iff. split;
+            apply type_eq_refl; reflexivity.
+        + apply IHp. assumption.
+    - apply andb_true_iff in H1 as [HT H3].
+        apply andb_true_iff in HT as [HT1 HT2].
+        apply type_eq_refl in HT1.
+        apply type_eq_refl in HT2.
+        apply IHp in H3. subst.
+        constructor. assumption.
+Qed.
+
 Inductive expr : Type :=
     | EUnit
     | EVar (x : id)
@@ -340,6 +411,212 @@ Inductive value : Type :=
     | VPair (v1 v2 : value)
     | VLeft (t1 t2 : type) (v : value)
     | VRight (t1 t2 : type) (v : value).
+
+(* Approximate Typing for values *)
+
+Inductive value_type : Type :=
+    | VTUnit
+    | VTFun (t : value_type)
+    | VTPair (t1 t2 : value_type)
+    | VTEither (t1 t2 : value_type).
+
+Fixpoint vt_eqb (a b : value_type) : bool :=
+    match a, b with
+    | VTUnit, VTUnit => true
+    | VTFun a, VTFun b => vt_eqb a b
+    | VTPair a1 a2, VTPair b1 b2 
+    | VTEither a1 a2, VTEither b1 b2 => vt_eqb a1 b1 && vt_eqb a2 b2
+    | _, _ => false
+    end.
+
+Theorem vt_eq_refl : forall (a b : value_type), a = b <-> vt_eqb a b = true.
+Proof.
+    induction a; destruct b; split; intros H;
+    try inversion H; try discriminate; 
+    try reflexivity; subst; simpl in *.
+    - apply IHa. reflexivity.
+    - apply IHa in H; subst. reflexivity.
+    - apply andb_true_iff. split.
+        + apply IHa1. reflexivity.
+        + apply IHa2. reflexivity.
+    - apply andb_true_iff in H1 as [H1 H2].
+        apply IHa1 in H1. apply IHa2 in H2.
+        subst. reflexivity.
+    - apply andb_true_iff. split.
+        + apply IHa1. reflexivity.
+        + apply IHa2. reflexivity.
+    - apply andb_true_iff in H1 as [H1 H2].
+        apply IHa1 in H1. apply IHa2 in H2.
+        subst. reflexivity.
+Qed.
+
+Module VTEq <: HasRefl2.
+Definition A := value_type.
+Definition B := value_type.
+Definition P (a : A) (b : B) := a = b.
+Definition f := vt_eqb.
+Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
+Proof. intros. apply vt_eq_refl. Qed.
+End VTEq.
+
+Module VTNotEq := NotRefl2(VTEq).
+
+Inductive vtt : type -> value_type -> Prop :=
+    | vtt_unit : 
+        vtt TUnit VTUnit
+    | vtt_fun : forall (t t' : type) (vt : value_type),
+        vtt t vt ->
+        vtt (TFun t t') (VTFun vt)
+    | vtt_pair : forall (t1 t2 : type) (vt1 vt2 : value_type),
+        vtt t1 vt1 ->
+        vtt t2 vt2 ->
+        vtt (TPair t1 t2) (VTPair vt1 vt2)
+    | vtt_either : forall (t1 t2 : type) (vt1 vt2 : value_type),
+        vtt t1 vt1 ->
+        vtt t2 vt2 ->
+        vtt (TEither t1 t2) (VTEither vt1 vt2).
+
+Fixpoint vttb (t : type) : value_type :=
+    match t with
+    | TUnit => VTUnit
+    | TFun t _ => VTFun (vttb t)
+    | TPair t1 t2 => VTPair (vttb t1) (vttb t2)
+    | TEither t1 t2 => VTEither (vttb t1) (vttb t2)
+    end.
+
+Theorem vtt_refl : forall (t : type) (vt : value_type),
+    vtt t vt <-> vttb t = vt.
+Proof.
+    induction t; destruct vt; split; intros H;
+    try inversion H; try discriminate; try reflexivity;
+    try constructor; subst; simpl in *.
+    - apply IHt1 in H1. rewrite H1. reflexivity.
+    - apply IHt1. reflexivity.
+    - apply IHt1 in H3. apply IHt2 in H5. 
+        subst. reflexivity.
+    - apply IHt1. reflexivity.
+    - apply IHt2. reflexivity.
+    - apply IHt1 in H3. apply IHt2 in H5.
+        subst. reflexivity.
+    - apply IHt1. reflexivity.
+    - apply IHt2. reflexivity.
+Qed.
+
+Inductive value_judge : value -> value_type -> Prop :=
+    | vj_unit : 
+        value_judge VUnit VTUnit
+    | vj_fun : forall (p : pattern) (t : type) (vt : value_type) (e : expr),
+        pat_type p t ->
+        vtt t vt ->
+        value_judge (VFun p t e) (VTFun vt)
+    | vj_pair : forall (v1 v2 : value) (t1 t2 : value_type),
+        value_judge v1 t1 ->
+        value_judge v2 t2 ->
+        value_judge (VPair v1 v2) (VTPair t1 t2)
+    | vj_left : forall (t1 t2 : type) (vt1 vt2 : value_type) (v : value),
+        vtt t1 vt1 ->
+        vtt t2 vt2 ->
+        value_judge v vt1 ->
+        value_judge (VLeft t1 t2 v) (VTEither vt1 vt2)
+    | vj_right : forall (t1 t2 : type) (vt1 vt2 : value_type) (v : value),
+        vtt t1 vt1 ->
+        vtt t2 vt2 ->
+        value_judge v vt2 ->
+        value_judge (VRight t1 t2 v) (VTEither vt1 vt2).
+
+Fixpoint value_judgeb (v : value) : option value_type := 
+    match v with 
+    | VUnit => Some VTUnit
+    | VFun p t _ => 
+        if pat_typeb p t then Some (VTFun (vttb t)) else None
+    | VPair v1 v2 => 
+        match value_judgeb v1, value_judgeb v2 with
+        | Some vt1, Some vt2 => Some (VTPair vt1 vt2)
+        | _, _ => None
+        end
+    | VLeft t1 t2 v =>
+        match value_judgeb v with
+        | None => None 
+        | Some vt1 => 
+            if vt_eqb (vttb t1) vt1
+            then Some (VTEither (vttb t1) (vttb t2))
+            else None
+        end
+    | VRight t1 t2 v => 
+        match value_judgeb v with
+        | None => None 
+        | Some vt2 => 
+            if vt_eqb (vttb t2) vt2
+            then Some (VTEither (vttb t1) (vttb t2))
+            else None
+        end
+    end.
+
+Theorem value_judge_refl :
+    forall (v : value) (t : value_type),
+    value_judge v t <-> value_judgeb v = Some t.
+Proof.
+    induction v; split; intros H;
+    try inversion H; subst;
+    try discriminate;
+    try reflexivity; simpl in *;
+    try constructor; subst.
+    - apply pat_type_refl in H4.
+        rewrite H4. apply vtt_refl in H5.
+        rewrite H5. reflexivity.
+    - destruct (pat_typeb p t) eqn:eqp.
+        + injection H1; intros; subst.
+            apply pat_type_refl in eqp.
+            constructor; try assumption.
+            apply vtt_refl. reflexivity.
+        + discriminate.
+    - apply IHv1 in H2. rewrite H2.
+        apply IHv2 in H4. rewrite H4.
+        reflexivity.
+    - destruct (value_judgeb v1) eqn:eq1;
+        destruct (value_judgeb v2) eqn:eq2; subst;
+        try discriminate.
+        assert (DUMBv : Some v = Some v); 
+        try reflexivity. apply IHv1 in DUMBv.
+        assert (DUMBv0 : Some v0 = Some v0);
+        try reflexivity. apply IHv2 in DUMBv0.
+        injection H1; intros; subst.
+        constructor; assumption.
+    - apply IHv in H6. rewrite H6.
+        apply vtt_refl in H3. rewrite H3.
+        apply vtt_refl in H5. rewrite H5.
+        destruct (vt_eqb vt1 vt1) eqn:eq;
+        try reflexivity. apply VTNotEq.not_refl2 in eq.
+        unfold VTEq.P in eq. contradiction.
+    - destruct (value_judgeb v) eqn:eqv;
+        try discriminate.
+        assert (Hv0 : Some v0 = Some v0);
+        try reflexivity. apply IHv in Hv0.
+        destruct (vt_eqb (vttb t1) v0) eqn:eqvb;
+        try discriminate.
+        injection H1; intros; subst.
+        constructor;
+        try (apply vtt_refl; reflexivity).
+        apply vt_eq_refl in eqvb; subst.
+        assumption.
+    - apply IHv in H6. rewrite H6.
+        apply vtt_refl in H3. rewrite H3.
+        apply vtt_refl in H5. rewrite H5.
+        destruct (vt_eqb vt2 vt2) eqn:eq;
+        try reflexivity. apply VTNotEq.not_refl2 in eq.
+        unfold VTEq.P in eq. contradiction.
+    - destruct (value_judgeb v) eqn:eqv;
+        try discriminate.
+        assert (Hv0 : Some v0 = Some v0);
+        try reflexivity. apply IHv in Hv0.
+        destruct (vt_eqb (vttb t2) v0) eqn:eqvb;
+        try discriminate.
+        injection H1; intros; subst.
+        constructor;
+        try (apply vtt_refl; reflexivity).
+        apply vt_eq_refl in eqvb; subst.
+        assumption.
+Qed.
 
 (* Definition 1 (Instance Relation) *)
 Inductive instance : pattern -> value -> Prop :=
