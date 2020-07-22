@@ -716,6 +716,33 @@ Module BabyExhaustiveness.
 
 Definition pvec (n : nat) := V.t pattern n.
 
+Definition pvec_type {n : nat} (p : pvec n) (t : type) :=
+    V.Forall (fun p => pat_type p t) p.
+
+Definition pvec_typeb {n : nat} (p : pvec n) (t : type) :=
+    forallb (fun p => pat_typeb p t) p.
+
+Theorem pvec_type_refl : 
+    forall {n : nat} (p : pvec n) (t : type),
+    pvec_type p t <-> pvec_typeb p t = true.
+Proof.
+    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+    intros n. induction p; split; intros H.
+    - reflexivity.
+    - constructor.
+    - inversion H; subst.
+        apply STUPID in H2; try apply Nat.eq_dec; subst.
+        simpl. unfold eq_rect_r. simpl.
+        apply andb_true_iff. split.
+        + apply pat_type_refl. assumption.
+        + apply IHp. assumption.
+    - simpl in H. unfold eq_rect_r in H. simpl in H.
+        apply andb_true_iff in H as [H1 H2].
+        constructor.
+        + apply pat_type_refl. assumption.
+        + apply IHp. assumption. 
+Qed.
+
 (* Definition 2 (ML Pattern Matching)
     A Row  i in P filters v iff
     - Pi <= v
@@ -1000,21 +1027,51 @@ Definition exhaustive {n : nat} (p : pvec n) :=
     forall (v : value), exists (i : nat) (Hin : i < n),
     filters p v i Hin.
 
+(* Correct, well-typed, Exhaustiveness *)
+Definition exhaustive_typed {n : nat} (p : pvec n) (t : type) :=
+    pvec_type p t ->
+    forall (v : value) (vt : value_type),
+    value_judge v vt -> vtt t vt ->
+    exists (i : nat) (Hin : i < n), filters p v i Hin.
+
 (* Definition 5 (Useless Clause): *)
 Definition useless_clause 
     {n : nat} (p : pvec n) (i : nat) (Hin : i < n) :=
     ~ exists (v : value), filters p v i Hin.
 
+(* Correct, well-typed, Useless Clause *)
+Definition useless_clause_typed 
+    {n : nat} (p : pvec n) (t : type) (i : nat) (Hin : i < n) :=
+    pvec_type p t -> ~ exists (v : value) (vt : value_type),
+    value_judge v vt -> vtt t vt -> filters p v i Hin.
+
+
 (* Definition 6 (Useful Clause): *)
 Definition upred {n : nat} (p : pvec n) (q : pattern) (v : value) := 
+    (~ vinstance p v) /\ instance q v.
+
+(* Well-typed Useful Clause *)
+Definition upred_typed 
+    {n : nat} (p : pvec n) (q : pattern) 
+    (t : type) (v : value) (vt : value_type) := 
+    pvec_type p t -> pat_type q t ->
+    value_judge v vt -> vtt t vt ->
     (~ vinstance p v) /\ instance q v.
 
 (* U(p,q): *)
 Definition U {n : nat} (p : pvec n) (q : pattern) := 
     exists (v : value), upred p q v.
 
+(* Well-typed U(p,q) *)
+Definition UT {n : nat} (p : pvec n) (q : pattern) (t : type) := 
+    exists (v : value) (vt : value_type), upred_typed p q t v vt.
+
 (* M(p,q): *)
 Definition M {n : nat} (p : pvec n) (q : pattern) := {v : value | upred p q v}.
+
+(* Well-typed M(p,q): *)
+Definition MT {n : nat} (p : pvec n) (q : pattern) (t : type) := 
+    {v : value | exists (vt : value_type), upred_typed p q t v vt}.
 
 Lemma vinstanceb_row_instance :
     forall {n : nat} (p : pvec n) (v : value) (i : nat) (Hin : i < n),
