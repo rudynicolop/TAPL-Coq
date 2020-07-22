@@ -1115,6 +1115,13 @@ Proof.
                 rewrite <- H0. apply NV.
         + exfalso. apply H. constructor.
 Qed.
+
+(* Well-typed Proposition 1.1: *)
+Theorem exhaustive_cond_typed :
+    forall {n : nat} (p : pvec n) (t : type),
+    exhaustive_typed p t <-> ~ UT p PWild t.
+Proof.
+Admitted.
     
 (* Proposition 1.2: *)
 Theorem useless_cond : 
@@ -1130,6 +1137,14 @@ Proof.
         apply H. exists v. 
         destruct FH as [FH1 FH2]. split; assumption. 
 Qed.
+
+(* Well-typed Proposition 1.2: *)
+Theorem useless_cond_typed :
+    forall {n : nat} (p : pvec n) (t : type) (i : nat) (Hin : i < n),
+    useless_clause_typed p t i Hin <->
+    ~ UT (V.take i (lt_le_weak i n Hin) p) (V.nth p (F.of_nat_lt Hin)) t.
+Proof.
+Admitted.
 
 Module PatternDec <: SE.DecidableType.
 Import SE.
