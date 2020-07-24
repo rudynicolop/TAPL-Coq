@@ -7,8 +7,6 @@
     *)
 
 Require Import Coq.Strings.String.
-Require Import Coq.Lists.List.
-Import ListNotations.
 Require Import Coq.Bool.Bool.
 Require Coq.Vectors.Fin.
 Module F := Coq.Vectors.Fin.
@@ -17,7 +15,6 @@ Module V := Coq.Vectors.Vector.
 Require Import Omega.
 Require Coq.Logic.ClassicalFacts.
 Module CF := Coq.Logic.ClassicalFacts.
-Require Import Coq.Sets.Ensembles.
 Require Coq.Logic.Classical_Pred_Type.
 Module CPT := Coq.Logic.Classical_Pred_Type.
 Require Coq.Logic.Classical_Prop.
@@ -31,7 +28,14 @@ Require Coq.Structures.Equalities.
 Module SE := Coq.Structures.Equalities.
 Require Coq.MSets.MSetWeakList.
 Module WS := Coq.MSets.MSetWeakList.
+Require Coq.FSets.FMapWeakList.
+Module FM := Coq.FSets.FMapWeakList.
 Require Import Coq.Logic.FunctionalExtensionality.
+Require Coq.Sets.Ensembles.
+Module E := Coq.Sets.Ensembles.
+Module L := Coq.Lists.List.
+Require Import Coq.Lists.List.
+Import ListNotations.
 
 Axiom proof_irrelevance : CF.proof_irrelevance.
 Axiom excluded_middle : CF.excluded_middle.
@@ -321,78 +325,221 @@ Inductive pattern : Type :=
     | PUnit
     | PPair (p1 p2 : pattern)
     | PLeft (t1 t2 : type) (p : pattern)
-    | PRight (t1 t2 : type) (p : pattern).
+    | PRight (t1 t2 : type) (p : pattern)
+    | POr (p1 p2 : pattern).
+
+Module IdDec <: SE.DecidableType.
+Import SE.
+Require Import RelationClasses.
+Definition t := id.
+Definition eq (x1 x2 : t) := x1 = x2.
+Declare Instance eq_equiv : Equivalence eq.
+Theorem eq_dec : forall (x1 x2 : t),
+    {x1 = x2} + {x1 <> x2}.
+Proof. intros. apply string_dec. Qed.
+Theorem eq_refl : forall (x : t), x = x.
+Proof. intros. reflexivity. Qed.
+Theorem eq_sym : forall (x y : t), x = y -> y = x.
+Proof. unfold eq. intros; subst; reflexivity. Qed.
+Theorem eq_trans : forall (x y z : t), x = y -> y = z -> x = z.
+Proof. intros; subst. reflexivity. Qed.
+End IdDec.
+
+Module FV := FM.Make(IdDec).
+Definition fvt := FV.t type.
+Definition fv_empty := FV.empty type.
+
+Definition set_of_fv (fv : fvt) : E.Ensemble id :=
+    FV.fold (fun x _ acc => E.Add id acc x) fv (E.Empty_set id).
+
+Definition add_all (f1 : fvt) (f2 : fvt) : fvt :=
+    FV.fold (fun x t acc => FV.add x t acc) f1 f2.
+
+Lemma disjoint_add_all : forall (a b : fvt),
+    E.Disjoint id (set_of_fv a) (set_of_fv b) ->
+    FV.Equal (add_all a b) (add_all b a).
+Proof.
+Admitted.
+
+Inductive free_vars : pattern -> type -> fvt -> Prop :=
+    | free_wild : forall (t : type), free_vars PWild t fv_empty
+    | free_name : forall (x : id) (t : type),
+        free_vars (PVar x) t (FV.add x t fv_empty)
+    | free_unit : free_vars PUnit TUnit fv_empty
+    | free_pair : forall (p1 p2 : pattern) (a b : type) (f1 f2 : fvt),
+        free_vars p1 a f1 ->
+        free_vars p2 b f2 ->
+        E.Disjoint id (set_of_fv f1) (set_of_fv f2) ->
+        free_vars (PPair p1 p2) (TPair a b) (add_all f1 f2)
+    | free_left : forall (a b : type) (p : pattern) (f : fvt),
+        free_vars p a f ->
+        free_vars (PLeft a b p) (TEither a b) f
+    | free_right : forall (a b : type) (p : pattern) (f : fvt),
+        free_vars p b f ->
+        free_vars (PRight a b p) (TEither a b) f
+    | free_or : forall (p1 p2 : pattern) (t : type) (f1 f2 : fvt),
+        free_vars p1 t f1 ->
+        free_vars p2 t f2 ->
+        FV.Equal f1 f2 ->
+        free_vars (POr p1 p2) t f1.
 
 Inductive pat_type : pattern -> type -> Prop :=
     | pt_wild : forall (t : type),
         pat_type PWild t
-    | pt_var : forall (x : id) (t : type),
+    | pt_name : forall (x : id) (t : type),
         pat_type (PVar x) t
     | pt_unit : pat_type PUnit TUnit
-    | pt_pair : forall (p1 p2 : pattern) (t1 t2 : type),
-        pat_type p1 t1 ->
-        pat_type p2 t2 ->
-        pat_type (PPair p1 p2) (TPair t1 t2)
-    | pt_left : forall (t1 t2 : type) (p : pattern),
-        pat_type p t1 ->
-        pat_type (PLeft t1 t2 p) (TEither t1 t2)
-    | pt_right : forall (t1 t2 : type) (p : pattern),
-        pat_type p t2 ->
-        pat_type (PRight t1 t2 p) (TEither t1 t2).
+    | pt_pair : forall (p1 p2 : pattern) (a b : type) (f1 f2 : fvt),
+        pat_type p1 a ->
+        pat_type p2 b ->
+        free_vars p1 a f1 ->
+        free_vars p2 b f2 ->
+        E.Disjoint id (set_of_fv f1) (set_of_fv f2) ->
+        pat_type (PPair p1 p2) (TPair a b)
+    | pt_left : forall (a b : type) (p : pattern),
+        pat_type p a ->
+        pat_type (PLeft a b p) (TEither a b)
+    | pt_right : forall (a b : type) (p : pattern),
+        pat_type p b ->
+        pat_type (PRight a b p) (TEither a b)
+    | pt_or : forall (p1 p2 : pattern) (t : type) (f1 f2 : fvt),
+        pat_type p1 t ->
+        pat_type p2 t ->
+        free_vars p1 t f1 ->
+        free_vars p2 t f2 ->
+        FV.Equal f1 f2 ->
+        pat_type (POr p1 p2) t.
 
-Fixpoint pat_typeb (p : pattern) (t : type) : bool :=
-    match p,t with
-    | PWild, _
-    | PVar _, _
-    | PUnit, TUnit => true
-    | PPair p1 p2, TPair t1 t2 =>
-        pat_typeb p1 t1 && pat_typeb p2 t2
-    | PLeft tp1 tp2 p, TEither t1 t2 =>
-        type_eqb tp1 t1 &&
-        type_eqb tp2 t2 &&
-        pat_typeb p t1
-    | PRight tp1 tp2 p, TEither t1 t2 =>
-        type_eqb tp1 t1 &&
-        type_eqb tp2 t2 &&
-        pat_typeb p t2
-    | _, _ => false
-    end.
+Definition pjudge (t : type) (p : pattern) := pat_type p t.
 
-Theorem pat_type_refl : 
-    forall (p : pattern) (t : type),
-    pat_type p t <-> pat_typeb p t = true.
+Definition pvec (n : nat) := V.t pattern n.
+
+Definition pvec_type {n : nat} (p : pvec n) (t : type) := V.Forall (pjudge t) p.
+
+Definition patt (t : type) := {p : pattern | pat_type p t}.
+
+(* Definition pvt {n : nat} (t : type) := {p : pvec n | pvec_type p t}. *)
+
+Definition pvt (n : nat) (t : type) := V.t (patt t) n.
+
+Definition plt (t : type) := list (patt t).
+
+Module PatternDec <: SE.DecidableType.
+Import SE.
+Require Import RelationClasses.
+Definition t := pattern.
+Definition eq (p1 p2 : t) := p1 = p2.
+Declare Instance eq_equiv : Equivalence eq.
+Theorem eq_dec : forall (p1 p2 : pattern),
+    {p1 = p2} + {p1 <> p2}.
 Proof.
-    induction p; destruct t; split; intros H;
-    try inversion H; subst; try discriminate;
-    try reflexivity; simpl in *; try constructor.
-    - apply andb_true_iff. split.
-        + apply IHp1. assumption.
-        + apply IHp2. assumption.
-    - apply andb_true_iff in H1 as [H1 H2].
-        apply IHp1. assumption.
-    - apply andb_true_iff in H1 as [H1 H2].
-        apply IHp2. assumption.
-    - apply andb_true_iff. split.
-        + apply andb_true_iff. split;
-            apply type_eq_refl; reflexivity.
-        + apply IHp. assumption.
-    - apply andb_true_iff in H1 as [HT H3].
-        apply andb_true_iff in HT as [HT1 HT2].
-        apply type_eq_refl in HT1.
-        apply type_eq_refl in HT2.
-        apply IHp in H3. subst.
-        constructor. assumption.
-    - apply andb_true_iff. split.
-        + apply andb_true_iff. split;
-            apply type_eq_refl; reflexivity.
-        + apply IHp. assumption.
-    - apply andb_true_iff in H1 as [HT H3].
-        apply andb_true_iff in HT as [HT1 HT2].
-        apply type_eq_refl in HT1.
-        apply type_eq_refl in HT2.
-        apply IHp in H3. subst.
-        constructor. assumption.
+    induction p1; destruct p2;
+    try (pose proof (IHp1_1 p2_1) as IH1;
+        pose proof (IHp1_2 p2_2) as IH2;
+        destruct IH1 as [IH1 | IH1]; 
+        destruct IH2 as [IH2 | IH2]; subst;
+        try (right; intros NE; inversion NE; 
+        subst; try apply IH1; try apply IH2; reflexivity));
+    try (pose proof (string_dec x x0) as [H | H]; subst;
+        try (right; intros NE; inversion NE; subst; apply H; reflexivity));
+    try (pose proof (IHp1 p2) as IH;
+        pose proof (type_eq_dec t1 t0) as TED1;
+        pose proof (type_eq_dec t2 t3) as TED2;
+        destruct IH as [IH | IH];
+        destruct TED1 as [TED1 | TED1];
+        destruct TED2 as [TED2 | TED2]; subst;
+        try (right; intros NE; inversion NE; contradiction));
+    try (left; reflexivity);
+    try (right; intros H; inversion H).
 Qed.
+End PatternDec.
+
+Definition filter_pairs' (a b : type) 
+    (p : patt (TPair a b)) (acc : (plt a) * (plt b)) : (plt a) * (plt b).
+Proof. inversion p. destruct x.
+    - apply acc.
+    - apply acc.
+    - apply acc.
+    - assert (H12 : pat_type x1 a /\ pat_type x2 b).
+        + inversion H; subst. split; assumption.
+        + destruct acc as [av bv]. destruct H12 as [H1 H2].
+            apply ((exist (pjudge a) x1 H1)::av,(exist (pjudge b) x2 H2)::bv).
+    - apply acc.
+    - apply acc.
+    - apply acc.
+Defined.
+
+Definition filter_pairs (a b : type) : plt (TPair a b) -> (plt a) * (plt b) :=
+    fold_right (filter_pairs' a b) ([],[]).
+
+Definition filter_eithers' (a b : type)
+    (p : patt (TEither a b)) (acc : (plt a) * (plt b)) : (plt a) * (plt b).
+Proof. inversion p. destruct x.
+    - apply acc.
+    - apply acc.
+    - apply acc.
+    - apply acc.
+    - assert (HL : pat_type x a).
+        + inversion H; subst; assumption.
+        + destruct acc as [av bv].
+            apply ((exist (pjudge a) x HL)::av,bv).
+    - assert (HR : pat_type x b).
+        + inversion H; subst; assumption.
+        + destruct acc as [av bv].
+            apply (av,(exist (pjudge b) x HR)::bv).
+    - apply acc.
+Defined.
+
+Definition filter_eithers (a b : type) : plt (TEither a b) -> (plt a) * (plt b) :=
+    fold_right (filter_eithers' a b) ([],[]).
+
+Definition flatten_ors' (t : type) (p : patt t) (acc : plt t) : plt t.
+Proof. inversion p. destruct x.
+- apply acc.
+- apply acc.
+- apply acc.
+- apply acc.
+- apply acc.
+- apply acc.
+- assert (H12 : pat_type x1 t /\ pat_type x2 t).
+    + inversion H; subst; split; assumption.
+    + destruct H12 as [H1 H2].
+        apply ((exist (pjudge t) x1 H1)::(exist (pjudge t) x2 H2)::acc).
+Defined.
+
+Definition flatten_ors (t : type) : plt t -> plt t := 
+    fold_right (flatten_ors' t) [].
+
+(* Complete Signature Sigma:
+    This was not defined explicitly so I have
+    invented a definition to suit my purposes.
+    Note this relation does not enforce type-checking,
+    this is completeness not correctness. 
+    The notion of correctness will be defined
+    separately with the typing judgment. *)
+Inductive sigma : forall (t : type), plt t -> Prop :=
+    | sigma_wild : forall (t : type) (p : list (patt t)),
+        In (exist (pjudge t) PWild (pt_wild t)) p -> 
+        sigma t p
+    | sigma_name : forall (t : type) (p : plt t) (x : id),
+        In (exist (pjudge t) (PVar x) (pt_name x t)) p ->
+        sigma t p
+    | sigma_unit : forall (p : plt TUnit),
+        In (exist (pjudge TUnit) PUnit pt_unit) p -> 
+        sigma TUnit p
+    | sigma_pair : forall (a b : type) (p : plt (TPair a b)) (pa : plt a) (pb : plt b),
+        (pa,pb) = filter_pairs a b p ->
+        sigma a pa -> 
+        sigma b pb ->
+        sigma (TPair a b) p
+    | sigma_either : forall (a b : type) (p : plt (TEither a b)) (pa : plt a) (pb : plt b),
+        (pa,pb) = filter_eithers a b p ->
+        sigma a pa ->
+        sigma b pb ->
+        sigma (TEither a b) p
+    | sigma_or : forall (t : type) (p : plt t),
+        sigma t (flatten_ors t p) ->
+        sigma t p.
 
 Inductive expr : Type :=
     | EUnit
@@ -412,211 +559,28 @@ Inductive value : Type :=
     | VLeft (t1 t2 : type) (v : value)
     | VRight (t1 t2 : type) (v : value).
 
-(* Approximate Typing for values *)
+(* Approximate yet Sufficient Typing for values
+    for the purposes of proving exhaustive matching *)
 
-Inductive value_type : Type :=
-    | VTUnit
-    | VTFun (t : value_type)
-    | VTPair (t1 t2 : value_type)
-    | VTEither (t1 t2 : value_type).
+Inductive val_judge : value -> type -> Prop :=
+    | vj_unit : val_judge VUnit TUnit
+    | vj_fun : forall (p : pattern) (t t' : type) (e : expr) (H : pat_type p t),
+        sigma t [exist (pjudge t) p H] ->
+        val_judge (VFun p t e) (TFun t t')
+    | vj_pair : forall (v1 v2 : value) (a b : type),
+        val_judge v1 a ->
+        val_judge v2 b ->
+        val_judge (VPair v1 v2) (TPair a b)
+    | vj_left : forall (a b : type) (v : value),
+        val_judge v a ->
+        val_judge (VLeft a b v) (TEither a b)
+    | vj_right : forall (a b : type) (v : value),
+        val_judge v b ->
+        val_judge (VRight a b v) (TEither a b).
 
-Fixpoint vt_eqb (a b : value_type) : bool :=
-    match a, b with
-    | VTUnit, VTUnit => true
-    | VTFun a, VTFun b => vt_eqb a b
-    | VTPair a1 a2, VTPair b1 b2 
-    | VTEither a1 a2, VTEither b1 b2 => vt_eqb a1 b1 && vt_eqb a2 b2
-    | _, _ => false
-    end.
+Definition valt (t : type) := {v : value | val_judge v t}.
 
-Theorem vt_eq_refl : forall (a b : value_type), a = b <-> vt_eqb a b = true.
-Proof.
-    induction a; destruct b; split; intros H;
-    try inversion H; try discriminate; 
-    try reflexivity; subst; simpl in *.
-    - apply IHa. reflexivity.
-    - apply IHa in H; subst. reflexivity.
-    - apply andb_true_iff. split.
-        + apply IHa1. reflexivity.
-        + apply IHa2. reflexivity.
-    - apply andb_true_iff in H1 as [H1 H2].
-        apply IHa1 in H1. apply IHa2 in H2.
-        subst. reflexivity.
-    - apply andb_true_iff. split.
-        + apply IHa1. reflexivity.
-        + apply IHa2. reflexivity.
-    - apply andb_true_iff in H1 as [H1 H2].
-        apply IHa1 in H1. apply IHa2 in H2.
-        subst. reflexivity.
-Qed.
-
-Module VTEq <: HasRefl2.
-Definition A := value_type.
-Definition B := value_type.
-Definition P (a : A) (b : B) := a = b.
-Definition f := vt_eqb.
-Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
-Proof. intros. apply vt_eq_refl. Qed.
-End VTEq.
-
-Module VTNotEq := NotRefl2(VTEq).
-
-Inductive vtt : type -> value_type -> Prop :=
-    | vtt_unit : 
-        vtt TUnit VTUnit
-    | vtt_fun : forall (t t' : type) (vt : value_type),
-        vtt t vt ->
-        vtt (TFun t t') (VTFun vt)
-    | vtt_pair : forall (t1 t2 : type) (vt1 vt2 : value_type),
-        vtt t1 vt1 ->
-        vtt t2 vt2 ->
-        vtt (TPair t1 t2) (VTPair vt1 vt2)
-    | vtt_either : forall (t1 t2 : type) (vt1 vt2 : value_type),
-        vtt t1 vt1 ->
-        vtt t2 vt2 ->
-        vtt (TEither t1 t2) (VTEither vt1 vt2).
-
-Fixpoint vttb (t : type) : value_type :=
-    match t with
-    | TUnit => VTUnit
-    | TFun t _ => VTFun (vttb t)
-    | TPair t1 t2 => VTPair (vttb t1) (vttb t2)
-    | TEither t1 t2 => VTEither (vttb t1) (vttb t2)
-    end.
-
-Theorem vtt_refl : forall (t : type) (vt : value_type),
-    vtt t vt <-> vttb t = vt.
-Proof.
-    induction t; destruct vt; split; intros H;
-    try inversion H; try discriminate; try reflexivity;
-    try constructor; subst; simpl in *.
-    - apply IHt1 in H1. rewrite H1. reflexivity.
-    - apply IHt1. reflexivity.
-    - apply IHt1 in H3. apply IHt2 in H5. 
-        subst. reflexivity.
-    - apply IHt1. reflexivity.
-    - apply IHt2. reflexivity.
-    - apply IHt1 in H3. apply IHt2 in H5.
-        subst. reflexivity.
-    - apply IHt1. reflexivity.
-    - apply IHt2. reflexivity.
-Qed.
-
-Inductive value_judge : value -> value_type -> Prop :=
-    | vj_unit : 
-        value_judge VUnit VTUnit
-    | vj_fun : forall (p : pattern) (t : type) (vt : value_type) (e : expr),
-        pat_type p t ->
-        vtt t vt ->
-        value_judge (VFun p t e) (VTFun vt)
-    | vj_pair : forall (v1 v2 : value) (t1 t2 : value_type),
-        value_judge v1 t1 ->
-        value_judge v2 t2 ->
-        value_judge (VPair v1 v2) (VTPair t1 t2)
-    | vj_left : forall (t1 t2 : type) (vt1 vt2 : value_type) (v : value),
-        vtt t1 vt1 ->
-        vtt t2 vt2 ->
-        value_judge v vt1 ->
-        value_judge (VLeft t1 t2 v) (VTEither vt1 vt2)
-    | vj_right : forall (t1 t2 : type) (vt1 vt2 : value_type) (v : value),
-        vtt t1 vt1 ->
-        vtt t2 vt2 ->
-        value_judge v vt2 ->
-        value_judge (VRight t1 t2 v) (VTEither vt1 vt2).
-
-Fixpoint value_judgeb (v : value) : option value_type := 
-    match v with 
-    | VUnit => Some VTUnit
-    | VFun p t _ => 
-        if pat_typeb p t then Some (VTFun (vttb t)) else None
-    | VPair v1 v2 => 
-        match value_judgeb v1, value_judgeb v2 with
-        | Some vt1, Some vt2 => Some (VTPair vt1 vt2)
-        | _, _ => None
-        end
-    | VLeft t1 t2 v =>
-        match value_judgeb v with
-        | None => None 
-        | Some vt1 => 
-            if vt_eqb (vttb t1) vt1
-            then Some (VTEither (vttb t1) (vttb t2))
-            else None
-        end
-    | VRight t1 t2 v => 
-        match value_judgeb v with
-        | None => None 
-        | Some vt2 => 
-            if vt_eqb (vttb t2) vt2
-            then Some (VTEither (vttb t1) (vttb t2))
-            else None
-        end
-    end.
-
-Theorem value_judge_refl :
-    forall (v : value) (t : value_type),
-    value_judge v t <-> value_judgeb v = Some t.
-Proof.
-    induction v; split; intros H;
-    try inversion H; subst;
-    try discriminate;
-    try reflexivity; simpl in *;
-    try constructor; subst.
-    - apply pat_type_refl in H4.
-        rewrite H4. apply vtt_refl in H5.
-        rewrite H5. reflexivity.
-    - destruct (pat_typeb p t) eqn:eqp.
-        + injection H1; intros; subst.
-            apply pat_type_refl in eqp.
-            constructor; try assumption.
-            apply vtt_refl. reflexivity.
-        + discriminate.
-    - apply IHv1 in H2. rewrite H2.
-        apply IHv2 in H4. rewrite H4.
-        reflexivity.
-    - destruct (value_judgeb v1) eqn:eq1;
-        destruct (value_judgeb v2) eqn:eq2; subst;
-        try discriminate.
-        assert (DUMBv : Some v = Some v); 
-        try reflexivity. apply IHv1 in DUMBv.
-        assert (DUMBv0 : Some v0 = Some v0);
-        try reflexivity. apply IHv2 in DUMBv0.
-        injection H1; intros; subst.
-        constructor; assumption.
-    - apply IHv in H6. rewrite H6.
-        apply vtt_refl in H3. rewrite H3.
-        apply vtt_refl in H5. rewrite H5.
-        destruct (vt_eqb vt1 vt1) eqn:eq;
-        try reflexivity. apply VTNotEq.not_refl2 in eq.
-        unfold VTEq.P in eq. contradiction.
-    - destruct (value_judgeb v) eqn:eqv;
-        try discriminate.
-        assert (Hv0 : Some v0 = Some v0);
-        try reflexivity. apply IHv in Hv0.
-        destruct (vt_eqb (vttb t1) v0) eqn:eqvb;
-        try discriminate.
-        injection H1; intros; subst.
-        constructor;
-        try (apply vtt_refl; reflexivity).
-        apply vt_eq_refl in eqvb; subst.
-        assumption.
-    - apply IHv in H6. rewrite H6.
-        apply vtt_refl in H3. rewrite H3.
-        apply vtt_refl in H5. rewrite H5.
-        destruct (vt_eqb vt2 vt2) eqn:eq;
-        try reflexivity. apply VTNotEq.not_refl2 in eq.
-        unfold VTEq.P in eq. contradiction.
-    - destruct (value_judgeb v) eqn:eqv;
-        try discriminate.
-        assert (Hv0 : Some v0 = Some v0);
-        try reflexivity. apply IHv in Hv0.
-        destruct (vt_eqb (vttb t2) v0) eqn:eqvb;
-        try discriminate.
-        injection H1; intros; subst.
-        constructor;
-        try (apply vtt_refl; reflexivity).
-        apply vt_eq_refl in eqvb; subst.
-        assumption.
-Qed.
+Definition vjudge (t : type) (v : value) := val_judge v t.
 
 (* Definition 1 (Instance Relation) *)
 Inductive instance : pattern -> value -> Prop :=
@@ -630,6 +594,44 @@ Inductive instance : pattern -> value -> Prop :=
         instance p v -> instance (PLeft t1 t2 p) (VLeft t1 t2 v)
     | instance_right : forall (t1 t2 : type) (p : pattern) (v : value),
         instance p v -> instance (PRight t1 t2 p) (VRight t1 t2 v).
+
+Definition instancet (t : type) (p : patt t) (v : valt t) : Prop :=
+    instance (proj1_sig p) (proj1_sig v).
+
+(* Definition 1 (Instance Relation)
+Inductive instance : forall (t : type), patt t -> valt t -> Prop :=
+    | instance_wild : forall (t : type) (v : valt t), 
+        instance t (exist (pjudge t) PWild (pt_wild t)) v
+    | instance_name : forall (t : type) (x : id) (v : valt t), 
+        instance t (exist (pjudge t) (PVar x) (pt_name x t)) v
+    | instance_unit : 
+        instance TUnit 
+            (exist (pjudge TUnit) PUnit pt_unit) 
+            (exist (vjudge TUnit) VUnit vj_unit)
+    | instance_pair : forall (a b : type) 
+        (pa : patt a) (pb : patt b) (p1 p2 : pattern)
+        (H1 : pat_type p1 a) (H2 : pat_type p2 b)
+        (f1 f2 : fvt) (HF1 : free_vars p1 a f1) (HF2 : free_vars p2 b f2)
+        (HD : E.Disjoint id (set_of_fv f1) (set_of_fv f2))
+        (va : valt a) (vb : valt b) (v1 v2 : value)
+        (HV1 : val_judge v1 a) (HV2 : val_judge v2 a),
+        p1 = proj1_sig pa -> 
+        p2 = proj1_sig pb ->
+        H1 = proj2_sig pa ->
+        H2 = proj2_sig pb ->
+        v1 = proj1_sig va ->
+        v2 = proj1_sig vb ->
+        HV1 = proj2_sig va ->
+        HV2 = proj2_sig vb ->
+        instance pa va -> 
+        instance pb vb -> 
+        instance (TPair a b)
+            (exist (pjudge (TPair a b)) (PPair p1 p2) (pt_pair p1 p2 a b f1 f2 H1 H2 HF1 HF2))
+            (exist (vjudge (TPair a b)) (VPair v1 v2) (vj_pair v1 v2 a b HV1 HV2)).
+    | instance_left : forall (t1 t2 : type) (p : pattern) (v : value),
+        instance p v -> instance (PLeft t1 t2 p) (VLeft t1 t2 v)
+    | instance_right : forall (t1 t2 : type) (p : pattern) (v : value),
+        instance p v -> instance (PRight t1 t2 p) (VRight t1 t2 v). *)
 
 Theorem instance_dec : 
     forall (p : pattern) (v : value),
@@ -713,11 +715,6 @@ Module NotInstanceRefl := NotRefl2(InstanceRefl).
 
 (* Baby steps for more general exhaustiveness for matrices *)
 Module BabyExhaustiveness.
-
-Definition pvec (n : nat) := V.t pattern n.
-
-Definition pvec_type {n : nat} (p : pvec n) (t : type) :=
-    V.Forall (fun p => pat_type p t) p.
 
 Definition pvec_typeb {n : nat} (p : pvec n) (t : type) :=
     forallb (fun p => pat_typeb p t) p.
@@ -1146,251 +1143,7 @@ Theorem useless_cond_typed :
     useless_clause_typed p t i Hin <->
     ~ UT (V.take i (lt_le_weak i n Hin) p) (V.nth p (F.of_nat_lt Hin)) t.
 Proof.
-Admitted.
-
-Module PatternDec <: SE.DecidableType.
-Import SE.
-Require Import RelationClasses.
-Definition t := pattern.
-Definition eq (p1 p2 : t) := p1 = p2.
-Declare Instance eq_equiv : Equivalence eq.
-Theorem eq_dec : forall (p1 p2 : pattern),
-    {p1 = p2} + {p1 <> p2}.
-Proof.
-    induction p1; destruct p2;
-    try (pose proof (IHp1_1 p2_1) as IH1;
-        pose proof (IHp1_2 p2_2) as IH2;
-        destruct IH1 as [IH1 | IH1]; 
-        destruct IH2 as [IH2 | IH2]; subst;
-        try (right; intros NE; inversion NE; 
-        subst; try apply IH1; try apply IH2; reflexivity));
-    try (pose proof (string_dec x x0) as [H | H]; subst;
-        try (right; intros NE; inversion NE; subst; apply H; reflexivity));
-    try (pose proof (IHp1 p2) as IH;
-        pose proof (type_eq_dec t1 t0) as TED1;
-        pose proof (type_eq_dec t2 t3) as TED2;
-        destruct IH as [IH | IH];
-        destruct TED1 as [TED1 | TED1];
-        destruct TED2 as [TED2 | TED2]; subst;
-        try (right; intros NE; inversion NE; contradiction));
-    try (left; reflexivity);
-    try (right; intros H; inversion H).
-Qed.
-Fixpoint pattern_eqb (a b : pattern) : bool :=
-    match a,b with
-    | PWild, PWild  
-    | PUnit, PUnit => true
-    | PVar x, PVar y => (x =? y)%string
-    | PPair a1 a2, PPair b1 b2 =>
-        pattern_eqb a1 b1 && pattern_eqb a2 b2
-    | PLeft a1 a2 a', PLeft b1 b2 b'
-    | PRight a1 a2 a', PRight b1 b2 b' =>
-        type_eqb a1 b1 && type_eqb a2 b2 && pattern_eqb a' b'
-    | _, _ => false
-    end.
-Theorem pattern_eq_refl :
-    forall (a b : pattern), a = b <-> pattern_eqb a b = true.
-Proof.
-    induction a; destruct b; split;
-    intros; try inversion H; subst;
-    try (apply andb_true_iff in H1 as [HT HP];
-        apply andb_true_iff in HT as [HT1 HT2];
-        apply type_eq_refl in HT1;
-        apply type_eq_refl in HT2;
-        apply IHa in HP; subst; reflexivity);
-    try (apply andb_true_iff; split;
-        try (apply andb_true_iff; split;
-            apply type_eq_refl; reflexivity);
-        try (apply IHa; reflexivity));
-    try reflexivity; simpl;
-    fold pattern_eqb.
-    - apply String.eqb_eq. reflexivity.
-    - apply String.eqb_eq in H1; subst. reflexivity.
-    - apply IHa1. reflexivity.
-    - apply IHa2. reflexivity.
-    - apply andb_true_iff in H1 as [H1 H2].
-        apply IHa1 in H1. apply IHa2 in H2.
-        subst. reflexivity.
-Qed.
-End PatternDec.
-
-Module PatternSet := WS.Make(PatternDec).
-Module PS := PatternSet.
-
-Definition filter_pairs (p : PS.t) : PS.t * PS.t :=
-    PS.fold (fun (p : PS.elt) (acc : PS.t * PS.t) => 
-            match p with
-            | PPair pa pb => 
-                let (a,b) := acc in (PS.add pa a, PS.add pb b)
-            | _ => acc 
-            end) p (PS.empty, PS.empty).
-
-Definition filter_eithers (a b : type) (p : PS.t) : PS.t * PS.t :=
-    PS.fold (fun (p : PS.elt) (acc : PS.t * PS.t) => 
-            match p with 
-            | PLeft a' b' p =>
-                if type_eqb a a' && type_eqb b b' 
-                then let (pa,pb) := acc in (PS.add p pa, pb)
-                else acc
-            | PRight a' b' p =>
-                if type_eqb a a' && type_eqb b b' 
-                then let (pa,pb) := acc in (pa, PS.add p pb)
-                else acc
-            | _ => acc
-            end) p (PS.empty, PS.empty).
-
-Definition predb_var (p : pattern) : bool := 
-    match p with
-    | PVar _ => true
-    | _ => false
-    end.
-
-Inductive pred_var : pattern -> Prop := 
-    pred_var_constr : forall (x : id), pred_var (PVar x).
-
-(* Complete Signature Sigma:
-    This was not defined explicitly so I have
-    invented a definition to suit my purposes.
-    Note this relation does not enforce type-checking,
-    this is completeness not correctness. 
-    The notion of correctness will be defined
-    separately with the typing judgment. *)
-Inductive sigma (p : PS.t) : type -> Prop :=
-    | sigma_wild : forall (t : type), 
-        PS.In PWild p -> 
-        sigma p t
-    | sigma_var : forall (t : type), 
-        PS.Exists pred_var p ->
-        sigma p t
-    | sigma_unit :
-        PS.In PUnit p -> sigma p TUnit
-    | sigma_pair : forall (t1 t2 : type) (p1 p2 : PS.t),
-        (p1,p2) = filter_pairs p ->
-        sigma p1 t1 -> 
-        sigma p2 t2 ->
-        sigma p (TPair t1 t2)
-    | sigma_either : forall (t1 t2 : type) (p1 p2 : PS.t),
-        (p1,p2) = filter_eithers t1 t2 p ->
-        sigma p1 t1 ->
-        sigma p2 t2 ->
-        sigma p (TEither t1 t2).
-
-Definition sigmab_catchall (p  : PS.t) :=
-    PS.mem PWild p || PS.exists_ predb_var p.
-
-Fixpoint sigmab (p : PS.t) (t : type) : bool :=
-    match t with
-    | TUnit => PS.mem PUnit p || sigmab_catchall p
-    | TPair t1 t2 => 
-        let (p1,p2) := filter_pairs p in
-        (sigmab p1 t1 && sigmab p2 t2) || sigmab_catchall p
-    | TEither t1 t2 =>
-        (let (p1,p2) := filter_eithers t1 t2 p in sigmab p1 t1 && sigmab p2 t2)
-        || sigmab_catchall p
-    | TFun _ _ => sigmab_catchall p
-    end.
-
-Lemma pred_var_refl :
-    forall (p : pattern),
-    pred_var p <-> predb_var p = true.
-Proof. split; intros.
-    - inversion H; subst. reflexivity.
-    - destruct p; simpl in *; 
-        try discriminate; constructor.
-Qed.
-
-Lemma pred_var_predb :
-    pred_var = (fun x : PS.elt => predb_var x = true).
-Proof.
-    pose proof proof_irrelevance as PI.
-    apply functional_extensionality. intros.
-    apply prop_extensionality. apply pred_var_refl.
-Qed.
-
-Ltac proper :=
-    unfold Morphisms.Proper;
-    unfold Morphisms.respectful;
-    intros; subst; reflexivity.
-
-Module ProveRight.
-Ltac prove_wild :=
-    right; unfold sigmab_catchall;
-    apply orb_true_iff; left;
-    apply PS.mem_spec; assumption.
-Ltac prove_var :=
-    right; unfold sigmab_catchall;
-    apply orb_true_iff; right;
-    apply PS.exists_spec;
-    try proper;
-    pose proof pred_var_predb as PVP;
-    rewrite <- PVP; assumption.
-Ltac try_prove_wv := try prove_wild; try prove_var; try left.
-End ProveRight.
-
-Module ProveLeft.
-Ltac prove_wild := apply sigma_wild; apply PS.mem_spec; assumption.
-Ltac prove_var H := 
-    apply sigma_var; apply PS.exists_spec in H;
-    try (rewrite pred_var_predb; assumption); proper.
-Ltac try_prove_wv H :=
-    unfold sigmab_catchall in H;
-    apply orb_true_iff in H as [H | H];
-    try prove_wild; try prove_var H.
-End ProveLeft.
-
-Theorem sigma_refl : 
-    forall (p : PS.t) (t : type),
-    sigma p t <-> sigmab p t = true.
-Proof.
-    intros. generalize dependent p. 
-    dependent induction t;
-    split; intros; simpl in *.
-    - apply orb_true_iff. inversion H; subst;
-        ProveRight.try_prove_wv.
-        apply PS.mem_spec. assumption.
-    - apply orb_true_iff in H. destruct H.
-        + apply sigma_unit. apply PS.mem_spec.
-            assumption.
-        + ProveLeft.try_prove_wv H.
-    - apply orb_true_iff. inversion H; subst.
-        + left. apply PS.mem_spec. assumption.
-        + right. apply PS.exists_spec.
-            * proper.
-            * rewrite <- pred_var_predb.
-                assumption.
-    - ProveLeft.try_prove_wv H.
-    - destruct (filter_pairs p) as [p1 p2] eqn:eq. 
-        apply orb_true_iff. inversion H; subst;
-        ProveRight.try_prove_wv. apply andb_true_iff.
-        rewrite eq in H2. inversion H2; subst. split.
-        + apply IHt1. assumption.
-        + apply IHt2. assumption.
-    - destruct (filter_pairs p) as [p1 p2] eqn:eq.
-        apply orb_true_iff in H. destruct H.
-        + apply andb_true_iff in H as [H1 H2].
-            eapply sigma_pair.
-            * symmetry. apply eq.
-            * apply IHt1. assumption.
-            * apply IHt2. assumption.
-        + ProveLeft.try_prove_wv H.
-    - destruct (filter_eithers t1 t2 p) as [p1 p2] eqn:eq.
-        apply orb_true_iff. inversion H; subst;
-        ProveRight.try_prove_wv. apply andb_true_iff.
-        rewrite eq in H2. inversion H2; subst. split.
-        + apply IHt1. assumption.
-        + apply IHt2. assumption.
-    - destruct (filter_eithers t1 t2 p) as [p1 p2] eqn:eq.
-        apply orb_true_iff in H. destruct H.
-            + apply andb_true_iff in H as [H1 H2].
-                eapply sigma_either.
-                * symmetry. apply eq.
-                * apply IHt1. assumption.
-                * apply IHt2. assumption.
-            + ProveLeft.try_prove_wv H.
-Qed. 
-
-Definition pvec_to_set {n : nat} (p : pvec n) := 
-    V.fold_right PS.add p PS.empty.
+Admitted. 
 
 (* is a pattern a constructed pattern? *)
 Inductive cp : pattern -> Prop :=
