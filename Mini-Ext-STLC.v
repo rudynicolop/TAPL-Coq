@@ -1045,7 +1045,6 @@ Definition useless_clause_typed
     pvec_type p t -> ~ exists (v : value) (vt : value_type),
     value_judge v vt -> vtt t vt -> filters p v i Hin.
 
-
 (* Definition 6 (Useful Clause): *)
 Definition upred {n : nat} (p : pvec n) (q : pattern) (v : value) := 
     (~ vinstance p v) /\ instance q v.
@@ -1093,7 +1092,6 @@ Theorem exhaustive_cond :
     exhaustive p <-> ~ U p PWild.
 Proof.
     unfold exhaustive; unfold U; unfold upred; 
-    (* unfold filters;  *)
     split; intros.
     - intros [v UP]. specialize H with (v := v).
         destruct H as [i [Hin [H1 H2]]].
@@ -1121,6 +1119,10 @@ Theorem exhaustive_cond_typed :
     forall {n : nat} (p : pvec n) (t : type),
     exhaustive_typed p t <-> ~ UT p PWild t.
 Proof.
+    unfold exhaustive_typed; unfold UT; 
+    unfold upred_typed; split; intros.
+    - intros [v [vt POP]].
+        specialize H with (v := v). 
 Admitted.
     
 (* Proposition 1.2: *)
