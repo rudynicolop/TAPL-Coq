@@ -462,22 +462,16 @@ Definition fv_empty := FV.empty type.
 Definition set_of_fv (fv : fvt) : E.Ensemble id :=
     FV.fold (fun x _ acc => E.Add id acc x) fv (E.Empty_set id).
 
-Definition id_set_add := LS.set_add IdDec.eq_dec.
+Module IdSet := WS.Make(IdDec).
 
-Definition lset_of_fv (fv : fvt) : (LS.set id) :=
-    FV.fold (fun x _ acc => id_set_add x acc) fv (LS.empty_set id).
+Definition ws_of_fv (fv : fvt) : (IdSet.t) :=
+    FV.fold (fun x _ acc => IdSet.add x acc) fv (IdSet.empty).
 
-Definition id_set_inter := LS.set_inter IdDec.eq_dec.
-
-Definition ls_disjoint (a b : LS.set id) :=
-    match id_set_inter a b with
-    | nil => true
-    | _ => false 
-    end.
+Definition ws_disjoint (a b : IdSet.t) := IdSet.is_empty (IdSet.inter a b).
 
 Lemma disjoint_refl : forall (f1 f2 : fvt),
     E.Disjoint id (set_of_fv f1) (set_of_fv f2) <-> 
-    ls_disjoint (lset_of_fv f1) (lset_of_fv f2) = true.
+    ws_disjoint (ws_of_fv f1) (ws_of_fv f2) = true.
 Proof.
 Admitted.
 
@@ -520,7 +514,7 @@ Fixpoint free_varsb (p : pattern) (t : type) : option fvt :=
     | PPair p1 p2, TPair a b =>
         match free_varsb p1 a, free_varsb p2 b with
         | Some f1, Some f2 =>
-            if ls_disjoint (lset_of_fv f1) (lset_of_fv f2)
+            if ws_disjoint (ws_of_fv f1) (ws_of_fv f2)
             then Some (add_all f1 f2) else None
         | _, _ => None
         end
@@ -555,7 +549,7 @@ Proof.
         destruct (free_varsb p2 t2) eqn:eq2;
         try discriminate.
         apply IHp1 in eq1. apply IHp2 in eq2.
-        destruct (ls_disjoint (lset_of_fv f0) (lset_of_fv f1)) eqn:eqd;
+        destruct (ws_disjoint (ws_of_fv f0) (ws_of_fv f1)) eqn:eqd;
         try discriminate; injection H1; intros; subst.
         apply disjoint_refl in eqd. constructor; assumption.
     - assert (T1: type_eqb t3 t3 = true);
@@ -685,7 +679,7 @@ Fixpoint pat_typeb (p : pattern) (t : type) : bool :=
     | PPair p1 p2, TPair a b =>
         match free_varsb p1 a, free_varsb p2 b with
         | Some f1, Some f2 => 
-            if ls_disjoint (lset_of_fv f1) (lset_of_fv f2)
+            if ws_disjoint (ws_of_fv f1) (ws_of_fv f2)
             then pat_typeb p1 a && pat_typeb p2 b
             else false
         | _, _ => false
@@ -725,7 +719,7 @@ Proof.
         destruct (free_varsb p1 t1) eqn:eqf1;
         destruct (free_varsb p2 t2) eqn:eqf2;
         try discriminate.
-        destruct (ls_disjoint (lset_of_fv f) (lset_of_fv f0)) eqn:eqd;
+        destruct (ws_disjoint (ws_of_fv f) (ws_of_fv f0)) eqn:eqd;
         try discriminate.
         apply andb_true_iff in H1 as [H1 H2].
         apply IHp1 in H1. apply IHp2 in H2.
@@ -834,30 +828,111 @@ Inductive root_construct : pattern -> construct -> Prop :=
     | rc_or_intros_left : forall (p1 p2 : pattern) (c : construct),
         root_construct p1 c ->
         root_construct (POr p1 p2) c
-    | rc_intros_right : forall (p1 p2 : pattern) (c : construct),
+    | rc_or_intros_right : forall (p1 p2 : pattern) (c : construct),
         root_construct p2 c ->
         root_construct (POr p1 p2) c.
 
+Fixpoint root_constructb (p : pattern) (c : construct) : bool :=
+    match p, c with
+    | PUnit, CUnit
+    | PPair _ _, CPair => true
+    | PLeft a b _, CLeft a' b'
+    | PRight a b _, CRight a' b' =>
+        type_eqb a a' && type_eqb b b'
+    | POr p1 p2, _ =>
+        root_constructb p1 c || root_constructb p2 c
+    | _, _ => false
+    end.
+
+Lemma root_construct_refl :
+    forall (p : pattern) (c : construct),
+    root_construct p c <-> root_constructb p c = true.
+Proof.
+    induction p; split;
+    intros H; try inversion H; subst;
+    simpl in *; try discriminate;
+    try reflexivity;
+    try (apply andb_true_iff; split; apply type_eq_refl; reflexivity);
+    try (destruct c; try discriminate; 
+        apply andb_true_iff in H1 as [H1 H2];
+        apply type_eq_refl in H1; apply type_eq_refl in H2;
+        subst; constructor);
+    try (apply orb_true_iff; left; apply IHp1; assumption);
+    try (apply orb_true_iff; right; apply IHp2; assumption).
+    - destruct c; try discriminate; constructor.
+    - destruct c; try discriminate; constructor.
+    - apply orb_true_iff in H1 as [H1 | H1].
+        + apply rc_or_intros_left. apply IHp1. assumption.
+        + apply rc_or_intros_right. apply IHp2. assumption.
+Qed.
+
 Definition rct {t : type} (p : patt t) := root_construct (proj1_sig p).
 
+Definition rctb {t : type} (p : patt t) := root_constructb (proj1_sig p).
+
+Module PatternWS := WS.Make(PatternDec).
+Module PWS := PatternWS.
+
+Definition pws_judge (t : type) (s : PWS.t) :=
+    PWS.For_all (pjudge t) s.
+
 (* Complete Signature Sigma *)
-Inductive sigma : forall (t : type), (E.Ensemble (patt t)) -> Prop :=
-    | sigma_unit : forall (p : patt TUnit) (e : E.Ensemble (patt TUnit)),
-        E.In (patt TUnit) e p -> 
-        rct p CUnit -> 
-        sigma TUnit e
-    | sigma_pair : forall (a b : type) 
-        (p : patt (TPair a b)) (e : E.Ensemble (patt (TPair a b))),
-        E.In (patt (TPair a b)) e  p ->
-        rct p CPair ->
-        sigma (TPair a b) e
-    | sigma_either : forall (a b : type) 
-        (pl pr : patt (TEither a b)) (e : E.Ensemble (patt (TEither a b))),
-        E.In (patt (TEither a b)) e pl ->
-        E.In (patt (TEither a b)) e pr ->
-        rct pl (CLeft a b) ->
-        rct pr (CRight a b) ->
-        sigma (TEither a b) e.
+Inductive sigma (p : PWS.t) : type -> Prop :=
+    | sigma_unit :
+        pws_judge TUnit p ->
+        PWS.Exists (fun p' => root_construct p' CUnit) p ->
+        sigma p TUnit
+    | sigma_pair : forall (a b : type),
+        pws_judge (TPair a b) p -> 
+        PWS.Exists (fun p' => root_construct p' CPair) p ->
+        sigma p (TPair a b)
+    | sigma_either : forall (a b : type),
+        pws_judge (TEither a b) p ->
+        PWS.Exists (fun p' => root_construct p' (CLeft a b)) p ->
+        PWS.Exists (fun p' => root_construct p' (CRight a b)) p ->
+        sigma p (TEither a b).
+
+Definition sigmab (p : PWS.t) (t : type)  (H : pws_judge t p) :=
+    match t with
+    | TUnit => PWS.exists_ (fun p' => root_constructb p' CUnit) p
+    | TPair a b => PWS.exists_ (fun p' => root_constructb p' CPair) p
+    | TEither a b => 
+        PWS.exists_ (fun p' => root_constructb p' (CLeft a b)) p &&
+        PWS.exists_ (fun p' => root_constructb p' (CRight a b)) p
+    | TFun _ _ => false
+    end.
+
+Ltac proper :=
+    unfold Morphisms.Proper;
+    unfold Morphisms.respectful;
+    intros; subst; reflexivity.
+
+Ltac unfold_Exists H :=
+    unfold PWS.Exists in *;
+    destruct H as [x [HE HZ]]; exists x; 
+    apply root_construct_refl in HZ;
+    split; assumption.
+
+Lemma sigma_refl :
+    forall (t : type) (p : PWS.t) (H : pws_judge t p),
+    sigma p t <-> sigmab p t H = true.
+Proof.
+    destruct t; split; intros HS;
+    try inversion HS; subst; simpl in *;
+    try discriminate; 
+    try constructor;
+    try assumption; 
+    try (apply andb_true_iff; split);
+    try (apply andb_true_iff in H1 as [H1 H2]);
+    try apply PWS.exists_spec;
+    try apply PWS.exists_spec in H1;
+    try apply PWS.exists_spec in H2;
+    try proper;
+    try unfold_Exists H1;
+    try unfold_Exists H2;
+    try unfold_Exists H3;
+    try unfold_Exists H4.
+Qed.       
 
 Inductive expr : Type :=
     | EUnit
