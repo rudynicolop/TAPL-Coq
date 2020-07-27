@@ -267,6 +267,34 @@ Module VectorForall2Refl (M : HasRefl2).
             + apply M.refl. assumption.
             + apply IHn. assumption.
     Qed.
+    Module NM := NotRefl2(M).
+    Theorem forall2_not_refl : 
+        forall {n : nat} (va : V.t M.A n) (vb : V.t M.B n),
+        ~ V.Forall2 M.P va vb <-> forall2b M.f va vb = false.
+    Proof.
+        induction n; split; intros.
+        - exfalso. pose proof (vect_nil va) as VA.
+            pose proof (vect_nil vb) as VB. apply H.
+            subst. constructor.
+        - pose proof (vect_nil va) as VA. pose proof (vect_nil vb) as VB.
+            subst. discriminate H.
+        - pose proof (vect_cons va) as [ha [ta VA]].
+            pose proof (vect_cons vb) as [hb [tb VB]].
+            subst. simpl. unfold eq_rect_r. simpl.
+            destruct (M.f ha hb) eqn:eqf.
+            + apply M.refl in eqf. simpl. apply IHn. 
+                intros HF. apply H. constructor; assumption.
+            + apply andb_false_iff. left. reflexivity.
+        - pose proof (vect_cons va) as [ha [ta VA]].
+            pose proof (vect_cons vb) as [hb [tb VB]].
+            subst. simpl in *. unfold eq_rect_r in H.
+            simpl in H. intros HF. inversion HF; subst.
+            pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+            apply STUPID in H2; apply STUPID in H5;
+            try apply Nat.eq_dec; subst.
+            apply M.refl in H4. rewrite H4 in H.
+            simpl in H. apply IHn in H. contradiction.
+    Qed.  
     Lemma forall2_nth : 
         forall {n : nat} (va : V.t M.A n) (vb : V.t M.B n),
         V.Forall2 M.P va vb -> 
@@ -1244,36 +1272,124 @@ Proof. intros. apply VInstanceRefl.forall2_refl. Qed.
 
 Definition pmt {n : nat} (t : @tvec n) := list (@pvt n t).
 
-(* Definition pmatrix {n : nat} : Type := list (@pvec n).
-
-Definition pjudge_matrix {n : nat} (p : @pmatrix n) (t : @tvec n) : Prop :=
-    Forall (fun p' => pjudge_vec p' t) p.
-
-Definition pjudgeb_matrix {n : nat} (p : @pmatrix n) (t : @tvec n) : bool :=
-    List.forallb (fun p' => pjudgeb_vec p' t) p.
-
-Theorem pjudge_matrix_refl :
-    forall {n : nat} (p : @pmatrix n) (t : @tvec n),
-    pjudge_matrix p t <-> pjudgeb_matrix p t = true.
-Proof.
-    (* unfold pjudge_matrix. unfold pjudgeb_matrix. *)
-    intros. induction p; split; intros H;
-    try reflexivity; simpl in *; try constructor.
-    - inversion H; subst.
-        apply andb_true_iff. split.
-        + apply pjudge_vec_refl. assumption.
-        + apply IHp. assumption.
-    - apply andb_true_iff in H as [H _]. apply pjudge_vec_refl. assumption.
-    - apply andb_true_iff in H as [_ H]. apply IHp. assumption. 
-Qed. *)
-
 Definition minstancet {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t) :=
     List.Exists (fun p' => vinstancet p' v) p.
+
+Definition minstancebt {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t) :=
+    List.existsb (fun p' => vinstancebt p' v) p.
+
+Lemma minstancet_refl :
+    forall {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t),
+    minstancet p v <-> minstancebt p v = true.
+Proof.
+    unfold minstancet. unfold minstancebt.
+    split; intros.
+    - apply existsb_exists. apply Exists_exists in H as [x [HIn HIV]].
+        exists x. apply vinstancet_refl in HIV. split; assumption.
+    - apply Exists_exists. apply existsb_exists in H as [x [HIn HIV]].
+        exists x. apply vinstancet_refl in HIV. split; assumption.
+Qed.
 
 Definition row_filters {n : nat} {t : @tvec n}
     (p : pmt t) (v : vvt t) (i : nat) :=
     (exists (row : pvt t), Some row = nth_error p i
     /\ vinstancet row v) /\ ~ minstancet (take i p) v.
+
+Fixpoint row_filters_op {n : nat} {t : @tvec n}
+    (p : pmt t) (v : vvt t) : option nat :=
+    match p with
+    | nil => None
+    | ph::pt => 
+        if vinstancebt ph v then Some 0 else 
+        match row_filters_op pt v with
+        | None => None
+        | Some k => Some (S k)
+        end
+    end.
+
+Lemma row_filters_op_minstancebt :
+    forall {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t),
+    minstancebt p v = true <-> exists i, row_filters_op p v = Some i.
+Proof.
+    intros. dependent induction p; 
+    split; intros; try discriminate; simpl in *.
+    - destruct H as [i H]. discriminate.
+    - specialize IHp with (v := v).
+        destruct (vinstancebt a v) eqn:vin.
+        + exists 0. reflexivity.
+        + simpl in H. apply IHp in H as [i H].
+            exists (S i). rewrite H. reflexivity.
+    - destruct H as [i H].
+        destruct (vinstancebt a v) eqn:vin;
+        destruct (row_filters_op p v) eqn:rf;
+        simpl in *; try reflexivity; try discriminate.
+        apply (IHp v). exists n0. apply rf.
+Qed.
+
+Lemma nth_error_nil :
+    forall {A : Type} (i : nat),
+    @nth_error A [] i = None.
+Proof. intros. induction i; try reflexivity. Qed.
+
+
+Lemma row_filters_refl :
+    forall {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t) (i : nat),
+    row_filters p v i <-> row_filters_op p v = Some i.
+Proof.
+    intros. dependent induction p; split; intros H;
+    simpl in *; try discriminate; try inversion H; subst.
+    - destruct H0 as [row [HF _]]. 
+        rewrite nth_error_nil in HF. discriminate.
+    - destruct H0 as [row [SR HIV]].
+        destruct i as [| i]; simpl in *.
+        + injection SR; intros; subst.
+            apply vinstancet_refl in HIV. 
+            rewrite HIV. reflexivity.
+        + destruct (vinstancebt a v) eqn:eq.
+            { exfalso. apply H1. constructor.
+                apply vinstancet_refl. assumption. }
+            { assert (HRF : row_filters p v i).
+                - unfold row_filters. split.
+                    + exists row. split; assumption.
+                    + intros HF. apply H1.
+                        apply Exists_cons_tl.
+                        assumption.
+                - apply IHp in HRF. rewrite HRF.
+                    reflexivity. }
+    - destruct (vinstancebt a v) eqn:eq.
+        + injection H1; intros; subst.
+            unfold row_filters. split.
+            * exists a. split; try reflexivity.
+                apply vinstancet_refl. assumption.
+            * intros HM. inversion HM.
+        + destruct (row_filters_op p v) eqn:eqrf.
+            { injection H1; intros; subst.
+                apply IHp in eqrf. unfold row_filters in *.
+                destruct eqrf as [[row [SR HIV]] NHM].
+                split.
+                - exists row. split.
+                    + simpl. assumption.
+                    + assumption.
+                - simpl. intros NSHM. apply NHM.
+                    inversion NSHM; subst.
+                    + apply VInstanceRefl.forall2_not_refl in eq.
+                        contradiction.
+                    + assumption. }
+            { discriminate. }
+Qed.
+
+Lemma row_filters_minstancet :
+    forall {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t),
+    minstancet p v <-> exists i, row_filters p v i.
+Proof.
+    split; intros.
+    - apply minstancet_refl in H. 
+        apply row_filters_op_minstancebt in H as [i H].
+        exists i. apply row_filters_refl. assumption.
+    - destruct H as [i H]. apply minstancet_refl.
+        apply row_filters_op_minstancebt. exists i.
+        apply row_filters_refl. assumption.
+Qed.      
 
 (* Definition 4 (Exhaustiveness): *)
 Definition exhaustive {n : nat} {t : @tvec n} (p : pmt t) :=
@@ -1354,13 +1470,6 @@ Proof.
         apply CP.not_and_or in H.
         destruct H as [H | H].
         + apply CP.NNPP in H.
-            unfold minstancet in H.
-            apply Exists_exists in H.
-            destruct H as [row [HIn HIV]].
-            apply In_nth_error in HIn as [i NTH].
-            symmetry in NTH. exists i. 
-            unfold row_filters. split. 
-            * exists row. split; assumption.
-            * admit. (* need the first such row thing again...ugghhh *)
+            apply row_filters_minstancet. assumption.
         + exfalso. apply H. apply pwild_vec_instance.
-Admitted.
+Qed.
