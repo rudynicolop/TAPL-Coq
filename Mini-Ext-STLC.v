@@ -1242,7 +1242,9 @@ Theorem vinstancet_refl :
     vinstancet p v <-> vinstancebt p v = true.
 Proof. intros. apply VInstanceRefl.forall2_refl. Qed.
 
-Definition pmatrix {n : nat} : Type := list (@pvec n).
+Definition pmt {n : nat} (t : @tvec n) := list (@pvt n t).
+
+(* Definition pmatrix {n : nat} : Type := list (@pvec n).
 
 Definition pjudge_matrix {n : nat} (p : @pmatrix n) (t : @tvec n) : Prop :=
     Forall (fun p' => pjudge_vec p' t) p.
@@ -1263,183 +1265,54 @@ Proof.
         + apply IHp. assumption.
     - apply andb_true_iff in H as [H _]. apply pjudge_vec_refl. assumption.
     - apply andb_true_iff in H as [_ H]. apply IHp. assumption. 
-Qed.
+Qed. *)
 
-(* vector of patterns *)
-Definition pvt {n : nat} (t : type) := V.t (patt t) n.
+Definition minstancet {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t) :=
+    List.Exists (fun p' => vinstancet p' v) p.
 
-(* vector of values *)
-Definition vvt {n : nat} (t : type) := V.t (valt t) n.
-
-(* matrix of patterns *)
-Definition pmt {n : nat} (t : type) := list (@pvt n t).
-
-Definition vinstancet {n : nat} (t : type) (p : @pvt n t) (v : vvt) :=
-    exists (i : nat) (Hin : i < n), instancet t (V.nth_order p Hin) v.
-
-Definition linstancet (t : type) (pl : plt t) (v : valt t) :=
-    exists (i : nat) (p : patt t), 
-        Some p = nth_error pl i /\ instancet t p v.
-
-(* pattern i in p filters v iff
-    - p <= v
-    - forall j < i, ~ p <= v, i.e. ~ p[0..(i-1)] <= v *)
-Definition filters {n : nat} (t : type) (p : pvt n t) (v : valt t) (i : nat) (Hin : i < n) :=
-    instancet t (V.nth_order p Hin) v /\
-    ~ (vinstancet t (V.take i (lt_le_weak i n Hin) p) v).
-
-Definition filtersl (t : type) (pl : plt t) (v : valt t) (i : nat) :=
-    (exists (p : patt t), Some p = nth_error pl i /\ instancet t p v) /\
-    ~ (linstancet t (take i pl) v).
+Definition row_filters {n : nat} {t : @tvec n}
+    (p : pmt t) (v : vvt t) (i : nat) :=
+    (exists (row : pvt t), Some row = nth_error p i
+    /\ vinstancet row v) /\ ~ minstancet (take i p) v.
 
 (* Definition 4 (Exhaustiveness): *)
-Definition exhaustive {n : nat} (t : type) (p : pvt n t) :=
-    forall (v : valt t), exists (i : nat) (Hin : i < n),
-    filters t p v i Hin.
-
-Definition exhaustivel (t : type) (p : plt t) :=
-    forall (v : valt t), exists (i : nat), filtersl t p v i.
+Definition exhaustive {n : nat} {t : @tvec n} (p : pmt t) :=
+    forall (v : vvt t), exists (i : nat), row_filters p v i.
 
 (* Definition 5 (Useless Clause): *)
 Definition useless_clause 
-    {n : nat} (t : type) (p : pvt n t) (i : nat) (Hin : i < n) :=
-    ~ exists (v : valt t), filters t p v i Hin.
+    {n : nat} (t : @tvec n) (p : pmt t) (i : nat) (Hin : i < n) :=
+    ~ exists (v : vvt t), row_filters p v i.
 
 (* Definition 6 (Useful Clause): *)
-Definition upred {n : nat} (t : type) (p : pvt n t) (q : patt t) (v : valt t) := 
-    (~ vinstancet t p v) /\ instancet t q v.
-
-Definition upredl (t : type) (p : plt t) (q : patt t) (v : valt t) := 
-    (~ linstancet t p v) /\ instancet t q v.
+Definition upred {n : nat} {t : @tvec n} (p : pmt t) (q : pvt t) (v : vvt t) := 
+    (~ minstancet p v) /\ vinstancet q v.
 
 (* U(p,q): *)
-Definition U {n : nat} (t : type) (p : pvt n t) (q : patt t) := 
-    exists (v : valt t), upred t p q v.
-
-Definition Ul (t : type) (p : plt t) (q : patt t) := 
-    exists (v : valt t), upredl t p q v.
+Definition U {n : nat} {t : @tvec n} (p : pmt t) (q : pvt t) := 
+    exists (v : vvt t), upred p q v.
 
 (* M(p,q): *)
-Definition M {n : nat} (t : type) (p : pvt n t) (q : patt t) := {v : valt t | upred t p q v}.
+Definition M {n : nat} {t : @tvec n} (p : pmt t) (q : pvt t) := {v : vvt t | upred p q v}.
 
-Lemma Stupid : forall {A : Type} (a : A) (oa : option A),
-    oa = Some a -> oa <> None.
+Import V.VectorNotations.
+
+Definition pwild_vec {n : nat} (t : @tvec n) : pvt t.
 Proof.
-    unfold not. intros. subst. discriminate.
-Qed.
+    induction t.
+    - assert (H : pjudge_vec [] []).
+        + apply V.Forall2_nil. 
+        + apply (exist (fun p => pjudge_vec p []) [] H).
+    - destruct IHt. assert (HW : pjudge h PWild); try constructor.
+        assert (H : pjudge_vec (PWild :: x) (h :: t)).
+        + constructor; assumption.
+        + apply (exist (fun p => pjudge_vec p (h::t)) (PWild::x) H).
+Defined.
 
-Theorem complete_signature_exhausts :
-    forall (t : type) (p : plt t),
-    sigma t p <-> ~ Ul t p (exist (pjudge t) PWild (pt_wild t)).
+Theorem exhaustive_wild :
+    forall {n : nat} {t : @tvec n} (p : pmt t),
+    exhaustive p <-> ~ U p (pwild_vec t).
 Proof.
-    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-    unfold Ul. unfold upredl. split; intros.
-    { dependent induction H; intros [v [HL HWILD]]; 
-        apply HL; unfold linstancet.
-        - apply In_nth_error in H as [i NTH].
-            exists i. exists (exist (pjudge t) PWild (pt_wild t)).
-            symmetry in NTH. split; assumption.
-        - apply In_nth_error in H as [i NTH].
-            exists i. exists (exist (pjudge t) (PVar x) (pt_name x t)).
-            symmetry in NTH. split.
-            + assumption.
-            + destruct v as [v JV]. 
-                unfold instancet. simpl.
-                constructor.
-        - apply In_nth_error in H as [i NTH].
-            exists i. exists (exist (pjudge TUnit) PUnit pt_unit).
-            symmetry in NTH. split.
-            + assumption.
-            + destruct v as [v JV]. inversion JV; subst.
-                unfold instancet. simpl. constructor.
-        - destruct v as [v JV]. inversion JV; subst.                 
-            eapply CPT.not_ex_all_not in IHsigma1 as IH1.
-            eapply CPT.not_ex_all_not in IHsigma2 as IH2.
-            apply CP.not_and_or in IH1.
-            apply CP.not_and_or in IH2.
-            destruct IH1 as [IH1 | IH1];
-            destruct IH2 as [IH2 | IH2].
-            + apply CP.NNPP in IH1. apply CP.NNPP in IH2.
-                unfold linstancet
-
-    }
-
-
-
-Theorem complete_signature_exhausts' :
-    forall (t : type) (p : plt t),
-    sigma t p <-> ~ U t (V.of_list p) (exist (pjudge t) PWild (pt_wild t)).
-Proof.
-    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-    unfold U. unfold upred. split; intros.
-    { intros [v [HN HI]]. apply HN.
-        destruct v as [v JV]. unfold vinstancet.
-        induction H.
-        - apply In_nth_error in H as [i HIN].
-            apply Stupid in HIN as ST.
-            apply nth_error_Some in ST.
-            exists i. exists ST.
-            destruct (V.nth_order (V.of_list p) ST) as [pat JP].
-            unfold instancet in *; simpl in *.
-            induction JP.
-            + assumption.
-            + constructor.
-            + inversion JV; subst. constructor.
-            + inversion JV; subst. constructor.
-                *
-        unfold instancet in HI. simpl in HI. 
-        destruct (V.nth_order (V.of_list p) Hin) as [p JP].
-        unfold instancet in *.
-         inversion H; subst; try apply STUPID in H0; subst.
-        -
-
-      }
-    induction t; split; intros. 
-    - inversion H; subst; eapply STUPID in H0; subst.
-        + intros [v [HV1 HV2]]. apply HV1.
-            unfold vinstancet.
-            apply In_nth_error in H2.
-            destruct H2 as [i NTH]. exists i.
-            apply Stupid in NTH as ST.
-            apply nth_error_Some in ST.
-            exists ST. unfold instancet in *.
-            destruct ((V.nth_order (V.of_list p) ST)) eqn:eq.
-            simpl in *. destruct x eqn:eqx; try inversion p0; subst.
-            * constructor.
-            * constructor.
-            * destruct v. simpl. inversion v. constructor.
-            * destruct v. inversion v; subst. simpl in *.
-                induction H2; inversion H3; subst;
-                try (constructor; assumption).
-                try (apply instance_or_left; constructor);
-                try (apply instance_or_right; constructor).
-                constructor. constructor.
-                constructor. constructor.
-                constructor. constructor.
-                constructor. constructor.
-                constructor. constructor.
-                constructor. constructor.
-                apply instance_or_right. constructor.
-            unfold instancet. simpl. destruct v eqn:eqv.
-            destruct x0; try inversion v0; subst. simpl.
-            destruct x; try inversion p0; subst.
-            * constructor.
-            * constructor.
-            * constructor.
-            * apply instance_or_left. assumption.
-            apply instance_unit.
-            Search (_ = Some _ <-> _ <> None).
-            assert (NOT : nth_error p i <> None).
-            * intros H'. 
-            
-            assert (nth_error p i = nth_error p i).
-            reflexivity.
-            now rewrite H0 in NTH.
-            
-            rewrite H' in NTH.
-             subst.
-            
-            remember (nth_error p i) as ne.
-Qed.
+Admitted.
 
 
