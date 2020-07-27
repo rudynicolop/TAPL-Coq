@@ -10,8 +10,6 @@ Require Import Coq.Strings.String.
 Require Import Coq.Bool.Bool.
 Require Coq.Sets.Ensembles.
 Module E := Coq.Sets.Ensembles.
-Require Coq.Lists.ListSet.
-Module LS := Coq.Lists.ListSet.
 Require Import Coq.Lists.List.
 Import ListNotations.
 Require Coq.Vectors.Fin.
@@ -107,6 +105,8 @@ Module VectorLemmas.
     Proof. intros. reflexivity. Qed.
 
 End VectorLemmas.
+
+Module VL := VectorLemmas.
 
 Definition existsb {n : nat} {A : Type}
     (f : A -> bool) (v : V.t A n) : bool.
@@ -267,9 +267,28 @@ Module VectorForall2Refl (M : HasRefl2).
             + apply M.refl. assumption.
             + apply IHn. assumption.
     Qed.
+    Lemma forall2_nth : 
+        forall {n : nat} (va : V.t M.A n) (vb : V.t M.B n),
+        V.Forall2 M.P va vb -> 
+        forall {i : nat} (H : i < n), M.P (V.nth_order va H) (V.nth_order vb H).
+    Proof.
+        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+        induction n; intros; try omega.
+        pose proof (vect_cons va) as [ha [ta VA]].
+        pose proof (vect_cons vb) as [hb [tb VB]].
+        subst. inversion H; subst. destruct i as [| i].
+        - cbn. assumption.
+        - assert (Hin : i < n); try omega.
+            pose proof (proof_irrelevance 
+                (S i < S n) H0 (lt_n_S i n Hin)) as Hin'.
+            rewrite Hin'. rewrite <- VL.nth_cons.
+            rewrite <- VL.nth_cons.
+            apply STUPID in H3; try apply Nat.eq_dec.
+            apply STUPID in H6; try apply Nat.eq_dec.
+            subst. specialize IHn with (va := ta) (vb := tb).
+            eapply IHn in H7. apply H7.
+    Qed.
 End VectorForall2Refl.
-
-Module VL := VectorLemmas.
 
 Fixpoint take {A : Type} (n : nat) (l : list A) :=
     match n with
@@ -773,19 +792,18 @@ Proof.
         + apply FV.equal_2. assumption.
 Qed.
 
+Module PatternTypeRefl <: HasRefl2.
+    Definition A := pattern.
+    Definition B := type.
+    Definition P := pat_type.
+    Definition f := pat_typeb.
+    Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
+    Proof. apply pat_type_refl. Qed.
+End PatternTypeRefl.
+
 Definition pjudge (t : type) (p : pattern) := pat_type p t.
 
-(* Definition pvec (n : nat) := V.t pattern n. *)
-
-(* Definition pvec_type {n : nat} (p : pvec n) (t : type) := V.Forall (pjudge t) p. *)
-
 Definition patt (t : type) := {p : pattern | pat_type p t}.
-
-(* Definition pvt {n : nat} (t : type) := {p : pvec n | pvec_type p t}. *)
-
-Definition pvt (n : nat) (t : type) := V.t (patt t) n.
-
-Definition plt (t : type) := list (patt t).
 
 Module PatternDec <: SE.DecidableType.
     Import SE.
@@ -959,7 +977,7 @@ Inductive val_judge : value -> type -> Prop :=
     | vj_unit : val_judge VUnit TUnit
     | vj_fun : forall (p : pattern) (t t' : type) 
         (e : expr),
-        pjudge t p ->
+        pat_type p t ->
         val_judge (VFun p t e) (TFun t t')
     | vj_pair : forall (v1 v2 : value) (a b : type),
         val_judge v1 a ->
@@ -971,6 +989,62 @@ Inductive val_judge : value -> type -> Prop :=
     | vj_right : forall (a b : type) (v : value),
         val_judge v b ->
         val_judge (VRight a b v) (TEither a b).
+
+Fixpoint val_judgeb (v : value) (t : type) : bool :=
+    match v,t with
+    | VUnit, TUnit => true
+    | VFun p t' _, TFun t'' _ =>
+        type_eqb t' t'' && pat_typeb p t'
+    | VPair v1 v2, TPair a b =>
+        val_judgeb v1 a && val_judgeb v2 b
+    | VLeft a b v, TEither a' b' =>
+        type_eqb a a' && type_eqb b b' && val_judgeb v a
+    | VRight a b v, TEither a' b' =>
+        type_eqb a a' && type_eqb b b' && val_judgeb v b
+    | _, _ => false
+    end.
+
+Lemma val_judge_refl : forall (v : value) (t : type),
+    val_judge v t <-> val_judgeb v t = true.
+Proof.
+    induction v; destruct t; split; intros H;
+    try inversion H; subst; simpl in *;
+    try discriminate H; try constructor;
+    try reflexivity;
+    try (apply andb_true_iff in H1 as [H1 H2];
+        apply (IHv1 t1) in H1; apply (IHv2 t2) in H2;
+        assumption);
+    try (apply andb_true_iff; split;
+        try (apply andb_true_iff; split;
+        apply type_eq_refl; reflexivity);
+        try (apply pat_type_refl; assumption));
+    try (destruct t; try discriminate;
+        destruct t3 eqn:eq3; try discriminate);
+    try (apply pat_type_refl; assumption);
+    try (apply IHv1; assumption);
+    try (apply IHv2; assumption);
+    try (apply IHv; assumption);
+    try (apply andb_true_iff in H1 as [HT H3];
+        apply andb_true_iff in HT as [H1 H2];
+        apply type_eq_refl in H1;
+        apply type_eq_refl in H2;
+        try apply pat_type_refl in H3; 
+        try apply IHv in H3; subst; 
+        constructor; assumption).
+    destruct t; try discriminate.
+    destruct t1 eqn:eq1; try discriminate.
+    apply andb_true_iff in H1 as [_ H2].
+    constructor. apply pat_type_refl. assumption.
+Qed.
+
+Module VJudgeRefl <: HasRefl2.
+    Definition A := value.
+    Definition B := type.
+    Definition P := val_judge.
+    Definition f := val_judgeb.
+    Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
+    Proof. intros. apply val_judge_refl. Qed.
+End VJudgeRefl.
 
 Definition valt (t : type) := {v : value | val_judge v t}.
 
@@ -993,15 +1067,22 @@ Inductive instance : pattern -> value -> Prop :=
     | instance_or_right : forall (p1 p2 : pattern) (v : value),
         instance p2 v -> instance (POr p1 p2) v. 
 
-Definition instancet (t : type) (p : patt t) (v : valt t) : Prop :=
-    instance (proj1_sig p) (proj1_sig v).
+Ltac instance_dec_or IHp1 IHp2 v :=
+    pose proof (IHp1 v) as IH1;
+    pose proof (IHp2 v) as IH2;
+    destruct IH1 as [IH1OA | IH1OB];
+    destruct IH2 as [IH2OA | IH2OB];
+    try (right; intros HF; inversion HF; auto; assumption);
+    left; try (apply instance_or_left; assumption);
+    try (apply instance_or_right; assumption).
 
 Theorem instance_dec : 
     forall (p : pattern) (v : value),
     {instance p v} + {~ instance p v}.
 Proof.
     pose proof type_eq_dec as TED.
-    induction p; destruct v;
+    induction p; 
+    destruct v;
     try (left; apply instance_wild);
     try (left; apply instance_var);
     try pose proof (IHp1 v1) as IH1;
@@ -1011,10 +1092,16 @@ Proof.
     try (pose proof (TED t1 t0) as TED1;
         pose proof (TED t2 t3) as TED2;
         pose proof (IHp v) as IHI; inversion IHI;
-        inversion TED1; inversion TED2; subst);
+        inversion TED1; inversion TED2; subst;
+        destruct IHI; destruct TED1; destruct TED2; subst);
     try (right; intros HF; inversion HF; auto; assumption);
-    try (left; constructor; try assumption).
-Qed.
+    try (left; constructor; assumption);
+    try instance_dec_or IHp1 IHp2 (VPair v1 v2).
+    - instance_dec_or IHp1 IHp2 VUnit.
+    - instance_dec_or IHp1 IHp2 (VFun p t e).
+    - instance_dec_or IHp1 IHp2 (VLeft t1 t2 v).
+    - instance_dec_or IHp1 IHp2 (VRight t1 t2 v).
+Qed.      
 
 Fixpoint instanceb (p : pattern) (v : value) : bool :=
     match p, v with
@@ -1025,6 +1112,7 @@ Fixpoint instanceb (p : pattern) (v : value) : bool :=
     | PLeft pt1 pt2 p, VLeft vt1 vt2 v
     | PRight pt1 pt2 p, VRight vt1 vt2 v => 
         type_eqb pt1 vt1 && type_eqb pt2 vt2 && instanceb p v
+    | POr p1 p2, _ => instanceb p1 v || instanceb p2 v
     | _, _ => false
     end.
 
@@ -1032,37 +1120,37 @@ Theorem instance_refl : forall (p : pattern) (v : value),
     instance p v <-> instanceb p v = true.
 Proof.
     induction p; destruct v; split; intros; 
-    try reflexivity; try constructor;
+    try reflexivity;
+    try apply instance_wild;
+    try apply instance_var;
+    try apply instance_unit;
+    try apply instance_pair;
+    try apply instance_left;
+    try apply instance_right;
     try discriminate H; try inversion H; 
-    subst; simpl in *.
+    subst; simpl in *;
+    try (apply andb_true_iff; split;
+        try (apply IHp; assumption);
+        apply andb_true_iff; split;
+        apply type_eq_refl; reflexivity);
+    try (apply andb_true_iff in H as [H1'' H3'];
+        apply andb_true_iff in H1'' as [H1' H2'];
+        apply type_eq_refl in H1';
+        apply type_eq_refl in H2';
+        subst; apply IHp in H3';
+        constructor; assumption);
+    try (apply orb_true_iff;
+        try (left; apply IHp1; assumption);
+        try (right; apply IHp2; assumption));
+    try (apply orb_true_iff in H1 as [H1 | H1];
+        try (apply instance_or_left; apply IHp1; assumption);
+        try (apply instance_or_right; apply IHp2; assumption)).
     - apply IHp1 in H3. apply IHp2 in H5.
         rewrite H3. rewrite H5. reflexivity.
     - apply IHp1. apply andb_true_iff in H as [H2 _].
         assumption.
     - apply andb_true_iff in H as [_ H2].
         apply IHp2. assumption.
-    - apply andb_true_iff. split.
-        + apply andb_true_iff. split.
-            * apply type_eq_refl. reflexivity.
-            * apply type_eq_refl. reflexivity.
-        + apply IHp. assumption.
-    - apply andb_true_iff in H as [H1'' H3'].
-        apply andb_true_iff in H1'' as [H1' H2'].
-        apply type_eq_refl in H1'.
-        apply type_eq_refl in H2'.
-        subst. apply IHp in H3'.
-        constructor. assumption.
-    - apply andb_true_iff. split.
-        + apply andb_true_iff. split.
-            * apply type_eq_refl. reflexivity.
-            * apply type_eq_refl. reflexivity.
-        + apply IHp. assumption.
-    - apply andb_true_iff in H as [H1'' H3'].
-        apply andb_true_iff in H1'' as [H1' H2'].
-        apply type_eq_refl in H1'.
-        apply type_eq_refl in H2'.
-        subst. apply IHp in H3'.
-        constructor. assumption.
 Qed.
 
 Module InstanceRefl <: HasRefl2.
@@ -1076,7 +1164,117 @@ End InstanceRefl.
 
 Module NotInstanceRefl := NotRefl2(InstanceRefl).
 
-Definition vinstancet {n : nat} (t : type) (p : pvt n t) (v : valt t) :=
+Definition instancet {t : type} (p : patt t) (v : valt t) : Prop :=
+    instance (proj1_sig p) (proj1_sig v).
+
+Definition instancebt {t : type} (p : patt t) (v : valt t) : bool :=
+    instanceb (proj1_sig p) (proj1_sig v).
+
+Theorem instancet_refl :
+    forall {t : type} (p : patt t) (v : valt t),
+    instancet p v <-> instancebt p v = true.
+Proof. intros. apply instance_refl. Qed.
+
+Definition pvec {n : nat} := V.t pattern n.
+
+Definition vvec {n : nat} := V.t value n.
+
+Definition tvec {n : nat} := V.t type n.
+
+Definition pjudge_vec {n : nat} (p : @pvec n) (t : @tvec n) :=
+    V.Forall2 pat_type p t.
+
+Definition pjudgeb_vec {n : nat} (p : @pvec n) (t : @tvec n) :=
+    forall2b pat_typeb p t.
+
+Module PatJudgeVecRefl := VectorForall2Refl(PatternTypeRefl).
+
+Lemma pjudge_vec_refl :
+    forall {n : nat} (p : @pvec n) (t : @tvec n),
+    pjudge_vec p t <-> pjudgeb_vec p t = true.
+Proof. intros. apply PatJudgeVecRefl.forall2_refl. Qed.
+
+Definition vjudge_vec {n : nat} (v : @vvec n) (t : @tvec n) :=
+    V.Forall2 val_judge v t.
+
+Definition vjudgeb_vec {n : nat} (v : @vvec n) (t : @tvec n) :=
+    forall2b val_judgeb v t.
+
+Module VJudgeVecRefl := VectorForall2Refl(VJudgeRefl).
+
+Lemma vjudge_vec_refl :
+    forall {n : nat} (v : @vvec n) (t : @tvec n),
+    vjudge_vec v t <-> vjudgeb_vec v t = true.
+Proof. intros. apply VJudgeVecRefl.forall2_refl. Qed.
+
+Definition pvt {n : nat} (t : @tvec n) :=
+    {p : @pvec n | pjudge_vec p t}.
+
+Definition vvt {n : nat} (t : @tvec n) :=
+    {v : @vvec n | vjudge_vec v t}.
+
+Definition pvt_nth {n i : nat} {t : @tvec n}
+    (p : pvt t) (H : i < n) : patt (V.nth_order t H).
+Proof.
+    destruct p as [p pj]. simpl in *.
+    pose proof (PatJudgeVecRefl.forall2_nth p t pj H) as HT.
+    apply (exist (pjudge (V.nth_order t H)) (V.nth_order p H) HT). 
+Defined.
+
+Definition vvt_nth {n i : nat} {t : @tvec n}
+    (v : vvt t) (H : i < n) : valt (V.nth_order t H).
+Proof.
+    destruct v as [v vj]. simpl in *.
+    pose proof (VJudgeVecRefl.forall2_nth v t vj H) as HT.
+    apply (exist (vjudge (V.nth_order t H)) (V.nth_order v H) HT). 
+Defined.
+
+Definition vinstancet {n : nat} {t : @tvec n} (p : pvt t) (v : vvt t) : Prop :=
+    V.Forall2 instance (proj1_sig p) (proj1_sig v).
+
+Definition vinstancebt {n : nat} {t : @tvec n} (p : pvt t) (v : vvt t) : bool :=
+    forall2b instanceb (proj1_sig p) (proj1_sig v).
+
+Module VInstanceRefl := VectorForall2Refl(InstanceRefl).
+
+Theorem vinstancet_refl :
+    forall {n : nat} {t : @tvec n} (p : pvt t) (v : vvt t),
+    vinstancet p v <-> vinstancebt p v = true.
+Proof. intros. apply VInstanceRefl.forall2_refl. Qed.
+
+Definition pmatrix {n : nat} : Type := list (@pvec n).
+
+Definition pjudge_matrix {n : nat} (p : @pmatrix n) (t : @tvec n) : Prop :=
+    Forall (fun p' => pjudge_vec p' t) p.
+
+Definition pjudgeb_matrix {n : nat} (p : @pmatrix n) (t : @tvec n) : bool :=
+    List.forallb (fun p' => pjudgeb_vec p' t) p.
+
+Theorem pjudge_matrix_refl :
+    forall {n : nat} (p : @pmatrix n) (t : @tvec n),
+    pjudge_matrix p t <-> pjudgeb_matrix p t = true.
+Proof.
+    (* unfold pjudge_matrix. unfold pjudgeb_matrix. *)
+    intros. induction p; split; intros H;
+    try reflexivity; simpl in *; try constructor.
+    - inversion H; subst.
+        apply andb_true_iff. split.
+        + apply pjudge_vec_refl. assumption.
+        + apply IHp. assumption.
+    - apply andb_true_iff in H as [H _]. apply pjudge_vec_refl. assumption.
+    - apply andb_true_iff in H as [_ H]. apply IHp. assumption. 
+Qed.
+
+(* vector of patterns *)
+Definition pvt {n : nat} (t : type) := V.t (patt t) n.
+
+(* vector of values *)
+Definition vvt {n : nat} (t : type) := V.t (valt t) n.
+
+(* matrix of patterns *)
+Definition pmt {n : nat} (t : type) := list (@pvt n t).
+
+Definition vinstancet {n : nat} (t : type) (p : @pvt n t) (v : vvt) :=
     exists (i : nat) (Hin : i < n), instancet t (V.nth_order p Hin) v.
 
 Definition linstancet (t : type) (pl : plt t) (v : valt t) :=
