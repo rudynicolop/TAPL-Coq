@@ -1492,27 +1492,39 @@ Qed.
 
 (* The Specialized Matrix *)
 
-Definition hd_tl_pvt {n : nat} {th : type} {t : tvec n}  (p : pvt (th::t)) : pattern * pvt t.
+Definition hd_tl_pvt {n : nat} {th : type} {t : tvec n}  (p : pvt (th::t)) : patt th * pvt t.
 Proof.
     pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
     destruct p as [p pj].
-    assert (H : pjudge_vec (V.tl p) t).
+    assert (H : pat_type (V.hd p) th /\ pjudge_vec (V.tl p) t).
     - inversion pj; subst.
         apply STUPID in H0;
         apply STUPID in H2;
         try apply Nat.eq_dec; subst.
-        simpl. apply H4.
-    - apply (V.hd p, exist (fun p' => pjudge_vec p' t) (V.tl p) H).
+        simpl; split; assumption.
+    - destruct H as [H1 H2].
+        apply (exist (pjudge th) (V.hd p) H1, exist (fun p' => pjudge_vec p' t) (V.tl p) H2).
+Defined.
+
+Definition cons_pvt {n : nat} {t : tvec n} 
+    {a : type} (r : patt a) (p : pvt t) : pvt (a::t).
+Proof.
+    destruct p as [p pj]. destruct r as [r rj].
+    assert (H : pjudge_vec (r::p) (a::t)).
+    - constructor; assumption.
+    - apply (exist (fun p' => pjudge_vec p' (a::t)) (r::p) H).
 Defined.
 
 (* separate first column *)
 Fixpoint first_column {n : nat} {th : type} {t : tvec n} 
-    (p : pmt (th::t)) : list (pattern * pvt t) :=
+    (p : pmt (th::t)) : list (patt th * pvt t) :=
     match p with
     | nil => nil
     | (row::rest)%list => 
         (hd_tl_pvt row :: first_column rest)%list
     end.
+
+(* Specialized Matrix for Unit *)
 
 Fixpoint SUnit_row {n : nat} {t : tvec n} (r : pattern) (row : pvt t) : pmt t :=
     match r with
@@ -1521,9 +1533,44 @@ Fixpoint SUnit_row {n : nat} {t : tvec n} (r : pattern) (row : pvt t) : pmt t :=
     | _ => nil
     end.
 
-(* Specialized Matrix for Unit *)
-Fixpoint SUnit {n : nat} {t : tvec n} (p : list (pattern * (pvt t))) : pmt t :=
+Fixpoint SUnit {n : nat} {t : tvec n} (p : list (patt TUnit * (pvt t))) : pmt t :=
     match p with
     | nil => nil
-    | ((r,row)::p')%list => (SUnit_row r row ++ SUnit p')%list
+    | ((r,row)::p')%list => (SUnit_row (proj1_sig r) row ++ SUnit p')%list
+    end.
+
+(* Specialized Matrix for Pair *)
+
+Fixpoint SPair_row {n : nat} {t : tvec n} 
+    {a b : type} (r : pattern) 
+    (H : pat_type r (TPair a b)) (row : pvt t) : pmt (a::b::t).
+Proof.
+    destruct row as [rw rowj] eqn:eqrow. destruct r.
+    - assert (HPV : pjudge_vec (PWild::PWild::rw) (a::b::t)).
+        + constructor; constructor; try constructor; try assumption.
+        + pose proof (exist (fun p' => pjudge_vec p' (a::b::t)) 
+            (PWild::PWild::rw) HPV) as A. apply [A]%list.
+    - apply nil.
+    - exfalso. inversion H.
+    - assert (HPV : pjudge_vec (r1::r2::rw) (a::b::t)).
+        + inversion H; subst. constructor; 
+            try constructor; try assumption.
+        + pose proof (exist (fun p' => pjudge_vec p' (a::b::t)) 
+            (r1::r2::rw) HPV) as A. apply [A]%list.
+    - exfalso. inversion H.
+    - exfalso. inversion H.
+    - assert (HR : pat_type r1 (TPair a b) /\ pat_type r2 (TPair a b)).
+        + inversion H; subst; split; assumption.
+        + destruct HR as [HR1 HR2]. 
+            pose proof (SPair_row n t a b r1 HR1 row) as A.
+            pose proof (SPair_row n t a b r2 HR2 row) as B.
+            apply (A ++ B)%list.
+Defined.
+
+Fixpoint SPair {n : nat} {t : tvec n} {a b : type}
+    (p : list (patt (TPair a b) * (pvt t))) : pmt (a::b::t) :=
+    match p with
+    | nil => nil
+    | ((r,row)::p')%list => 
+        ((SPair_row (proj1_sig r) (proj2_sig r) row) ++ SPair p')%list
     end.
