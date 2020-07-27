@@ -1574,3 +1574,69 @@ Fixpoint SPair {n : nat} {t : tvec n} {a b : type}
     | ((r,row)::p')%list => 
         ((SPair_row (proj1_sig r) (proj2_sig r) row) ++ SPair p')%list
     end.
+
+Fixpoint SLeft_row {n : nat} {t : tvec n} {a b : type}
+    (r : pattern) (H : pat_type r (TEither a b)) (row : pvt t) : pmt (a::t).
+    destruct row as [rw rj] eqn:eqrow. destruct r.
+    - assert (HPV : pjudge_vec (PWild::rw) (a::t)).
+        + constructor; try constructor; try assumption.
+        + pose proof (exist (fun p'=> pjudge_vec p' (a::t))
+            (PWild::rw) HPV) as A. apply [A]%list.
+    - apply nil.
+    - exfalso. inversion H.
+    - exfalso. inversion H.
+    - assert (HPV : pjudge_vec (r::rw) (a::t)).
+        + inversion H; subst. constructor;
+            try constructor; assumption.
+        + pose proof (exist (fun p' => pjudge_vec p' (a::t)) 
+            (r::rw) HPV) as A. apply [A]%list.
+    - apply nil.
+    - assert (HR : pat_type r1 (TEither a b) 
+        /\ pat_type r2 (TEither a b)).
+        + inversion H; subst. split; assumption.
+        + destruct HR as [HR1 HR2].
+            pose proof (SLeft_row n t a b r1 HR1 row) as A.
+            pose proof (SLeft_row n t a b r2 HR2 row) as B.
+            apply (A ++ B)%list.
+Defined.
+
+Fixpoint SLeft {n : nat} {t : tvec n} {a b : type}
+    (p : list (patt (TEither a b) * (pvt t))) : pmt (a::t) :=
+    match p with
+    | nil => nil
+    | ((r,row)::p')%list => 
+        ((SLeft_row (proj1_sig r) (proj2_sig r) row) ++ SLeft p')%list
+    end.
+
+Fixpoint SRight_row {n : nat} {t : tvec n} {a b : type}
+    (r : pattern) (H : pat_type r (TEither a b)) (row : pvt t) : pmt (b::t).
+    destruct row as [rw rj] eqn:eqrow. destruct r.
+    - assert (HPV : pjudge_vec (PWild::rw) (b::t)).
+        + constructor; try constructor; try assumption.
+        + pose proof (exist (fun p'=> pjudge_vec p' (b::t))
+            (PWild::rw) HPV) as A. apply [A]%list.
+    - apply nil.
+    - exfalso. inversion H.
+    - exfalso. inversion H.
+    - apply nil.
+    - assert (HPV : pjudge_vec (r::rw) (b::t)).
+        + inversion H; subst. constructor;
+            try constructor; assumption.
+        + pose proof (exist (fun p' => pjudge_vec p' (b::t)) 
+            (r::rw) HPV) as A. apply [A]%list.
+    - assert (HR : pat_type r1 (TEither a b) 
+        /\ pat_type r2 (TEither a b)).
+        + inversion H; subst. split; assumption.
+        + destruct HR as [HR1 HR2].
+            pose proof (SRight_row n t a b r1 HR1 row) as A.
+            pose proof (SRight_row n t a b r2 HR2 row) as B.
+            apply (A ++ B)%list.
+Defined.
+
+Fixpoint SRight {n : nat} {t : tvec n} {a b : type}
+    (p : list (patt (TEither a b) * (pvt t))) : pmt (b::t) :=
+    match p with
+    | nil => nil
+    | ((r,row)::p')%list => 
+        ((SRight_row (proj1_sig r) (proj2_sig r) row) ++ SRight p')%list
+    end.
