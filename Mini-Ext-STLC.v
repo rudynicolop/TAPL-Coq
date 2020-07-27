@@ -1397,7 +1397,7 @@ Definition exhaustive {n : nat} {t : @tvec n} (p : pmt t) :=
 
 (* Definition 5 (Useless Clause): *)
 Definition useless_clause 
-    {n : nat} (t : @tvec n) (p : pmt t) (i : nat) (Hin : i < n) :=
+    {n : nat} {t : @tvec n} (p : pmt t) (i : nat) :=
     ~ exists (v : vvt t), row_filters p v i.
 
 (* Definition 6 (Useful Clause): *)
@@ -1472,4 +1472,20 @@ Proof.
         + apply CP.NNPP in H.
             apply row_filters_minstancet. assumption.
         + exfalso. apply H. apply pwild_vec_instance.
+Qed.
+
+Theorem useless_row :
+    forall {n : nat} {t : @tvec n} (p : pmt t) (i : nat) (row : pvt t),
+    nth_error p i = Some row ->
+    useless_clause p i <-> ~ U (take i p) row.
+Proof.
+    unfold useless_clause. unfold U. unfold upred. split; intros.
+    - intros [v [NM HIV]]. apply H0. exists v.
+        unfold row_filters. split.
+        + exists row. symmetry in H. split; assumption.
+        + assumption.
+    - intros [v [[row' [SR HIV]] NM]]. apply H0.
+        exists v. split; try assumption.
+        rewrite H in SR. injection SR; intros; 
+        subst; assumption.
 Qed.
