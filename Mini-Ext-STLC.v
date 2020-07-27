@@ -1203,45 +1203,45 @@ Theorem instancet_refl :
     instancet p v <-> instancebt p v = true.
 Proof. intros. apply instance_refl. Qed.
 
-Definition pvec {n : nat} := V.t pattern n.
+Definition pvec (n : nat) := V.t pattern n.
 
-Definition vvec {n : nat} := V.t value n.
+Definition vvec (n : nat) := V.t value n.
 
-Definition tvec {n : nat} := V.t type n.
+Definition tvec (n : nat) := V.t type n.
 
-Definition pjudge_vec {n : nat} (p : @pvec n) (t : @tvec n) :=
+Definition pjudge_vec {n : nat} (p : pvec n) (t : @tvec n) :=
     V.Forall2 pat_type p t.
 
-Definition pjudgeb_vec {n : nat} (p : @pvec n) (t : @tvec n) :=
+Definition pjudgeb_vec {n : nat} (p : pvec n) (t : @tvec n) :=
     forall2b pat_typeb p t.
 
 Module PatJudgeVecRefl := VectorForall2Refl(PatternTypeRefl).
 
 Lemma pjudge_vec_refl :
-    forall {n : nat} (p : @pvec n) (t : @tvec n),
+    forall {n : nat} (p : pvec n) (t : tvec n),
     pjudge_vec p t <-> pjudgeb_vec p t = true.
 Proof. intros. apply PatJudgeVecRefl.forall2_refl. Qed.
 
-Definition vjudge_vec {n : nat} (v : @vvec n) (t : @tvec n) :=
+Definition vjudge_vec {n : nat} (v : vvec n) (t : @tvec n) :=
     V.Forall2 val_judge v t.
 
-Definition vjudgeb_vec {n : nat} (v : @vvec n) (t : @tvec n) :=
+Definition vjudgeb_vec {n : nat} (v : vvec n) (t : @tvec n) :=
     forall2b val_judgeb v t.
 
 Module VJudgeVecRefl := VectorForall2Refl(VJudgeRefl).
 
 Lemma vjudge_vec_refl :
-    forall {n : nat} (v : @vvec n) (t : @tvec n),
+    forall {n : nat} (v : vvec n) (t : tvec n),
     vjudge_vec v t <-> vjudgeb_vec v t = true.
 Proof. intros. apply VJudgeVecRefl.forall2_refl. Qed.
 
-Definition pvt {n : nat} (t : @tvec n) :=
+Definition pvt {n : nat} (t : tvec n) :=
     {p : @pvec n | pjudge_vec p t}.
 
-Definition vvt {n : nat} (t : @tvec n) :=
+Definition vvt {n : nat} (t : tvec n) :=
     {v : @vvec n | vjudge_vec v t}.
 
-Definition pvt_nth {n i : nat} {t : @tvec n}
+Definition pvt_nth {n i : nat} {t : tvec n}
     (p : pvt t) (H : i < n) : patt (V.nth_order t H).
 Proof.
     destruct p as [p pj]. simpl in *.
@@ -1249,7 +1249,7 @@ Proof.
     apply (exist (pjudge (V.nth_order t H)) (V.nth_order p H) HT). 
 Defined.
 
-Definition vvt_nth {n i : nat} {t : @tvec n}
+Definition vvt_nth {n i : nat} {t : tvec n}
     (v : vvt t) (H : i < n) : valt (V.nth_order t H).
 Proof.
     destruct v as [v vj]. simpl in *.
@@ -1257,25 +1257,25 @@ Proof.
     apply (exist (vjudge (V.nth_order t H)) (V.nth_order v H) HT). 
 Defined.
 
-Definition vinstancet {n : nat} {t : @tvec n} (p : pvt t) (v : vvt t) : Prop :=
+Definition vinstancet {n : nat} {t : tvec n} (p : pvt t) (v : vvt t) : Prop :=
     V.Forall2 instance (proj1_sig p) (proj1_sig v).
 
-Definition vinstancebt {n : nat} {t : @tvec n} (p : pvt t) (v : vvt t) : bool :=
+Definition vinstancebt {n : nat} {t : tvec n} (p : pvt t) (v : vvt t) : bool :=
     forall2b instanceb (proj1_sig p) (proj1_sig v).
 
 Module VInstanceRefl := VectorForall2Refl(InstanceRefl).
 
 Theorem vinstancet_refl :
-    forall {n : nat} {t : @tvec n} (p : pvt t) (v : vvt t),
+    forall {n : nat} {t : tvec n} (p : pvt t) (v : vvt t),
     vinstancet p v <-> vinstancebt p v = true.
 Proof. intros. apply VInstanceRefl.forall2_refl. Qed.
 
-Definition pmt {n : nat} (t : @tvec n) := list (@pvt n t).
+Definition pmt {n : nat} (t : tvec n) := list (@pvt n t).
 
-Definition minstancet {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t) :=
+Definition minstancet {n : nat} {t : tvec n} (p : pmt t) (v : vvt t) :=
     List.Exists (fun p' => vinstancet p' v) p.
 
-Definition minstancebt {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t) :=
+Definition minstancebt {n : nat} {t : tvec n} (p : pmt t) (v : vvt t) :=
     List.existsb (fun p' => vinstancebt p' v) p.
 
 Lemma minstancet_refl :
@@ -1290,12 +1290,12 @@ Proof.
         exists x. apply vinstancet_refl in HIV. split; assumption.
 Qed.
 
-Definition row_filters {n : nat} {t : @tvec n}
+Definition row_filters {n : nat} {t : tvec n}
     (p : pmt t) (v : vvt t) (i : nat) :=
     (exists (row : pvt t), Some row = nth_error p i
     /\ vinstancet row v) /\ ~ minstancet (take i p) v.
 
-Fixpoint row_filters_op {n : nat} {t : @tvec n}
+Fixpoint row_filters_op {n : nat} {t : tvec n}
     (p : pmt t) (v : vvt t) : option nat :=
     match p with
     | nil => None
@@ -1308,7 +1308,7 @@ Fixpoint row_filters_op {n : nat} {t : @tvec n}
     end.
 
 Lemma row_filters_op_minstancebt :
-    forall {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t),
+    forall {n : nat} {t : tvec n} (p : pmt t) (v : vvt t),
     minstancebt p v = true <-> exists i, row_filters_op p v = Some i.
 Proof.
     intros. dependent induction p; 
@@ -1333,7 +1333,7 @@ Proof. intros. induction i; try reflexivity. Qed.
 
 
 Lemma row_filters_refl :
-    forall {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t) (i : nat),
+    forall {n : nat} {t : tvec n} (p : pmt t) (v : vvt t) (i : nat),
     row_filters p v i <-> row_filters_op p v = Some i.
 Proof.
     intros. dependent induction p; split; intros H;
@@ -1379,7 +1379,7 @@ Proof.
 Qed.
 
 Lemma row_filters_minstancet :
-    forall {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t),
+    forall {n : nat} {t : tvec n} (p : pmt t) (v : vvt t),
     minstancet p v <-> exists i, row_filters p v i.
 Proof.
     split; intros.
@@ -1392,24 +1392,24 @@ Proof.
 Qed.      
 
 (* Definition 4 (Exhaustiveness): *)
-Definition exhaustive {n : nat} {t : @tvec n} (p : pmt t) :=
+Definition exhaustive {n : nat} {t : tvec n} (p : pmt t) :=
     forall (v : vvt t), exists (i : nat), row_filters p v i.
 
 (* Definition 5 (Useless Clause): *)
 Definition useless_clause 
-    {n : nat} {t : @tvec n} (p : pmt t) (i : nat) :=
+    {n : nat} {t : tvec n} (p : pmt t) (i : nat) :=
     ~ exists (v : vvt t), row_filters p v i.
 
 (* Definition 6 (Useful Clause): *)
-Definition upred {n : nat} {t : @tvec n} (p : pmt t) (q : pvt t) (v : vvt t) := 
+Definition upred {n : nat} {t : tvec n} (p : pmt t) (q : pvt t) (v : vvt t) := 
     (~ minstancet p v) /\ vinstancet q v.
 
 (* U(p,q): *)
-Definition U {n : nat} {t : @tvec n} (p : pmt t) (q : pvt t) := 
+Definition U {n : nat} {t : tvec n} (p : pmt t) (q : pvt t) := 
     exists (v : vvt t), upred p q v.
 
 (* M(p,q): *)
-Definition M {n : nat} {t : @tvec n} (p : pmt t) (q : pvt t) := {v : vvt t | upred p q v}.
+Definition M {n : nat} {t : tvec n} (p : pmt t) (q : pvt t) := {v : vvt t | upred p q v}.
 
 Import V.VectorNotations.
 
@@ -1419,7 +1419,7 @@ Fixpoint pwild_vec (n : nat) : @pvec n :=
     | S k => PWild :: pwild_vec k
     end.
 
-Definition pwildt_vec {n : nat} (t : @tvec n) : pvt t.
+Definition pwildt_vec {n : nat} (t : tvec n) : pvt t.
 Proof.
     assert (HW : pjudge_vec (pwild_vec n) t).
     - induction t.
@@ -1431,7 +1431,7 @@ Proof.
 Defined.
 
 Lemma pwild_vec_instance :
-    forall {n : nat} {t : @tvec n} (v : vvt t),
+    forall {n : nat} {t : tvec n} (v : vvt t),
     vinstancet (pwildt_vec t) v.
 Proof.
     pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
@@ -1475,7 +1475,7 @@ Proof.
 Qed.
 
 Theorem useless_row :
-    forall {n : nat} {t : @tvec n} (p : pmt t) (i : nat) (row : pvt t),
+    forall {n : nat} {t : tvec n} (p : pmt t) (i : nat) (row : pvt t),
     nth_error p i = Some row ->
     useless_clause p i <-> ~ U (take i p) row.
 Proof.
@@ -1489,3 +1489,41 @@ Proof.
         rewrite H in SR. injection SR; intros; 
         subst; assumption.
 Qed.
+
+(* The Specialized Matrix *)
+
+Definition hd_tl_pvt {n : nat} {th : type} {t : tvec n}  (p : pvt (th::t)) : pattern * pvt t.
+Proof.
+    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+    destruct p as [p pj].
+    assert (H : pjudge_vec (V.tl p) t).
+    - inversion pj; subst.
+        apply STUPID in H0;
+        apply STUPID in H2;
+        try apply Nat.eq_dec; subst.
+        simpl. apply H4.
+    - apply (V.hd p, exist (fun p' => pjudge_vec p' t) (V.tl p) H).
+Defined.
+
+(* separate first column *)
+Fixpoint first_column {n : nat} {th : type} {t : tvec n} 
+    (p : pmt (th::t)) : list (pattern * pvt t) :=
+    match p with
+    | nil => nil
+    | (row::rest)%list => 
+        (hd_tl_pvt row :: first_column rest)%list
+    end.
+
+Fixpoint SUnit_row {n : nat} {t : tvec n} (r : pattern) (row : pvt t) : pmt t :=
+    match r with
+    | PUnit => [row]%list
+    | POr r1 r2 => (SUnit_row r1 row ++ SUnit_row r2 row)%list
+    | _ => nil
+    end.
+
+(* Specialized Matrix for Unit *)
+Fixpoint SUnit {n : nat} {t : tvec n} (p : list (pattern * (pvt t))) : pmt t :=
+    match p with
+    | nil => nil
+    | ((r,row)::p')%list => (SUnit_row r row ++ SUnit p')%list
+    end.
