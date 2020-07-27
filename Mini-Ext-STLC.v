@@ -1297,22 +1297,70 @@ Definition M {n : nat} {t : @tvec n} (p : pmt t) (q : pvt t) := {v : vvt t | upr
 
 Import V.VectorNotations.
 
-Definition pwild_vec {n : nat} (t : @tvec n) : pvt t.
+Fixpoint pwild_vec (n : nat) : @pvec n :=
+    match n with
+    | 0 => []
+    | S k => PWild :: pwild_vec k
+    end.
+
+Definition pwildt_vec {n : nat} (t : @tvec n) : pvt t.
 Proof.
-    induction t.
-    - assert (H : pjudge_vec [] []).
-        + apply V.Forall2_nil. 
-        + apply (exist (fun p => pjudge_vec p []) [] H).
-    - destruct IHt. assert (HW : pjudge h PWild); try constructor.
-        assert (H : pjudge_vec (PWild :: x) (h :: t)).
-        + constructor; assumption.
-        + apply (exist (fun p => pjudge_vec p (h::t)) (PWild::x) H).
+    assert (HW : pjudge_vec (pwild_vec n) t).
+    - induction t.
+        + constructor.
+        + constructor.
+            * constructor.
+            * apply IHt.
+    - apply (exist (fun p => pjudge_vec p t) (pwild_vec n) HW).
 Defined.
+
+Lemma pwild_vec_instance :
+    forall {n : nat} {t : @tvec n} (v : vvt t),
+    vinstancet (pwildt_vec t) v.
+Proof.
+    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+    intros. destruct v as [v vj]. 
+    unfold vinstancet. simpl. induction v.
+    - constructor.
+    - inversion vj; subst. 
+        apply STUPID in H1; try apply Nat.eq_dec.
+        apply STUPID in H2; try apply Nat.eq_dec.
+        subst. constructor.
+        + constructor.
+        + eapply IHv. apply H4.
+Qed.
+
+Lemma PNNP : forall (P : Prop), P -> ~ ~ P.
+Proof. intros. intros NP. apply NP. assumption. Qed.
 
 Theorem exhaustive_wild :
     forall {n : nat} {t : @tvec n} (p : pmt t),
-    exhaustive p <-> ~ U p (pwild_vec t).
+    exhaustive p <-> ~ U p (pwildt_vec t).
 Proof.
+    unfold exhaustive; unfold U; 
+    unfold upred; split; intros.
+    - apply CPT.all_not_not_ex. intros v.
+        apply CP.or_not_and.
+        specialize H with (v := v).
+        destruct H as [i [RF1 RF2]].
+        destruct RF1 as [row [SR VI]].
+        left. apply PNNP. unfold minstancet.
+        apply Exists_exists. exists row. split.
+        + eapply nth_error_In. symmetry. apply SR.
+        + assumption.
+    - pose proof CPT.not_ex_all_not as NEAN.
+        specialize NEAN with (n := v).
+        apply NEAN in H. clear NEAN.
+        apply CP.not_and_or in H.
+        destruct H as [H | H].
+        + apply CP.NNPP in H.
+            unfold minstancet in H.
+            apply Exists_exists in H.
+            destruct H as [row [HIn HIV]].
+            apply In_nth_error in HIn as [i NTH].
+            symmetry in NTH. exists i. 
+            unfold row_filters. split. 
+            * exists row. split; assumption.
+            * admit. (* need the first such row thing again...ugghhh *)
+        + exfalso. apply H. apply pwild_vec_instance.
 Admitted.
-
-
