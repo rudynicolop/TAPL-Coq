@@ -1492,7 +1492,17 @@ Qed.
 
 (* The Specialized Matrix *)
 
-Definition empty_pvt : pvt [] := exist (fun p' => pjudge_vec p' []) [] (V.Forall2_nil pat_type).
+Definition empty_pvt : pvt [].
+Proof.
+    assert (H : pjudge_vec [] []); try constructor.
+    apply (exist (fun p' => pjudge_vec p' []) [] H).
+Defined.
+
+Definition empty_vvt : vvt [].
+Proof.
+    assert (H : vjudge_vec [] []); try constructor.
+    apply (exist (fun v' => vjudge_vec v' []) [] H).
+Defined.
 
 Definition hd_tl_pvt {n : nat} {th : type} {t : tvec n}  (p : pvt (th::t)) : patt th * pvt t.
 Proof.
@@ -1755,3 +1765,33 @@ Inductive URec : forall {n : nat} {t : tvec n}, pmt t -> pvt t -> Prop :=
         proj1_sig qh = POr (proj1_sig r1) (proj1_sig r2) ->
         URec p (cons_pvt r2 qt) ->
         URec p q.
+
+Theorem URec_correct :
+    forall {n : nat} {t : tvec n} (p : pmt t) (q : pvt t), 
+    U p q <-> URec p q. 
+Proof.
+    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+    intros n. induction t; split; intros.
+    - destruct q as [q qj]. destruct p.
+        + inversion qj. apply STUPID in H0;
+            try apply Nat.eq_dec; subst.
+            pose proof urec_empty as URE.
+            unfold empty_pvt in URE. pose proof proof_irrelevance as PI.
+            unfold CF.proof_irrelevance in PI.
+            pose proof (PI (pjudge_vec [] []) qj (V.Forall2_nil pat_type)) as PEqj.
+            rewrite PEqj. assumption.
+        + unfold U in H. unfold upred in H.
+            destruct H as [v [NM HIV]].
+            destruct v as [v vj]. exfalso.
+            apply NM. apply minstancet_refl.
+            reflexivity.
+    - destruct q as [q qj]. destruct p.
+        + unfold U. exists empty_vvt.
+            unfold upred. split.
+            * intros HM. apply minstancet_refl in HM.
+                simpl in HM. discriminate.
+            * unfold vinstancet. simpl.
+                pose proof (vect_nil q) as QN; subst.
+                constructor.
+        + inversion H.
+Admitted.
