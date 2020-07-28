@@ -1674,7 +1674,31 @@ Inductive URec : forall {n : nat} {t : tvec n}, pmt t -> pvt t -> Prop :=
         (exist _ PUnit pt_unit,qt) = hd_tl_pvt q ->
         URec (SUnit (first_column p)) qt ->
         URec p q
-    (* q0 is an or-pattern *)
+    (* q0 = (r1,r2) *)
+    | urec_q0_pair : forall {n : nat} {a b : type} {t : tvec n} 
+        (p : pmt ((TPair a b)::t)) (q : pvt ((TPair a b)::t)) 
+        (qh : patt (TPair a b)) (qt : pvt t) (r1 : patt a) (r2 : patt b),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = PPair (proj1_sig r1) (proj1_sig r2) ->
+        URec (SPair (first_column p)) (cons_pvt r1 (cons_pvt r2 qt)) ->
+        URec p q
+    (* q0 = Left a b r *)
+    | urec_q0_either_left : forall {n : nat} {a b : type} {t : tvec n} 
+        (p : pmt ((TEither a b)::t)) (q : pvt ((TEither a b)::t)) 
+        (qh : patt (TEither a b)) (qt : pvt t) (r : patt a),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = PLeft a b (proj1_sig r) ->
+        URec (SLeft (first_column p)) (cons_pvt r qt) ->
+        URec p q
+    (* q0 = Right a b r *)
+    | urec_q0_either_right : forall {n : nat} {a b : type} {t : tvec n} 
+        (p : pmt ((TEither a b)::t)) (q : pvt ((TEither a b)::t)) 
+        (qh : patt (TEither a b)) (qt : pvt t) (r : patt b),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = PRight a b (proj1_sig r) ->
+        URec (SRight (first_column p)) (cons_pvt r qt) ->
+        URec p q
+    (* q0 is an or-pattern (left intros) *)
     | urec_or_left_intros : forall {n : nat} {a : type} {t : tvec n} 
         (p : pmt (a::t)) (q : pvt (a::t)) (qh : patt a) (qt : pvt t) 
         (r1 r2 : patt a),
@@ -1682,6 +1706,7 @@ Inductive URec : forall {n : nat} {t : tvec n}, pmt t -> pvt t -> Prop :=
         proj1_sig qh = POr (proj1_sig r1) (proj1_sig r2) ->
         URec p (cons_pvt r1 qt) ->
         URec p q
+    (* q0 is an or-pattern (right intros) *)
     | urec_or_right_intros : forall {n : nat} {a : type} {t : tvec n} 
         (p : pmt (a::t)) (q : pvt (a::t)) (qh : patt a) (qt : pvt t) 
         (r1 r2 : patt a),
