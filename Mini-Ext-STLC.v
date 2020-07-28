@@ -1640,3 +1640,25 @@ Fixpoint SRight {n : nat} {t : tvec n} {a b : type}
     | ((r,row)::p')%list => 
         ((SRight_row (proj1_sig r) (proj2_sig r) row) ++ SRight p')%list
     end.
+
+Fixpoint D_row {n : nat} {t : tvec n} (r : pattern) (row : pvt t) : pmt t.
+    destruct r eqn:eqr.
+    - apply [row]%list.
+    - apply nil.
+    - apply nil.
+    - apply nil.
+    - apply nil.
+    - apply nil.
+    - pose proof (D_row n t p1 row) as A.
+        pose proof (D_row n t p2 row) as B.
+        apply (A ++ B)%list.
+Defined.
+
+(* default matrix *)
+Fixpoint D {n : nat} {th : type} {t : tvec n} 
+    (p : list (patt th * (pvt t))) : pmt t :=
+    match p with
+    | nil => nil
+    | ((r,row)::p')%list => 
+        (D_row (proj1_sig r) row ++ D p')%list
+    end.
