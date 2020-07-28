@@ -1492,6 +1492,8 @@ Qed.
 
 (* The Specialized Matrix *)
 
+Definition empty_pvt : pvt [] := exist (fun p' => pjudge_vec p' []) [] (V.Forall2_nil pat_type).
+
 Definition hd_tl_pvt {n : nat} {th : type} {t : tvec n}  (p : pvt (th::t)) : patt th * pvt t.
 Proof.
     pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
@@ -1662,3 +1664,28 @@ Fixpoint D {n : nat} {th : type} {t : tvec n}
     | ((r,row)::p')%list => 
         (D_row (proj1_sig r) row ++ D p')%list
     end.
+
+Inductive URec : forall {n : nat} {t : tvec n}, pmt t -> pvt t -> Prop :=
+    (* Base Case, n = 0 *)
+    | urec_empty : URec nil empty_pvt
+    (* q0 = unit *)
+    | urec_q0_unit : forall {n : nat} {t : tvec n} 
+        (p : pmt (TUnit::t)) (q : pvt (TUnit::t)) (qt : pvt t),
+        (exist _ PUnit pt_unit,qt) = hd_tl_pvt q ->
+        URec (SUnit (first_column p)) qt ->
+        URec p q
+    (* q0 is an or-pattern *)
+    | urec_or_left_intros : forall {n : nat} {a : type} {t : tvec n} 
+        (p : pmt (a::t)) (q : pvt (a::t)) (qh : patt a) (qt : pvt t) 
+        (r1 r2 : patt a),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = POr (proj1_sig r1) (proj1_sig r2) ->
+        URec p (cons_pvt r1 qt) ->
+        URec p q
+    | urec_or_right_intros : forall {n : nat} {a : type} {t : tvec n} 
+        (p : pmt (a::t)) (q : pvt (a::t)) (qh : patt a) (qt : pvt t) 
+        (r1 r2 : patt a),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = POr (proj1_sig r1) (proj1_sig r2) ->
+        URec p (cons_pvt r2 qt) ->
+        URec p q.
