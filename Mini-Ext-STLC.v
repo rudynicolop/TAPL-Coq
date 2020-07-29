@@ -938,7 +938,7 @@ Inductive sigma (p : PWS.t) : type -> Prop :=
         PWS.Exists (fun p' => root_construct p' (CRight a b)) p ->
         sigma p (TEither a b).
 
-Definition sigmab (p : PWS.t) (t : type)  (H : pws_judge t p) :=
+Definition sigmab (p : PWS.t) (t : type) (H : pws_judge t p) :=
     match t with
     | TUnit => PWS.exists_ (fun p' => root_constructb p' CUnit) p
     | TPair a b => PWS.exists_ (fun p' => root_constructb p' CPair) p
@@ -979,6 +979,18 @@ Proof.
     try unfold_Exists H3;
     try unfold_Exists H4.
 Qed.       
+
+Lemma sigma_refl_not :
+    forall (t : type) (p : PWS.t) (H : pws_judge t p),
+    ~ sigma p t <-> sigmab p t H = false.
+Proof.
+    split; intros.
+    - destruct (sigmab p t H) eqn:eq.
+        + apply sigma_refl in eq. contradiction.
+        + reflexivity.
+    - intros H1. apply (sigma_refl t p H) in H1.
+        rewrite H0 in H1. discriminate.
+Qed.
 
 Inductive expr : Type :=
     | EUnit
@@ -1726,19 +1738,13 @@ Inductive URec : forall {n : nat} {t : tvec n}, pmt t -> pvt t -> Prop :=
         URec (SPair (first_column p)) 
             (cons_pvt (exist _ PWild (pt_wild a)) (cons_pvt (exist _ PWild (pt_wild b)) qt)) ->
         URec p q
-    (* q0 = _ : a + b, p's first column's signature is complete, left intros *)
-    | urec_wild_complete_either_left_intros : forall {n : nat} {t : tvec n} {a b : type}
+    (* q0 = _ : a + b, p's first column's signature is complete *)
+    | urec_wild_complete_either : forall {n : nat} {t : tvec n} {a b : type}
         (p : pmt (TEither a b :: t)) (q : pvt (TEither a b :: t)) (qt : pvt t),
         (exist _ PWild (pt_wild (TEither a b)), qt) = hd_tl_pvt q ->
         sigma (PWS_first_column p) (TEither a b) ->
         URec (SLeft (first_column p))
-            (cons_pvt (exist _ PWild (pt_wild a)) qt) ->
-        URec p q
-    (* q0 = _ : a + b, p's first column's signature is complete, right intros *)
-    | urec_wild_complete_either_right_intros : forall {n : nat} {t : tvec n} {a b : type}
-        (p : pmt (TEither a b :: t)) (q : pvt (TEither a b :: t)) (qt : pvt t),
-        (exist _ PWild (pt_wild (TEither a b)), qt) = hd_tl_pvt q ->
-        sigma (PWS_first_column p) (TEither a b) ->
+            (cons_pvt (exist _ PWild (pt_wild a)) qt) \/
         URec (SRight (first_column p))
             (cons_pvt (exist _ PWild (pt_wild b)) qt) ->
         URec p q
@@ -1749,35 +1755,43 @@ Inductive URec : forall {n : nat} {t : tvec n}, pmt t -> pvt t -> Prop :=
         ~ sigma (PWS_first_column p) a ->
         URec (D (first_column p)) qt ->
         URec p q
-    (* q0 is an or-pattern (left intros) *)
-    | urec_or_left_intros : forall {n : nat} {a : type} {t : tvec n} 
+    (* q0 is an or-pattern *)
+    | urec_or_pat : forall {n : nat} {a : type} {t : tvec n} 
         (p : pmt (a::t)) (q : pvt (a::t)) (qh : patt a) (qt : pvt t) 
         (r1 r2 : patt a),
         (qh,qt) = hd_tl_pvt q ->
         proj1_sig qh = POr (proj1_sig r1) (proj1_sig r2) ->
-        URec p (cons_pvt r1 qt) ->
-        URec p q
-    (* q0 is an or-pattern (right intros) *)
-    | urec_or_right_intros : forall {n : nat} {a : type} {t : tvec n} 
-        (p : pmt (a::t)) (q : pvt (a::t)) (qh : patt a) (qt : pvt t) 
-        (r1 r2 : patt a),
-        (qh,qt) = hd_tl_pvt q ->
-        proj1_sig qh = POr (proj1_sig r1) (proj1_sig r2) ->
-        URec p (cons_pvt r2 qt) ->
+        URec p (cons_pvt r1 qt) \/ URec p (cons_pvt r2 qt) ->
         URec p q.
+
+Lemma first_column_pws_judge :
+    forall {n : nat} {a : type} {t : tvec n} (p : pmt (a::t)),
+    pws_judge a (PWS_first_column p).
+Proof.
+Admitted.
+
+Ltac irrelevant_pat_type_proof eqhtq qhj p t pf :=
+    rewrite eqhtq; pose proof (proof_irrelevance 
+        (pat_type p t) qhj pf) as PIH;
+    rewrite PIH; reflexivity.
+
+Ltac irrelevant_wild_pat_type_proof eqhtq qhj t :=
+    irrelevant_pat_type_proof eqhtq qhj PWild t (pt_wild t).
+    
+Ltac wild_urec_simpl eqhtq qhj t :=
+    try irrelevant_wild_pat_type_proof eqhtq qhj t;
+    try assumption.
 
 Theorem URec_correct :
     forall {n : nat} {t : tvec n} (p : pmt t) (q : pvt t), 
     U p q <-> URec p q. 
 Proof.
+    pose proof proof_irrelevance as PI. unfold CF.proof_irrelevance in PI.
     pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
     intros n. induction t; split; intros.
     - destruct q as [q qj]. destruct p.
-        + inversion qj. apply STUPID in H0;
-            try apply Nat.eq_dec; subst.
-            pose proof urec_empty as URE.
-            unfold empty_pvt in URE. pose proof proof_irrelevance as PI.
-            unfold CF.proof_irrelevance in PI.
+        + inversion qj. apply STUPID in H0; try apply Nat.eq_dec; subst.
+            pose proof urec_empty as URE. unfold empty_pvt in URE. 
             pose proof (PI (pjudge_vec [] []) qj (V.Forall2_nil pat_type)) as PEqj.
             rewrite PEqj. assumption.
         + unfold U in H. unfold upred in H.
@@ -1794,4 +1808,24 @@ Proof.
                 pose proof (vect_nil q) as QN; subst.
                 constructor.
         + inversion H.
+    - destruct (hd_tl_pvt q) as [qh qt] eqn:eqhtq. 
+        destruct qh as [qh' qhj] eqn:eqqh. destruct qh'.
+        { pose proof (first_column_pws_judge p) as FCPWS.
+            destruct (sigmab (PWS_first_column p) h FCPWS) eqn:eqsigma.
+            - apply sigma_refl in eqsigma. destruct h.
+                + apply (urec_wild_complete_unit p q qt); 
+                    wild_urec_simpl eqhtq qhj TUnit. admit.
+                + inversion eqsigma.
+                + apply (urec_wild_complete_pair p q qt);
+                    wild_urec_simpl eqhtq qhj (TPair h1 h2). admit.
+                + apply (urec_wild_complete_either p q qt);
+                    wild_urec_simpl eqhtq qhj (TEither h1 h2). admit.
+            - apply sigma_refl_not in eqsigma.
+                apply (urec_wild_incomplete p q qt);
+                    wild_urec_simpl eqhtq qhj h. admit. }
+        { admit. (* URec needs to handle variables *) }
+        { inversion qhj; subst. apply (urec_q0_unit p q qt);
+            try irrelevant_pat_type_proof eqhtq qhj PUnit TUnit pt_unit. admit. }
+        (* { revert eqqh. revert qh. inversion qhj. subst. intros.
+            apply (urec_q0_pair p q qh qt qh'1, qh'2). } *)
 Admitted.
