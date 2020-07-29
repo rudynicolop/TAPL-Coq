@@ -7,9 +7,11 @@
     *)
 
 Require Import Coq.Strings.String.
+Require Import Coq.Bool.Bool.
+Require Coq.Sets.Ensembles.
+Module E := Coq.Sets.Ensembles.
 Require Import Coq.Lists.List.
 Import ListNotations.
-Require Import Coq.Bool.Bool.
 Require Coq.Vectors.Fin.
 Module F := Coq.Vectors.Fin.
 Require Coq.Vectors.Vector.
@@ -17,7 +19,6 @@ Module V := Coq.Vectors.Vector.
 Require Import Omega.
 Require Coq.Logic.ClassicalFacts.
 Module CF := Coq.Logic.ClassicalFacts.
-Require Import Coq.Sets.Ensembles.
 Require Coq.Logic.Classical_Pred_Type.
 Module CPT := Coq.Logic.Classical_Pred_Type.
 Require Coq.Logic.Classical_Prop.
@@ -31,7 +32,11 @@ Require Coq.Structures.Equalities.
 Module SE := Coq.Structures.Equalities.
 Require Coq.MSets.MSetWeakList.
 Module WS := Coq.MSets.MSetWeakList.
+Require Coq.FSets.FMapWeakList.
+Module FM := Coq.FSets.FMapWeakList.
 Require Import Coq.Logic.FunctionalExtensionality.
+
+(* Helper Definitions and Lemmas *)
 
 Axiom proof_irrelevance : CF.proof_irrelevance.
 Axiom excluded_middle : CF.excluded_middle.
@@ -39,67 +44,69 @@ Axiom prop_extensionality : CF.prop_extensionality.
 
 Module VectorLemmas.
 
-Lemma nth_cons : 
-    forall (A : Type) (m n : nat) (h : A)
-    (v : V.t A n) (Hmn : m < n),
-    V.nth_order v Hmn =
-    V.nth_order (V.cons A h n v) (lt_n_S m n Hmn).
-Proof.
-    intros A; destruct n as [| n];
-    destruct m as [| m]; intros;
-    try omega; try reflexivity.
-    unfold V.nth_order. simpl.
-    pose proof_irrelevance as PI.
-    unfold CF.proof_irrelevance in PI.
-    pose proof (PI (S m < S n) Hmn) as H.
-    specialize H with (lt_S_n (S m) (S n) (lt_n_S (S m) (S n) Hmn)).
-    rewrite <- H. reflexivity. 
-Qed.
-
-Lemma nth_take :
-    forall (A : Type) (n : nat) (v : V.t A n) (q w : nat)
-    (Hqw : q < w) (Hwn : w < n),
-    V.nth_order v (lt_trans q w n Hqw Hwn) = 
-    V.nth_order (V.take w (lt_le_weak w n Hwn) v) Hqw.
-Proof.
-    unfold V.nth_order.
-    intros A n v. dependent induction v; 
-    intros; try omega. 
-    pose proof nth_cons as HC.
-    destruct q as [| q].
-    - simpl. destruct w as [| w]; 
-        try omega. reflexivity.
-    - assert (Hqn' : q < n); try omega.
-        assert (Hqn : S q < S n); try omega.
-        pose proof (HC A q n h v Hqn') as HR.
-        pose proof proof_irrelevance as PI.
+    Lemma nth_cons : 
+        forall (A : Type) (m n : nat) (h : A)
+        (v : V.t A n) (Hmn : m < n),
+        V.nth_order v Hmn =
+        V.nth_order (V.cons A h n v) (lt_n_S m n Hmn).
+    Proof.
+        intros A; destruct n as [| n];
+        destruct m as [| m]; intros;
+        try omega; try reflexivity.
+        unfold V.nth_order. simpl.
+        pose proof_irrelevance as PI.
         unfold CF.proof_irrelevance in PI.
-        pose proof (PI (S q < S n) Hqn (Nat.lt_trans (S q) w (S n) Hqw Hwn)) as H0.
-        rewrite <- H0.
-        pose proof (PI (S q < S n) Hqn (lt_n_S q n Hqn')) as H00.
-        rewrite <- H00 in HR. unfold V.nth_order in *.
-        rewrite <- HR. 
-        destruct w as [| w]; try omega.
-        assert (Hwn' : w < n); try omega.
-        assert (Hqw' : q < w); try omega.
-        assert (Hwneq' : w <= n); try omega.
-        assert (Hwneq : S w <= S n); try omega.
-        pose proof (IHv q w Hqw' Hwn') as ASS. simpl.
-        pose proof (PI (S w <= S n) Hwneq (Nat.lt_le_incl (S w) (S n) Hwn)) as H1.
-        pose proof (PI (w <= n) Hwneq' (le_S_n w n (Nat.lt_le_incl (S w) (S n) Hwn))) as H2.
-        pose proof (PI (q < w) Hqw' (lt_S_n q w Hqw)) as H3.
-        pose proof (PI (q < n) Hqn' (Nat.lt_trans q w n (lt_S_n q w Hqw) Hwn')) as H4.
-        pose proof (PI (w <= n) (Nat.lt_le_incl w n Hwn') (le_S_n w n (Nat.lt_le_incl (S w) (S n) Hwn))) as H5.
-        subst. rewrite H5 in ASS.
-        assumption.
-Qed.
+        pose proof (PI (S m < S n) Hmn) as H.
+        specialize H with (lt_S_n (S m) (S n) (lt_n_S (S m) (S n) Hmn)).
+        rewrite <- H. reflexivity. 
+    Qed.
 
-Lemma to_list_cons :
-    forall (A : Type) (n : nat) (v : V.t A n) (h : A),
-    V.to_list (V.cons A h n v) = h:: V.to_list v.
-Proof. intros. reflexivity. Qed.
+    Lemma nth_take :
+        forall (A : Type) (n : nat) (v : V.t A n) (q w : nat)
+        (Hqw : q < w) (Hwn : w < n),
+        V.nth_order v (lt_trans q w n Hqw Hwn) = 
+        V.nth_order (V.take w (lt_le_weak w n Hwn) v) Hqw.
+    Proof.
+        unfold V.nth_order.
+        intros A n v. dependent induction v; 
+        intros; try omega. 
+        pose proof nth_cons as HC.
+        destruct q as [| q].
+        - simpl. destruct w as [| w]; 
+            try omega. reflexivity.
+        - assert (Hqn' : q < n); try omega.
+            assert (Hqn : S q < S n); try omega.
+            pose proof (HC A q n h v Hqn') as HR.
+            pose proof proof_irrelevance as PI.
+            unfold CF.proof_irrelevance in PI.
+            pose proof (PI (S q < S n) Hqn (Nat.lt_trans (S q) w (S n) Hqw Hwn)) as H0.
+            rewrite <- H0.
+            pose proof (PI (S q < S n) Hqn (lt_n_S q n Hqn')) as H00.
+            rewrite <- H00 in HR. unfold V.nth_order in *.
+            rewrite <- HR. 
+            destruct w as [| w]; try omega.
+            assert (Hwn' : w < n); try omega.
+            assert (Hqw' : q < w); try omega.
+            assert (Hwneq' : w <= n); try omega.
+            assert (Hwneq : S w <= S n); try omega.
+            pose proof (IHv q w Hqw' Hwn') as ASS. simpl.
+            pose proof (PI (S w <= S n) Hwneq (Nat.lt_le_incl (S w) (S n) Hwn)) as H1.
+            pose proof (PI (w <= n) Hwneq' (le_S_n w n (Nat.lt_le_incl (S w) (S n) Hwn))) as H2.
+            pose proof (PI (q < w) Hqw' (lt_S_n q w Hqw)) as H3.
+            pose proof (PI (q < n) Hqn' (Nat.lt_trans q w n (lt_S_n q w Hqw) Hwn')) as H4.
+            pose proof (PI (w <= n) (Nat.lt_le_incl w n Hwn') (le_S_n w n (Nat.lt_le_incl (S w) (S n) Hwn))) as H5.
+            subst. rewrite H5 in ASS.
+            assumption.
+    Qed.
+
+    Lemma to_list_cons :
+        forall (A : Type) (n : nat) (v : V.t A n) (h : A),
+        V.to_list (V.cons A h n v) = h:: V.to_list v.
+    Proof. intros. reflexivity. Qed.
 
 End VectorLemmas.
+
+Module VL := VectorLemmas.
 
 Definition existsb {n : nat} {A : Type}
     (f : A -> bool) (v : V.t A n) : bool.
@@ -128,43 +135,43 @@ Proof.
 Defined.
 
 Module Type HasRefl.
-Parameter A : Type.
-Parameter P : A -> Prop.
-Parameter f : A -> bool.
-Axiom refl : forall (a : A), P a <-> f a = true.
+    Parameter A : Type.
+    Parameter P : A -> Prop.
+    Parameter f : A -> bool.
+    Axiom refl : forall (a : A), P a <-> f a = true.
 End HasRefl.
 
 Module NotRefl (M : HasRefl).
-Theorem not_refl : forall (a : M.A), ~ M.P a <-> M.f a = false.
-Proof.
-    pose proof M.refl as R.
-    unfold not; split; intros.
-    - destruct (M.f a) eqn:eq.
-        + apply R in eq. contradiction.
-        + reflexivity.
-    - apply R in H0. rewrite H in H0. discriminate.
-Qed.
+    Theorem not_refl : forall (a : M.A), ~ M.P a <-> M.f a = false.
+    Proof.
+        pose proof M.refl as R.
+        unfold not; split; intros.
+        - destruct (M.f a) eqn:eq.
+            + apply R in eq. contradiction.
+            + reflexivity.
+        - apply R in H0. rewrite H in H0. discriminate.
+    Qed.
 End NotRefl.
 
 Module Type HasRefl2.
-Parameter A : Type.
-Parameter B : Type.
-Parameter P : A -> B -> Prop.
-Parameter f : A -> B -> bool.
-Axiom refl : forall (a : A) (b : B), P a b <-> f a b = true.
+    Parameter A : Type.
+    Parameter B : Type.
+    Parameter P : A -> B -> Prop.
+    Parameter f : A -> B -> bool.
+    Axiom refl : forall (a : A) (b : B), P a b <-> f a b = true.
 End HasRefl2.
 
 Module NotRefl2 (M : HasRefl2).
-Theorem not_refl2 : forall (a : M.A) (b : M.B),
-    ~ M.P a b <-> M.f a b = false.
-Proof.
-    pose proof M.refl as R.
-    unfold not; split; intros.
-    - destruct (M.f a b) eqn:eq.
-        + apply R in eq. contradiction.
-        + reflexivity.
-    - apply R in H0. rewrite H in H0. discriminate.
-Qed.
+    Theorem not_refl2 : forall (a : M.A) (b : M.B),
+        ~ M.P a b <-> M.f a b = false.
+    Proof.
+        pose proof M.refl as R.
+        unfold not; split; intros.
+        - destruct (M.f a b) eqn:eq.
+            + apply R in eq. contradiction.
+            + reflexivity.
+        - apply R in H0. rewrite H in H0. discriminate.
+    Qed.
 End NotRefl2.
 
 (* this is really ass to prove *)
@@ -179,90 +186,169 @@ Axiom vect_cons : forall {A : Type} {n : nat}
     v = V.cons A h n t.
 
 Module VectorForallRefl (M : HasRefl).
-Import V.VectorNotations.
-Theorem forall_refl :
-    forall {n : nat} (v : V.t M.A n),
-    V.Forall M.P v <-> forallb M.f v = true.
-Proof.
-    induction n; split; intros.
-    - reflexivity.
-    - pose proof (vect_nil v) as V; subst. constructor.
-    - pose proof (vect_cons v) as [h [t V]]; subst.
-        inversion H; subst.
-        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-        eapply STUPID in H2; try apply Nat.eq_dec; subst.
-        simpl. unfold eq_rect_r. simpl.
-        apply andb_true_iff. split.
-        + apply M.refl. assumption.
-        + apply IHn. assumption.
-    - pose proof (vect_cons v) as [h [t V]]; subst.
-        simpl in H. unfold eq_rect_r in H. simpl in H.
-        apply andb_true_iff in H as [H1 H2]. constructor.
-        + apply M.refl. assumption.
-        + apply IHn. assumption.
-Qed.
+    Import V.VectorNotations.
+    Theorem forall_refl :
+        forall {n : nat} (v : V.t M.A n),
+        V.Forall M.P v <-> forallb M.f v = true.
+    Proof.
+        induction n; split; intros.
+        - reflexivity.
+        - pose proof (vect_nil v) as V; subst. constructor.
+        - pose proof (vect_cons v) as [h [t V]]; subst.
+            inversion H; subst.
+            pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+            eapply STUPID in H2; try apply Nat.eq_dec; subst.
+            simpl. unfold eq_rect_r. simpl.
+            apply andb_true_iff. split.
+            + apply M.refl. assumption.
+            + apply IHn. assumption.
+        - pose proof (vect_cons v) as [h [t V]]; subst.
+            simpl in H. unfold eq_rect_r in H. simpl in H.
+            apply andb_true_iff in H as [H1 H2]. constructor.
+            + apply M.refl. assumption.
+            + apply IHn. assumption.
+    Qed.
 End VectorForallRefl.
 
 Module VectorExistsRefl (M : HasRefl).
-Import V.VectorNotations.
-Theorem exists_refl : 
-    forall {n : nat} (v : V.t M.A n),
-    V.Exists M.P v <-> existsb M.f v = true.
-Proof.
-    induction n; split; intros.
-    - inversion H.
-    - pose proof (vect_nil v) as V; subst. discriminate H.
-    - pose proof (vect_cons v) as [h [t V]]; subst.
-        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-        inversion H; subst; simpl; 
-        unfold eq_rect_r; simpl;
-        apply orb_true_iff.
-        + left. apply M.refl. assumption.
-        + right. apply IHn. eapply STUPID in H3; 
-            subst; try apply Nat.eq_dec.
-            assumption.
-    - pose proof (vect_cons v) as [h [t V]]; subst.
-        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-        simpl in H. unfold eq_rect_r in H; simpl in H.
-        apply orb_true_iff in H. destruct H.
-        + apply V.Exists_cons_hd. apply M.refl.
-            assumption.
-        + apply V.Exists_cons_tl. apply IHn.
-            assumption. 
-Qed.
+    Import V.VectorNotations.
+    Theorem exists_refl : 
+        forall {n : nat} (v : V.t M.A n),
+        V.Exists M.P v <-> existsb M.f v = true.
+    Proof.
+        induction n; split; intros.
+        - inversion H.
+        - pose proof (vect_nil v) as V; subst. discriminate H.
+        - pose proof (vect_cons v) as [h [t V]]; subst.
+            pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+            inversion H; subst; simpl; 
+            unfold eq_rect_r; simpl;
+            apply orb_true_iff.
+            + left. apply M.refl. assumption.
+            + right. apply IHn. eapply STUPID in H3; 
+                subst; try apply Nat.eq_dec.
+                assumption.
+        - pose proof (vect_cons v) as [h [t V]]; subst.
+            pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+            simpl in H. unfold eq_rect_r in H; simpl in H.
+            apply orb_true_iff in H. destruct H.
+            + apply V.Exists_cons_hd. apply M.refl.
+                assumption.
+            + apply V.Exists_cons_tl. apply IHn.
+                assumption. 
+    Qed.
 End VectorExistsRefl.
 
 Module VectorForall2Refl (M : HasRefl2).
-Import V.VectorNotations.
-Theorem forall2_refl : 
-    forall {n : nat} (va : V.t M.A n) (vb : V.t M.B n),
-    V.Forall2 M.P va vb <-> forall2b M.f va vb = true.
-Proof.
-    induction n; split; intros.
-    - reflexivity.
-    - pose proof (vect_nil va) as VA.
-        pose proof (vect_nil vb)as VB.
-        subst. constructor.
-    - pose proof (vect_cons va) as [ha [ta VA]].
-        pose proof (vect_cons vb) as [hb [tb VB]].
-        subst. inversion H; subst.
-        apply IHn in H6. apply M.refl in H4.
-        simpl. unfold eq_rect_r. simpl.
-        Search (existT _ _ _ = existT _ _ _ -> _ = _).
+    Import V.VectorNotations.
+    Theorem forall2_refl : 
+        forall {n : nat} (va : V.t M.A n) (vb : V.t M.B n),
+        V.Forall2 M.P va vb <-> forall2b M.f va vb = true.
+    Proof.
+        induction n; split; intros.
+        - reflexivity.
+        - pose proof (vect_nil va) as VA.
+            pose proof (vect_nil vb)as VB.
+            subst. constructor.
+        - pose proof (vect_cons va) as [ha [ta VA]].
+            pose proof (vect_cons vb) as [hb [tb VB]].
+            subst. inversion H; subst.
+            apply IHn in H6. apply M.refl in H4.
+            simpl. unfold eq_rect_r. simpl.
+            Search (existT _ _ _ = existT _ _ _ -> _ = _).
+            pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+            apply STUPID in H2; apply STUPID in H5; 
+            subst; try apply Nat.eq_dec.
+            rewrite H4. rewrite H6. reflexivity.
+        - pose proof (vect_cons va) as [ha [ta VA]].
+            pose proof (vect_cons vb) as [hb [tb VB]].
+            subst. simpl in H. unfold eq_rect_r in H. simpl in H.
+            apply andb_true_iff in H as [H1 H2]. constructor.
+            + apply M.refl. assumption.
+            + apply IHn. assumption.
+    Qed.
+    Module NM := NotRefl2(M).
+    Theorem forall2_not_refl : 
+        forall {n : nat} (va : V.t M.A n) (vb : V.t M.B n),
+        ~ V.Forall2 M.P va vb <-> forall2b M.f va vb = false.
+    Proof.
+        induction n; split; intros.
+        - exfalso. pose proof (vect_nil va) as VA.
+            pose proof (vect_nil vb) as VB. apply H.
+            subst. constructor.
+        - pose proof (vect_nil va) as VA. pose proof (vect_nil vb) as VB.
+            subst. discriminate H.
+        - pose proof (vect_cons va) as [ha [ta VA]].
+            pose proof (vect_cons vb) as [hb [tb VB]].
+            subst. simpl. unfold eq_rect_r. simpl.
+            destruct (M.f ha hb) eqn:eqf.
+            + apply M.refl in eqf. simpl. apply IHn. 
+                intros HF. apply H. constructor; assumption.
+            + apply andb_false_iff. left. reflexivity.
+        - pose proof (vect_cons va) as [ha [ta VA]].
+            pose proof (vect_cons vb) as [hb [tb VB]].
+            subst. simpl in *. unfold eq_rect_r in H.
+            simpl in H. intros HF. inversion HF; subst.
+            pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+            apply STUPID in H2; apply STUPID in H5;
+            try apply Nat.eq_dec; subst.
+            apply M.refl in H4. rewrite H4 in H.
+            simpl in H. apply IHn in H. contradiction.
+    Qed.  
+    Lemma forall2_nth : 
+        forall {n : nat} (va : V.t M.A n) (vb : V.t M.B n),
+        V.Forall2 M.P va vb -> 
+        forall {i : nat} (H : i < n), M.P (V.nth_order va H) (V.nth_order vb H).
+    Proof.
         pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-        apply STUPID in H2; apply STUPID in H5; 
-        subst; try apply Nat.eq_dec.
-        rewrite H4. rewrite H6. reflexivity.
-    - pose proof (vect_cons va) as [ha [ta VA]].
+        induction n; intros; try omega.
+        pose proof (vect_cons va) as [ha [ta VA]].
         pose proof (vect_cons vb) as [hb [tb VB]].
-        subst. simpl in H. unfold eq_rect_r in H. simpl in H.
-        apply andb_true_iff in H as [H1 H2]. constructor.
-        + apply M.refl. assumption.
-        + apply IHn. assumption.
-Qed.
+        subst. inversion H; subst. destruct i as [| i].
+        - cbn. assumption.
+        - assert (Hin : i < n); try omega.
+            pose proof (proof_irrelevance 
+                (S i < S n) H0 (lt_n_S i n Hin)) as Hin'.
+            rewrite Hin'. rewrite <- VL.nth_cons.
+            rewrite <- VL.nth_cons.
+            apply STUPID in H3; try apply Nat.eq_dec.
+            apply STUPID in H6; try apply Nat.eq_dec.
+            subst. specialize IHn with (va := ta) (vb := tb).
+            eapply IHn in H7. apply H7.
+    Qed.
 End VectorForall2Refl.
 
-Module VL := VectorLemmas.
+Fixpoint take {A : Type} (n : nat) (l : list A) :=
+    match n with
+    | 0 => []
+    | S k =>
+        match l with
+        | [] => []
+        | h::t => h :: take k t
+        end
+    end.
+
+Lemma take_correct :
+    forall {A : Type} (n : nat) (l : list A),
+        length (take n l) <= n.
+Proof.
+    intros A. induction n; induction l; 
+    simpl in *; try omega.
+    specialize IHn with l. omega.
+Qed.
+
+Lemma take_complete :
+    forall {A : Type} (i n : nat) (l : list A),
+    i < n -> nth_error l i = nth_error (take n l) i.
+Proof.
+    intros A. induction i; 
+    destruct n; destruct l; intros;
+    simpl in *; try omega; try reflexivity.
+    specialize IHi with (n := n) (l := l).
+    assert (i < n); try omega. auto.
+Qed.
+
+(* Syntax of Partially-Extended STLC *)
 
 Definition id := string.
 
@@ -273,13 +359,13 @@ Inductive type : Type :=
     | TEither (t1 t2 : type).
 
 Fixpoint type_eqb (a b : type) : bool :=
-        match a, b with
-        | TUnit, TUnit => true
-        | TFun a1 a2, TFun b1 b2 
-        | TPair a1 a2, TPair b1 b2
-        | TEither a1 a2, TEither b1 b2 => type_eqb a1 b1 && type_eqb a2 b2
-        | _, _ => false
-        end.
+    match a, b with
+    | TUnit, TUnit => true
+    | TFun a1 a2, TFun b1 b2 
+    | TPair a1 a2, TPair b1 b2
+    | TEither a1 a2, TEither b1 b2 => type_eqb a1 b1 && type_eqb a2 b2
+    | _, _ => false
+    end.
 
 Theorem type_eq_refl :
     forall (a b : type), a = b <-> type_eqb a b = true.
@@ -296,12 +382,12 @@ Proof.
 Qed.
 
 Module TypeEqRefl <: HasRefl2.
-Definition A := type.
-Definition B := type.
-Definition P (a b : type) := a = b.
-Definition f := type_eqb.
-Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
-Proof. intros. apply type_eq_refl. Qed.
+    Definition A := type.
+    Definition B := type.
+    Definition P (a b : type) := a = b.
+    Definition f := type_eqb.
+    Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
+    Proof. intros. apply type_eq_refl. Qed.
 End TypeEqRefl.
 
 Module TypeNotEq := NotRefl2(TypeEqRefl).
@@ -315,83 +401,595 @@ Proof.
         rewrite H in eq. discriminate.
 Qed.
 
+Inductive construct : Type :=
+    | CUnit | CPair | CLeft (a b : type) | CRight (a b : type).
+
+Module ConstructEqRefl <: HasRefl2.
+    Definition A := construct.
+    Definition B := construct.
+    Definition P (c1 c2 : construct) := c1 = c2.
+    Definition f (c1 c2 : construct) :=
+        match c1, c2 with
+        | CUnit, CUnit
+        | CPair, CPair => true
+        | CLeft a1 b1, CLeft a2 b2
+        | CRight a1 b1, CRight a2 b2 =>
+            type_eqb a1 a2 && type_eqb b1 b2
+        | _, _ => false
+        end.
+    Theorem refl : forall (c1 c2 : construct),
+        c1 = c2 <-> f c1 c2 = true.
+    Proof.
+        destruct c1; destruct c2; split; intros;
+        try inversion H; subst; try reflexivity;
+        simpl in *;
+        try (apply andb_true_iff; split; apply type_eq_refl; reflexivity);
+        try (apply andb_true_iff in H1 as [HA HB];
+            apply type_eq_refl in HA;
+            apply type_eq_refl in HB;
+            subst; reflexivity).
+    Qed.
+End ConstructEqRefl.
+
 Inductive pattern : Type :=
     | PWild
     | PVar (x : id)
     | PUnit
     | PPair (p1 p2 : pattern)
     | PLeft (t1 t2 : type) (p : pattern)
-    | PRight (t1 t2 : type) (p : pattern).
+    | PRight (t1 t2 : type) (p : pattern)
+    | POr (p1 p2 : pattern).
+
+Module PatternEqRefl : HasRefl2.
+    Definition A := pattern.
+    Definition B := pattern.
+    Definition P (p1 p2 : pattern) := p1 = p2.
+    Fixpoint f (p1 p2 : pattern) : bool :=
+        match p1, p2 with
+        | PWild, PWild
+        | PUnit, PUnit => true
+        | PVar x1, PVar x2 => (x1 =? x2)%string
+        | PPair p11 p12, PPair p21 p22 =>
+            f p11 p21 && f p12 p22
+        | PLeft a1 b1 p1, PLeft a2 b2 p2
+        | PRight a1 b1 p1, PRight a2 b2 p2 =>
+            type_eqb a1 a2 && type_eqb b1 b2 && f p1 p2
+        | POr p11 p12, POr p21 p22 =>
+            f p11 p21 && f p12 p22
+        | _, _ => false
+        end.
+    Theorem refl : forall (p1 p2 : pattern),
+    p1 = p2 <-> f p1 p2 = true.
+    Proof.
+        induction p1; destruct p2; split; intros H;
+        try inversion H; subst; try reflexivity;
+        simpl in *;
+        try (apply andb_true_iff; split;
+            try (apply IHp1_1; reflexivity);
+            try (apply IHp1_2; reflexivity));
+        try (apply andb_true_iff in H1 as [H1 H2];
+            apply IHp1_1 in H1; apply IHp1_2 in H2;
+            subst; reflexivity);
+        try (apply andb_true_iff; split;
+            try (apply andb_true_iff; split; 
+                apply type_eq_refl; reflexivity);
+            try (apply IHp1; reflexivity));
+        try (apply andb_true_iff in H1 as [HT Hf];
+            apply andb_true_iff in HT as [HT1 HT2];
+            apply type_eq_refl in HT1; apply type_eq_refl in HT2;
+            apply IHp1 in Hf; subst; reflexivity);
+        try (apply type_eq_refl; reflexivity);
+        try (apply IHp1; reflexivity).
+        - apply String.eqb_eq. reflexivity.
+        - apply String.eqb_eq in H; subst. reflexivity.
+    Qed.
+End PatternEqRefl.
+
+Module IdDec <: SE.DecidableType.
+    Import SE.
+    Require Import RelationClasses.
+    Definition t := id.
+    Definition eq (x1 x2 : t) := x1 = x2.
+    Declare Instance eq_equiv : Equivalence eq.
+    Theorem eq_dec : forall (x1 x2 : t),
+        {x1 = x2} + {x1 <> x2}.
+    Proof. intros. apply string_dec. Qed.
+    Theorem eq_refl : forall (x : t), x = x.
+    Proof. intros. reflexivity. Qed.
+    Theorem eq_sym : forall (x y : t), x = y -> y = x.
+    Proof. unfold eq. intros; subst; reflexivity. Qed.
+    Theorem eq_trans : forall (x y z : t), x = y -> y = z -> x = z.
+    Proof. intros; subst. reflexivity. Qed.
+End IdDec.
+
+Module FV := FM.Make(IdDec).
+Definition fvt := FV.t type.
+Definition fv_empty := FV.empty type.
+
+Definition set_of_fv (fv : fvt) : E.Ensemble id :=
+    FV.fold (fun x _ acc => E.Add id acc x) fv (E.Empty_set id).
+
+Module IdSet := WS.Make(IdDec).
+
+Definition ws_of_fv (fv : fvt) : (IdSet.t) :=
+    FV.fold (fun x _ acc => IdSet.add x acc) fv (IdSet.empty).
+
+Definition ws_disjoint (a b : IdSet.t) := IdSet.is_empty (IdSet.inter a b).
+
+Lemma disjoint_refl : forall (f1 f2 : fvt),
+    E.Disjoint id (set_of_fv f1) (set_of_fv f2) <-> 
+    ws_disjoint (ws_of_fv f1) (ws_of_fv f2) = true.
+Proof.
+Admitted.
+
+Definition add_all (f1 : fvt) (f2 : fvt) : fvt :=
+    FV.fold (fun x t acc => FV.add x t acc) f1 f2.
+
+Lemma disjoint_add_all : forall (a b : fvt),
+    E.Disjoint id (set_of_fv a) (set_of_fv b) ->
+    FV.Equivb type_eqb (add_all a b) (add_all b a).
+Proof.
+Admitted.
+
+Inductive free_vars : pattern -> type -> fvt -> Prop :=
+    | free_wild : forall (t : type), free_vars PWild t fv_empty
+    | free_name : forall (x : id) (t : type),
+        free_vars (PVar x) t (FV.add x t fv_empty)
+    | free_unit : free_vars PUnit TUnit fv_empty
+    | free_pair : forall (p1 p2 : pattern) (a b : type) (f1 f2 : fvt),
+        free_vars p1 a f1 ->
+        free_vars p2 b f2 ->
+        E.Disjoint id (set_of_fv f1) (set_of_fv f2) ->
+        free_vars (PPair p1 p2) (TPair a b) (add_all f1 f2)
+    | free_left : forall (a b : type) (p : pattern) (f : fvt),
+        free_vars p a f ->
+        free_vars (PLeft a b p) (TEither a b) f
+    | free_right : forall (a b : type) (p : pattern) (f : fvt),
+        free_vars p b f ->
+        free_vars (PRight a b p) (TEither a b) f
+    | free_or : forall (p1 p2 : pattern) (t : type) (f1 f2 : fvt),
+        free_vars p1 t f1 ->
+        free_vars p2 t f2 ->
+        FV.Equivb type_eqb f1 f2 ->
+        free_vars (POr p1 p2) t f1.
+
+Fixpoint free_varsb (p : pattern) (t : type) : option fvt :=
+    match p,t with
+    | PWild, _ 
+    | PUnit, TUnit => Some fv_empty
+    | PVar x, _ => Some (FV.add x t fv_empty)
+    | PPair p1 p2, TPair a b =>
+        match free_varsb p1 a, free_varsb p2 b with
+        | Some f1, Some f2 =>
+            if ws_disjoint (ws_of_fv f1) (ws_of_fv f2)
+            then Some (add_all f1 f2) else None
+        | _, _ => None
+        end
+    | PLeft a b p, TEither a' b' =>
+        if type_eqb a a' && type_eqb b b' 
+        then free_varsb p a else None
+    | PRight a b p, TEither a' b' =>
+        if type_eqb a a' && type_eqb b b' 
+        then free_varsb p b else None
+    | POr p1 p2, _ =>
+        match free_varsb p1 t, free_varsb p2 t with
+        | Some f1, Some f2 =>
+            if FV.equal type_eqb f1 f2 then Some f1 else None
+        | _, _ => None
+        end
+    | _, _ => None
+    end.
+
+Lemma free_vars_refl :
+    forall (p : pattern) (t : type) (f : fvt),
+    free_vars p t f <-> free_varsb p t = Some f.
+Proof.
+    induction p; destruct t; split; intros H;
+    try inversion H; subst; simpl in *;
+    try discriminate H;
+    try reflexivity; try constructor.
+    - apply IHp1 in H4. apply IHp2 in H6.
+        rewrite H4. rewrite H6.
+        apply disjoint_refl in H7.
+        rewrite H7. reflexivity.
+    - destruct (free_varsb p1 t1) eqn:eq1;
+        destruct (free_varsb p2 t2) eqn:eq2;
+        try discriminate.
+        apply IHp1 in eq1. apply IHp2 in eq2.
+        destruct (ws_disjoint (ws_of_fv f0) (ws_of_fv f1)) eqn:eqd;
+        try discriminate; injection H1; intros; subst.
+        apply disjoint_refl in eqd. constructor; assumption.
+    - assert (T1: type_eqb t3 t3 = true);
+        try (apply type_eq_refl; reflexivity).
+        assert (T2 : type_eqb t4 t4 = true);
+        try (apply type_eq_refl; reflexivity).
+        rewrite T1. rewrite T2. simpl.
+        apply IHp. assumption.
+    - destruct (type_eqb t1 t3) eqn:eq1;
+        destruct (type_eqb t2 t4) eqn:eq2;
+        try discriminate. simpl in *.
+        apply type_eq_refl in eq1.
+        apply type_eq_refl in eq2.
+        apply IHp in H1. subst.
+        constructor. assumption.
+    - assert (T1: type_eqb t3 t3 = true);
+        try (apply type_eq_refl; reflexivity).
+        assert (T2 : type_eqb t4 t4 = true);
+        try (apply type_eq_refl; reflexivity).
+        rewrite T1. rewrite T2. simpl.
+        apply IHp. assumption.
+    - destruct (type_eqb t1 t3) eqn:eq1;
+        destruct (type_eqb t2 t4) eqn:eq2;
+        try discriminate. simpl in *.
+        apply type_eq_refl in eq1.
+        apply type_eq_refl in eq2.
+        apply IHp in H1. subst.
+        constructor. assumption.
+    - apply IHp1 in H2. apply IHp2 in H3.
+        rewrite H2. rewrite H3.
+        apply FV.equal_1 in H6. rewrite H6.
+        reflexivity.
+    - destruct (free_varsb p1 TUnit) eqn:eq1;
+        destruct (free_varsb p2 TUnit) eqn:eq2;
+        try discriminate.
+        apply IHp1 in eq1. apply IHp2 in eq2.
+        destruct (FV.equal type_eqb f0 f1) eqn:eqf;
+        try discriminate.
+        injection H1; intros; subst.
+        apply FV.equal_2 in eqf.
+        eapply free_or.
+        + assumption.
+        + apply eq2.
+        + assumption.
+    - apply IHp1 in H2. apply IHp2 in H3.
+        rewrite H2. rewrite H3.
+        apply FV.equal_1 in H6. rewrite H6.
+        reflexivity.
+    - destruct (free_varsb p1 (TFun t1 t2)) eqn:eq1;
+        destruct (free_varsb p2 (TFun t1 t2)) eqn:eq2;
+        try discriminate.
+        apply IHp1 in eq1. apply IHp2 in eq2.
+        destruct (FV.equal type_eqb f0 f1) eqn:eqf;
+        try discriminate.
+        injection H1; intros; subst.
+        apply FV.equal_2 in eqf.
+        eapply free_or.
+        + assumption.
+        + apply eq2.
+        + assumption.
+    - apply IHp1 in H2. apply IHp2 in H3.
+        rewrite H2. rewrite H3.
+        apply FV.equal_1 in H6. rewrite H6.
+        reflexivity.
+    - destruct (free_varsb p1 (TPair t1 t2)) eqn:eq1;
+        destruct (free_varsb p2 (TPair t1 t2)) eqn:eq2;
+        try discriminate.
+        apply IHp1 in eq1. apply IHp2 in eq2.
+        destruct (FV.equal type_eqb f0 f1) eqn:eqf;
+        try discriminate.
+        injection H1; intros; subst.
+        apply FV.equal_2 in eqf.
+        eapply free_or.
+        + assumption.
+        + apply eq2.
+        + assumption.
+    - apply IHp1 in H2. apply IHp2 in H3.
+        rewrite H2. rewrite H3.
+        apply FV.equal_1 in H6. rewrite H6.
+        reflexivity.
+    - destruct (free_varsb p1 (TEither t1 t2)) eqn:eq1;
+        destruct (free_varsb p2 (TEither t1 t2)) eqn:eq2;
+        try discriminate.
+        apply IHp1 in eq1. apply IHp2 in eq2.
+        destruct (FV.equal type_eqb f0 f1) eqn:eqf;
+        try discriminate.
+        injection H1; intros; subst.
+        apply FV.equal_2 in eqf.
+        eapply free_or.
+        + assumption.
+        + apply eq2.
+        + assumption.
+Qed.
 
 Inductive pat_type : pattern -> type -> Prop :=
     | pt_wild : forall (t : type),
         pat_type PWild t
-    | pt_var : forall (x : id) (t : type),
+    | pt_name : forall (x : id) (t : type),
         pat_type (PVar x) t
     | pt_unit : pat_type PUnit TUnit
-    | pt_pair : forall (p1 p2 : pattern) (t1 t2 : type),
-        pat_type p1 t1 ->
-        pat_type p2 t2 ->
-        pat_type (PPair p1 p2) (TPair t1 t2)
-    | pt_left : forall (t1 t2 : type) (p : pattern),
-        pat_type p t1 ->
-        pat_type (PLeft t1 t2 p) (TEither t1 t2)
-    | pt_right : forall (t1 t2 : type) (p : pattern),
-        pat_type p t2 ->
-        pat_type (PRight t1 t2 p) (TEither t1 t2).
+    | pt_pair : forall (p1 p2 : pattern) (a b : type) (f1 f2 : fvt),
+        pat_type p1 a ->
+        pat_type p2 b ->
+        free_vars p1 a f1 ->
+        free_vars p2 b f2 ->
+        E.Disjoint id (set_of_fv f1) (set_of_fv f2) ->
+        pat_type (PPair p1 p2) (TPair a b)
+    | pt_left : forall (a b : type) (p : pattern),
+        pat_type p a ->
+        pat_type (PLeft a b p) (TEither a b)
+    | pt_right : forall (a b : type) (p : pattern),
+        pat_type p b ->
+        pat_type (PRight a b p) (TEither a b)
+    | pt_or : forall (p1 p2 : pattern) (t : type) (f1 f2 : fvt),
+        pat_type p1 t ->
+        pat_type p2 t ->
+        free_vars p1 t f1 ->
+        free_vars p2 t f2 ->
+        FV.Equivb type_eqb f1 f2 ->
+        pat_type (POr p1 p2) t.
 
 Fixpoint pat_typeb (p : pattern) (t : type) : bool :=
     match p,t with
-    | PWild, _
+    | PWild, _ 
     | PVar _, _
     | PUnit, TUnit => true
-    | PPair p1 p2, TPair t1 t2 =>
-        pat_typeb p1 t1 && pat_typeb p2 t2
-    | PLeft tp1 tp2 p, TEither t1 t2 =>
-        type_eqb tp1 t1 &&
-        type_eqb tp2 t2 &&
-        pat_typeb p t1
-    | PRight tp1 tp2 p, TEither t1 t2 =>
-        type_eqb tp1 t1 &&
-        type_eqb tp2 t2 &&
-        pat_typeb p t2
+    | PPair p1 p2, TPair a b =>
+        match free_varsb p1 a, free_varsb p2 b with
+        | Some f1, Some f2 => 
+            if ws_disjoint (ws_of_fv f1) (ws_of_fv f2)
+            then pat_typeb p1 a && pat_typeb p2 b
+            else false
+        | _, _ => false
+        end
+    | PLeft a b p, TEither a' b' =>
+        type_eqb a a' && type_eqb b b' && pat_typeb p a
+    | PRight a b p, TEither a' b' =>
+        type_eqb a a' && type_eqb b b' && pat_typeb p b
+    | POr p1 p2, _ =>
+        match free_varsb p1 t, free_varsb p2 t with
+        | Some f1, Some f2 =>
+            if FV.equal type_eqb f1 f2 
+            then pat_typeb p1 t && pat_typeb p2 t
+            else false
+        | _, _ => false
+        end
     | _, _ => false
     end.
-
-Theorem pat_type_refl : 
+    
+Lemma pat_type_refl : 
     forall (p : pattern) (t : type),
     pat_type p t <-> pat_typeb p t = true.
 Proof.
-    induction p; destruct t; split; intros H;
-    try inversion H; subst; try discriminate;
-    try reflexivity; simpl in *; try constructor.
+    induction p; split; intros H;
+    try inversion H; subst; simpl in *;
+    try (destruct t; try discriminate; constructor);
+    try (destruct t; subst; reflexivity);
+    try reflexivity.
+    - apply free_vars_refl in H4.
+        apply free_vars_refl in H5.
+        rewrite H4. rewrite H5.
+        apply disjoint_refl in H7.
+        rewrite H7. apply andb_true_iff.
+        apply IHp1 in H2. apply IHp2 in H3.
+        split; assumption.
+    - destruct t; try discriminate.
+        destruct (free_varsb p1 t1) eqn:eqf1;
+        destruct (free_varsb p2 t2) eqn:eqf2;
+        try discriminate.
+        destruct (ws_disjoint (ws_of_fv f) (ws_of_fv f0)) eqn:eqd;
+        try discriminate.
+        apply andb_true_iff in H1 as [H1 H2].
+        apply IHp1 in H1. apply IHp2 in H2.
+        apply disjoint_refl in eqd.
+        apply free_vars_refl in eqf1.
+        apply free_vars_refl in eqf2.
+        eapply pt_pair; try assumption.
+        + apply eqf1.
+        + apply eqf2.
+        + assumption.
     - apply andb_true_iff. split.
-        + apply IHp1. assumption.
-        + apply IHp2. assumption.
-    - apply andb_true_iff in H1 as [H1 H2].
-        apply IHp1. assumption.
-    - apply andb_true_iff in H1 as [H1 H2].
-        apply IHp2. assumption.
-    - apply andb_true_iff. split.
-        + apply andb_true_iff. split;
+        + apply andb_true_iff; split; 
             apply type_eq_refl; reflexivity.
         + apply IHp. assumption.
-    - apply andb_true_iff in H1 as [HT H3].
-        apply andb_true_iff in HT as [HT1 HT2].
-        apply type_eq_refl in HT1.
-        apply type_eq_refl in HT2.
-        apply IHp in H3. subst.
+    - destruct t; try discriminate.
+        apply andb_true_iff in H1 as [HT HP].
+        apply andb_true_iff in HT as [T1 T2].
+        apply type_eq_refl in T1.
+        apply type_eq_refl in T2.
+        apply IHp in HP. subst.
         constructor. assumption.
     - apply andb_true_iff. split.
-        + apply andb_true_iff. split;
+        + apply andb_true_iff; split; 
             apply type_eq_refl; reflexivity.
         + apply IHp. assumption.
-    - apply andb_true_iff in H1 as [HT H3].
-        apply andb_true_iff in HT as [HT1 HT2].
-        apply type_eq_refl in HT1.
-        apply type_eq_refl in HT2.
-        apply IHp in H3. subst.
+    - destruct t; try discriminate.
+        apply andb_true_iff in H1 as [HT HP].
+        apply andb_true_iff in HT as [T1 T2].
+        apply type_eq_refl in T1.
+        apply type_eq_refl in T2.
+        apply IHp in HP. subst.
         constructor. assumption.
+    - apply free_vars_refl in H4.
+        apply free_vars_refl in H5.
+        rewrite H4. rewrite H5.
+        apply FV.equal_1 in H7. rewrite H7.
+        apply IHp1 in H2. apply IHp2 in H3.
+        apply andb_true_iff. split; assumption.
+    - destruct (free_varsb p1 t) eqn:eq1;
+        destruct (free_varsb p2 t) eqn:eq2;
+        try discriminate.
+        destruct (FV.equal type_eqb f f0) eqn:eqe;
+        try discriminate.
+        apply free_vars_refl in eq1.
+        apply free_vars_refl in eq2.
+        apply andb_true_iff in H1 as [H1 H2].
+        apply IHp1 in H1. apply IHp2 in H2.
+        econstructor; try assumption.
+        + apply eq1.
+        + apply eq2.
+        + apply FV.equal_2. assumption.
+Qed.
+
+Module PatternTypeRefl <: HasRefl2.
+    Definition A := pattern.
+    Definition B := type.
+    Definition P := pat_type.
+    Definition f := pat_typeb.
+    Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
+    Proof. apply pat_type_refl. Qed.
+End PatternTypeRefl.
+
+Definition pjudge (t : type) (p : pattern) := pat_type p t.
+
+Definition patt (t : type) := {p : pattern | pat_type p t}.
+
+Module PatternDec <: SE.DecidableType.
+    Import SE.
+    Require Import RelationClasses.
+    Definition t := pattern.
+    Definition eq (p1 p2 : t) := p1 = p2.
+    Declare Instance eq_equiv : Equivalence eq.
+    Theorem eq_dec : forall (p1 p2 : pattern),
+        {p1 = p2} + {p1 <> p2}.
+    Proof.
+        induction p1; destruct p2;
+        try (pose proof (IHp1_1 p2_1) as IH1;
+            pose proof (IHp1_2 p2_2) as IH2;
+            destruct IH1 as [IH1 | IH1]; 
+            destruct IH2 as [IH2 | IH2]; subst;
+            try (right; intros NE; inversion NE; 
+            subst; try apply IH1; try apply IH2; reflexivity));
+        try (pose proof (string_dec x x0) as [H | H]; subst;
+            try (right; intros NE; inversion NE; subst; apply H; reflexivity));
+        try (pose proof (IHp1 p2) as IH;
+            pose proof (type_eq_dec t1 t0) as TED1;
+            pose proof (type_eq_dec t2 t3) as TED2;
+            destruct IH as [IH | IH];
+            destruct TED1 as [TED1 | TED1];
+            destruct TED2 as [TED2 | TED2]; subst;
+            try (right; intros NE; inversion NE; contradiction));
+        try (left; reflexivity);
+        try (right; intros H; inversion H).
+    Qed.
+End PatternDec.
+
+Inductive root_construct : pattern -> construct -> Prop :=
+    | rc_unit : root_construct PUnit CUnit
+    | rc_pair : forall (p1 p2 : pattern),
+        root_construct (PPair p1 p2) CPair
+    | rc_either_left : forall (a b : type) (p : pattern),
+        root_construct (PLeft a b p) (CLeft a b)
+    | rc_either_right : forall (a b : type) (p : pattern),
+        root_construct (PRight a b p) (CRight a b)
+    | rc_or_intros_left : forall (p1 p2 : pattern) (c : construct),
+        root_construct p1 c ->
+        root_construct (POr p1 p2) c
+    | rc_or_intros_right : forall (p1 p2 : pattern) (c : construct),
+        root_construct p2 c ->
+        root_construct (POr p1 p2) c.
+
+Fixpoint root_constructb (p : pattern) (c : construct) : bool :=
+    match p, c with
+    | PUnit, CUnit
+    | PPair _ _, CPair => true
+    | PLeft a b _, CLeft a' b'
+    | PRight a b _, CRight a' b' =>
+        type_eqb a a' && type_eqb b b'
+    | POr p1 p2, _ =>
+        root_constructb p1 c || root_constructb p2 c
+    | _, _ => false
+    end.
+
+Lemma root_construct_refl :
+    forall (p : pattern) (c : construct),
+    root_construct p c <-> root_constructb p c = true.
+Proof.
+    induction p; split;
+    intros H; try inversion H; subst;
+    simpl in *; try discriminate;
+    try reflexivity;
+    try (apply andb_true_iff; split; apply type_eq_refl; reflexivity);
+    try (destruct c; try discriminate; 
+        apply andb_true_iff in H1 as [H1 H2];
+        apply type_eq_refl in H1; apply type_eq_refl in H2;
+        subst; constructor);
+    try (apply orb_true_iff; left; apply IHp1; assumption);
+    try (apply orb_true_iff; right; apply IHp2; assumption).
+    - destruct c; try discriminate; constructor.
+    - destruct c; try discriminate; constructor.
+    - apply orb_true_iff in H1 as [H1 | H1].
+        + apply rc_or_intros_left. apply IHp1. assumption.
+        + apply rc_or_intros_right. apply IHp2. assumption.
+Qed.
+
+Definition rct {t : type} (p : patt t) := root_construct (proj1_sig p).
+
+Definition rctb {t : type} (p : patt t) := root_constructb (proj1_sig p).
+
+Module PatternWS := WS.Make(PatternDec).
+Module PWS := PatternWS.
+
+Definition pws_judge (t : type) (s : PWS.t) :=
+    PWS.For_all (pjudge t) s.
+
+(* Complete Signature Sigma *)
+Inductive sigma (p : PWS.t) : type -> Prop :=
+    | sigma_unit :
+        pws_judge TUnit p ->
+        PWS.Exists (fun p' => root_construct p' CUnit) p ->
+        sigma p TUnit
+    | sigma_pair : forall (a b : type),
+        pws_judge (TPair a b) p -> 
+        PWS.Exists (fun p' => root_construct p' CPair) p ->
+        sigma p (TPair a b)
+    | sigma_either : forall (a b : type),
+        pws_judge (TEither a b) p ->
+        PWS.Exists (fun p' => root_construct p' (CLeft a b)) p ->
+        PWS.Exists (fun p' => root_construct p' (CRight a b)) p ->
+        sigma p (TEither a b).
+
+Definition sigmab (p : PWS.t) (t : type) (H : pws_judge t p) :=
+    match t with
+    | TUnit => PWS.exists_ (fun p' => root_constructb p' CUnit) p
+    | TPair a b => PWS.exists_ (fun p' => root_constructb p' CPair) p
+    | TEither a b => 
+        PWS.exists_ (fun p' => root_constructb p' (CLeft a b)) p &&
+        PWS.exists_ (fun p' => root_constructb p' (CRight a b)) p
+    | TFun _ _ => false
+    end.
+
+Ltac proper :=
+    unfold Morphisms.Proper;
+    unfold Morphisms.respectful;
+    intros; subst; reflexivity.
+
+Ltac unfold_Exists H :=
+    unfold PWS.Exists in *;
+    destruct H as [x [HE HZ]]; exists x; 
+    apply root_construct_refl in HZ;
+    split; assumption.
+
+Lemma sigma_refl :
+    forall (t : type) (p : PWS.t) (H : pws_judge t p),
+    sigma p t <-> sigmab p t H = true.
+Proof.
+    destruct t; split; intros HS;
+    try inversion HS; subst; simpl in *;
+    try discriminate; 
+    try constructor;
+    try assumption; 
+    try (apply andb_true_iff; split);
+    try (apply andb_true_iff in H1 as [H1 H2]);
+    try apply PWS.exists_spec;
+    try apply PWS.exists_spec in H1;
+    try apply PWS.exists_spec in H2;
+    try proper;
+    try unfold_Exists H1;
+    try unfold_Exists H2;
+    try unfold_Exists H3;
+    try unfold_Exists H4.
+Qed.       
+
+Lemma sigma_refl_not :
+    forall (t : type) (p : PWS.t) (H : pws_judge t p),
+    ~ sigma p t <-> sigmab p t H = false.
+Proof.
+    split; intros.
+    - destruct (sigmab p t H) eqn:eq.
+        + apply sigma_refl in eq. contradiction.
+        + reflexivity.
+    - intros H1. apply (sigma_refl t p H) in H1.
+        rewrite H0 in H1. discriminate.
 Qed.
 
 Inductive expr : Type :=
@@ -412,211 +1010,85 @@ Inductive value : Type :=
     | VLeft (t1 t2 : type) (v : value)
     | VRight (t1 t2 : type) (v : value).
 
-(* Approximate Typing for values *)
+(* Approximate yet Sufficient Typing for values
+    for the purposes of proving exhaustive matching *)
 
-Inductive value_type : Type :=
-    | VTUnit
-    | VTFun (t : value_type)
-    | VTPair (t1 t2 : value_type)
-    | VTEither (t1 t2 : value_type).
+Inductive val_judge : value -> type -> Prop :=
+    | vj_unit : val_judge VUnit TUnit
+    | vj_fun : forall (p : pattern) (t t' : type) 
+        (e : expr),
+        pat_type p t ->
+        val_judge (VFun p t e) (TFun t t')
+    | vj_pair : forall (v1 v2 : value) (a b : type),
+        val_judge v1 a ->
+        val_judge v2 b ->
+        val_judge (VPair v1 v2) (TPair a b)
+    | vj_left : forall (a b : type) (v : value),
+        val_judge v a ->
+        val_judge (VLeft a b v) (TEither a b)
+    | vj_right : forall (a b : type) (v : value),
+        val_judge v b ->
+        val_judge (VRight a b v) (TEither a b).
 
-Fixpoint vt_eqb (a b : value_type) : bool :=
-    match a, b with
-    | VTUnit, VTUnit => true
-    | VTFun a, VTFun b => vt_eqb a b
-    | VTPair a1 a2, VTPair b1 b2 
-    | VTEither a1 a2, VTEither b1 b2 => vt_eqb a1 b1 && vt_eqb a2 b2
+Fixpoint val_judgeb (v : value) (t : type) : bool :=
+    match v,t with
+    | VUnit, TUnit => true
+    | VFun p t' _, TFun t'' _ =>
+        type_eqb t' t'' && pat_typeb p t'
+    | VPair v1 v2, TPair a b =>
+        val_judgeb v1 a && val_judgeb v2 b
+    | VLeft a b v, TEither a' b' =>
+        type_eqb a a' && type_eqb b b' && val_judgeb v a
+    | VRight a b v, TEither a' b' =>
+        type_eqb a a' && type_eqb b b' && val_judgeb v b
     | _, _ => false
     end.
 
-Theorem vt_eq_refl : forall (a b : value_type), a = b <-> vt_eqb a b = true.
+Lemma val_judge_refl : forall (v : value) (t : type),
+    val_judge v t <-> val_judgeb v t = true.
 Proof.
-    induction a; destruct b; split; intros H;
-    try inversion H; try discriminate; 
-    try reflexivity; subst; simpl in *.
-    - apply IHa. reflexivity.
-    - apply IHa in H; subst. reflexivity.
-    - apply andb_true_iff. split.
-        + apply IHa1. reflexivity.
-        + apply IHa2. reflexivity.
-    - apply andb_true_iff in H1 as [H1 H2].
-        apply IHa1 in H1. apply IHa2 in H2.
-        subst. reflexivity.
-    - apply andb_true_iff. split.
-        + apply IHa1. reflexivity.
-        + apply IHa2. reflexivity.
-    - apply andb_true_iff in H1 as [H1 H2].
-        apply IHa1 in H1. apply IHa2 in H2.
-        subst. reflexivity.
+    induction v; destruct t; split; intros H;
+    try inversion H; subst; simpl in *;
+    try discriminate H; try constructor;
+    try reflexivity;
+    try (apply andb_true_iff in H1 as [H1 H2];
+        apply (IHv1 t1) in H1; apply (IHv2 t2) in H2;
+        assumption);
+    try (apply andb_true_iff; split;
+        try (apply andb_true_iff; split;
+        apply type_eq_refl; reflexivity);
+        try (apply pat_type_refl; assumption));
+    try (destruct t; try discriminate;
+        destruct t3 eqn:eq3; try discriminate);
+    try (apply pat_type_refl; assumption);
+    try (apply IHv1; assumption);
+    try (apply IHv2; assumption);
+    try (apply IHv; assumption);
+    try (apply andb_true_iff in H1 as [HT H3];
+        apply andb_true_iff in HT as [H1 H2];
+        apply type_eq_refl in H1;
+        apply type_eq_refl in H2;
+        try apply pat_type_refl in H3; 
+        try apply IHv in H3; subst; 
+        constructor; assumption).
+    destruct t; try discriminate.
+    destruct t1 eqn:eq1; try discriminate.
+    apply andb_true_iff in H1 as [_ H2].
+    constructor. apply pat_type_refl. assumption.
 Qed.
 
-Module VTEq <: HasRefl2.
-Definition A := value_type.
-Definition B := value_type.
-Definition P (a : A) (b : B) := a = b.
-Definition f := vt_eqb.
-Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
-Proof. intros. apply vt_eq_refl. Qed.
-End VTEq.
+Module VJudgeRefl <: HasRefl2.
+    Definition A := value.
+    Definition B := type.
+    Definition P := val_judge.
+    Definition f := val_judgeb.
+    Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
+    Proof. intros. apply val_judge_refl. Qed.
+End VJudgeRefl.
 
-Module VTNotEq := NotRefl2(VTEq).
+Definition valt (t : type) := {v : value | val_judge v t}.
 
-Inductive vtt : type -> value_type -> Prop :=
-    | vtt_unit : 
-        vtt TUnit VTUnit
-    | vtt_fun : forall (t t' : type) (vt : value_type),
-        vtt t vt ->
-        vtt (TFun t t') (VTFun vt)
-    | vtt_pair : forall (t1 t2 : type) (vt1 vt2 : value_type),
-        vtt t1 vt1 ->
-        vtt t2 vt2 ->
-        vtt (TPair t1 t2) (VTPair vt1 vt2)
-    | vtt_either : forall (t1 t2 : type) (vt1 vt2 : value_type),
-        vtt t1 vt1 ->
-        vtt t2 vt2 ->
-        vtt (TEither t1 t2) (VTEither vt1 vt2).
-
-Fixpoint vttb (t : type) : value_type :=
-    match t with
-    | TUnit => VTUnit
-    | TFun t _ => VTFun (vttb t)
-    | TPair t1 t2 => VTPair (vttb t1) (vttb t2)
-    | TEither t1 t2 => VTEither (vttb t1) (vttb t2)
-    end.
-
-Theorem vtt_refl : forall (t : type) (vt : value_type),
-    vtt t vt <-> vttb t = vt.
-Proof.
-    induction t; destruct vt; split; intros H;
-    try inversion H; try discriminate; try reflexivity;
-    try constructor; subst; simpl in *.
-    - apply IHt1 in H1. rewrite H1. reflexivity.
-    - apply IHt1. reflexivity.
-    - apply IHt1 in H3. apply IHt2 in H5. 
-        subst. reflexivity.
-    - apply IHt1. reflexivity.
-    - apply IHt2. reflexivity.
-    - apply IHt1 in H3. apply IHt2 in H5.
-        subst. reflexivity.
-    - apply IHt1. reflexivity.
-    - apply IHt2. reflexivity.
-Qed.
-
-Inductive value_judge : value -> value_type -> Prop :=
-    | vj_unit : 
-        value_judge VUnit VTUnit
-    | vj_fun : forall (p : pattern) (t : type) (vt : value_type) (e : expr),
-        pat_type p t ->
-        vtt t vt ->
-        value_judge (VFun p t e) (VTFun vt)
-    | vj_pair : forall (v1 v2 : value) (t1 t2 : value_type),
-        value_judge v1 t1 ->
-        value_judge v2 t2 ->
-        value_judge (VPair v1 v2) (VTPair t1 t2)
-    | vj_left : forall (t1 t2 : type) (vt1 vt2 : value_type) (v : value),
-        vtt t1 vt1 ->
-        vtt t2 vt2 ->
-        value_judge v vt1 ->
-        value_judge (VLeft t1 t2 v) (VTEither vt1 vt2)
-    | vj_right : forall (t1 t2 : type) (vt1 vt2 : value_type) (v : value),
-        vtt t1 vt1 ->
-        vtt t2 vt2 ->
-        value_judge v vt2 ->
-        value_judge (VRight t1 t2 v) (VTEither vt1 vt2).
-
-Fixpoint value_judgeb (v : value) : option value_type := 
-    match v with 
-    | VUnit => Some VTUnit
-    | VFun p t _ => 
-        if pat_typeb p t then Some (VTFun (vttb t)) else None
-    | VPair v1 v2 => 
-        match value_judgeb v1, value_judgeb v2 with
-        | Some vt1, Some vt2 => Some (VTPair vt1 vt2)
-        | _, _ => None
-        end
-    | VLeft t1 t2 v =>
-        match value_judgeb v with
-        | None => None 
-        | Some vt1 => 
-            if vt_eqb (vttb t1) vt1
-            then Some (VTEither (vttb t1) (vttb t2))
-            else None
-        end
-    | VRight t1 t2 v => 
-        match value_judgeb v with
-        | None => None 
-        | Some vt2 => 
-            if vt_eqb (vttb t2) vt2
-            then Some (VTEither (vttb t1) (vttb t2))
-            else None
-        end
-    end.
-
-Theorem value_judge_refl :
-    forall (v : value) (t : value_type),
-    value_judge v t <-> value_judgeb v = Some t.
-Proof.
-    induction v; split; intros H;
-    try inversion H; subst;
-    try discriminate;
-    try reflexivity; simpl in *;
-    try constructor; subst.
-    - apply pat_type_refl in H4.
-        rewrite H4. apply vtt_refl in H5.
-        rewrite H5. reflexivity.
-    - destruct (pat_typeb p t) eqn:eqp.
-        + injection H1; intros; subst.
-            apply pat_type_refl in eqp.
-            constructor; try assumption.
-            apply vtt_refl. reflexivity.
-        + discriminate.
-    - apply IHv1 in H2. rewrite H2.
-        apply IHv2 in H4. rewrite H4.
-        reflexivity.
-    - destruct (value_judgeb v1) eqn:eq1;
-        destruct (value_judgeb v2) eqn:eq2; subst;
-        try discriminate.
-        assert (DUMBv : Some v = Some v); 
-        try reflexivity. apply IHv1 in DUMBv.
-        assert (DUMBv0 : Some v0 = Some v0);
-        try reflexivity. apply IHv2 in DUMBv0.
-        injection H1; intros; subst.
-        constructor; assumption.
-    - apply IHv in H6. rewrite H6.
-        apply vtt_refl in H3. rewrite H3.
-        apply vtt_refl in H5. rewrite H5.
-        destruct (vt_eqb vt1 vt1) eqn:eq;
-        try reflexivity. apply VTNotEq.not_refl2 in eq.
-        unfold VTEq.P in eq. contradiction.
-    - destruct (value_judgeb v) eqn:eqv;
-        try discriminate.
-        assert (Hv0 : Some v0 = Some v0);
-        try reflexivity. apply IHv in Hv0.
-        destruct (vt_eqb (vttb t1) v0) eqn:eqvb;
-        try discriminate.
-        injection H1; intros; subst.
-        constructor;
-        try (apply vtt_refl; reflexivity).
-        apply vt_eq_refl in eqvb; subst.
-        assumption.
-    - apply IHv in H6. rewrite H6.
-        apply vtt_refl in H3. rewrite H3.
-        apply vtt_refl in H5. rewrite H5.
-        destruct (vt_eqb vt2 vt2) eqn:eq;
-        try reflexivity. apply VTNotEq.not_refl2 in eq.
-        unfold VTEq.P in eq. contradiction.
-    - destruct (value_judgeb v) eqn:eqv;
-        try discriminate.
-        assert (Hv0 : Some v0 = Some v0);
-        try reflexivity. apply IHv in Hv0.
-        destruct (vt_eqb (vttb t2) v0) eqn:eqvb;
-        try discriminate.
-        injection H1; intros; subst.
-        constructor;
-        try (apply vtt_refl; reflexivity).
-        apply vt_eq_refl in eqvb; subst.
-        assumption.
-Qed.
+Definition vjudge (t : type) (v : value) := val_judge v t.
 
 (* Definition 1 (Instance Relation) *)
 Inductive instance : pattern -> value -> Prop :=
@@ -629,14 +1101,28 @@ Inductive instance : pattern -> value -> Prop :=
     | instance_left : forall (t1 t2 : type) (p : pattern) (v : value),
         instance p v -> instance (PLeft t1 t2 p) (VLeft t1 t2 v)
     | instance_right : forall (t1 t2 : type) (p : pattern) (v : value),
-        instance p v -> instance (PRight t1 t2 p) (VRight t1 t2 v).
+        instance p v -> instance (PRight t1 t2 p) (VRight t1 t2 v)
+    | instance_or_left : forall (p1 p2 : pattern) (v : value),
+        instance p1 v -> instance (POr p1 p2) v
+    | instance_or_right : forall (p1 p2 : pattern) (v : value),
+        instance p2 v -> instance (POr p1 p2) v. 
+
+Ltac instance_dec_or IHp1 IHp2 v :=
+    pose proof (IHp1 v) as IH1;
+    pose proof (IHp2 v) as IH2;
+    destruct IH1 as [IH1OA | IH1OB];
+    destruct IH2 as [IH2OA | IH2OB];
+    try (right; intros HF; inversion HF; auto; assumption);
+    left; try (apply instance_or_left; assumption);
+    try (apply instance_or_right; assumption).
 
 Theorem instance_dec : 
     forall (p : pattern) (v : value),
     {instance p v} + {~ instance p v}.
 Proof.
     pose proof type_eq_dec as TED.
-    induction p; destruct v;
+    induction p; 
+    destruct v;
     try (left; apply instance_wild);
     try (left; apply instance_var);
     try pose proof (IHp1 v1) as IH1;
@@ -646,10 +1132,16 @@ Proof.
     try (pose proof (TED t1 t0) as TED1;
         pose proof (TED t2 t3) as TED2;
         pose proof (IHp v) as IHI; inversion IHI;
-        inversion TED1; inversion TED2; subst);
+        inversion TED1; inversion TED2; subst;
+        destruct IHI; destruct TED1; destruct TED2; subst);
     try (right; intros HF; inversion HF; auto; assumption);
-    try (left; constructor; try assumption).
-Qed.
+    try (left; constructor; assumption);
+    try instance_dec_or IHp1 IHp2 (VPair v1 v2).
+    - instance_dec_or IHp1 IHp2 VUnit.
+    - instance_dec_or IHp1 IHp2 (VFun p t e).
+    - instance_dec_or IHp1 IHp2 (VLeft t1 t2 v).
+    - instance_dec_or IHp1 IHp2 (VRight t1 t2 v).
+Qed.      
 
 Fixpoint instanceb (p : pattern) (v : value) : bool :=
     match p, v with
@@ -660,6 +1152,7 @@ Fixpoint instanceb (p : pattern) (v : value) : bool :=
     | PLeft pt1 pt2 p, VLeft vt1 vt2 v
     | PRight pt1 pt2 p, VRight vt1 vt2 v => 
         type_eqb pt1 vt1 && type_eqb pt2 vt2 && instanceb p v
+    | POr p1 p2, _ => instanceb p1 v || instanceb p2 v
     | _, _ => false
     end.
 
@@ -667,1022 +1160,672 @@ Theorem instance_refl : forall (p : pattern) (v : value),
     instance p v <-> instanceb p v = true.
 Proof.
     induction p; destruct v; split; intros; 
-    try reflexivity; try constructor;
+    try reflexivity;
+    try apply instance_wild;
+    try apply instance_var;
+    try apply instance_unit;
+    try apply instance_pair;
+    try apply instance_left;
+    try apply instance_right;
     try discriminate H; try inversion H; 
-    subst; simpl in *.
+    subst; simpl in *;
+    try (apply andb_true_iff; split;
+        try (apply IHp; assumption);
+        apply andb_true_iff; split;
+        apply type_eq_refl; reflexivity);
+    try (apply andb_true_iff in H as [H1'' H3'];
+        apply andb_true_iff in H1'' as [H1' H2'];
+        apply type_eq_refl in H1';
+        apply type_eq_refl in H2';
+        subst; apply IHp in H3';
+        constructor; assumption);
+    try (apply orb_true_iff;
+        try (left; apply IHp1; assumption);
+        try (right; apply IHp2; assumption));
+    try (apply orb_true_iff in H1 as [H1 | H1];
+        try (apply instance_or_left; apply IHp1; assumption);
+        try (apply instance_or_right; apply IHp2; assumption)).
     - apply IHp1 in H3. apply IHp2 in H5.
         rewrite H3. rewrite H5. reflexivity.
     - apply IHp1. apply andb_true_iff in H as [H2 _].
         assumption.
     - apply andb_true_iff in H as [_ H2].
         apply IHp2. assumption.
-    - apply andb_true_iff. split.
-        + apply andb_true_iff. split.
-            * apply type_eq_refl. reflexivity.
-            * apply type_eq_refl. reflexivity.
-        + apply IHp. assumption.
-    - apply andb_true_iff in H as [H1'' H3'].
-        apply andb_true_iff in H1'' as [H1' H2'].
-        apply type_eq_refl in H1'.
-        apply type_eq_refl in H2'.
-        subst. apply IHp in H3'.
-        constructor. assumption.
-    - apply andb_true_iff. split.
-        + apply andb_true_iff. split.
-            * apply type_eq_refl. reflexivity.
-            * apply type_eq_refl. reflexivity.
-        + apply IHp. assumption.
-    - apply andb_true_iff in H as [H1'' H3'].
-        apply andb_true_iff in H1'' as [H1' H2'].
-        apply type_eq_refl in H1'.
-        apply type_eq_refl in H2'.
-        subst. apply IHp in H3'.
-        constructor. assumption.
 Qed.
 
 Module InstanceRefl <: HasRefl2.
-Definition A := pattern.
-Definition B := value.
-Definition P := instance.
-Definition f := instanceb.
-Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
-Proof. intros. apply instance_refl. Qed.
+    Definition A := pattern.
+    Definition B := value.
+    Definition P := instance.
+    Definition f := instanceb.
+    Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
+    Proof. intros. apply instance_refl. Qed.
 End InstanceRefl.
 
 Module NotInstanceRefl := NotRefl2(InstanceRefl).
 
-(* Baby steps for more general exhaustiveness for matrices *)
-Module BabyExhaustiveness.
+Definition instancet {t : type} (p : patt t) (v : valt t) : Prop :=
+    instance (proj1_sig p) (proj1_sig v).
+
+Definition instancebt {t : type} (p : patt t) (v : valt t) : bool :=
+    instanceb (proj1_sig p) (proj1_sig v).
+
+Theorem instancet_refl :
+    forall {t : type} (p : patt t) (v : valt t),
+    instancet p v <-> instancebt p v = true.
+Proof. intros. apply instance_refl. Qed.
 
 Definition pvec (n : nat) := V.t pattern n.
-
-Definition pvec_type {n : nat} (p : pvec n) (t : type) :=
-    V.Forall (fun p => pat_type p t) p.
-
-Definition pvec_typeb {n : nat} (p : pvec n) (t : type) :=
-    forallb (fun p => pat_typeb p t) p.
-
-Theorem pvec_type_refl : 
-    forall {n : nat} (p : pvec n) (t : type),
-    pvec_type p t <-> pvec_typeb p t = true.
-Proof.
-    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-    intros n. induction p; split; intros H.
-    - reflexivity.
-    - constructor.
-    - inversion H; subst.
-        apply STUPID in H2; try apply Nat.eq_dec; subst.
-        simpl. unfold eq_rect_r. simpl.
-        apply andb_true_iff. split.
-        + apply pat_type_refl. assumption.
-        + apply IHp. assumption.
-    - simpl in H. unfold eq_rect_r in H. simpl in H.
-        apply andb_true_iff in H as [H1 H2].
-        constructor.
-        + apply pat_type_refl. assumption.
-        + apply IHp. assumption. 
-Qed.
-
-(* Definition 2 (ML Pattern Matching)
-    A Row  i in P filters v iff
-    - Pi <= v
-    - forall j < i, ~ Pj <= v *)
-Definition filters {n : nat} (p : pvec n) (v : value) (i : nat) (Hin : i < n) :=
-    instance (V.nth_order p Hin) v /\
-    forall (j : nat) (Hji : j < i), ~ instance (V.nth_order p (lt_trans j i n Hji Hin)) v.
-
-(* Definition 3: (Vector Instance Relation) *)
-Definition vinstance {n : nat} (ps : pvec n) (v : value) :=
-    V.Exists (fun p => instance p v) ps.
-
-Theorem vinstance_dec :
-    forall {n : nat} (ps : pvec n) (v : value),
-    {vinstance ps v} + {~ vinstance ps v}.
-Proof.
-    intros. induction ps.
-    - right. intros H. inversion H.
-    - destruct IHps as [IH | IH].
-        + left. apply V.Exists_cons_tl.
-            assumption.
-        + pose proof (instance_dec h v) as ID.
-            destruct ID as [I | NI].
-            * left. apply V.Exists_cons_hd.
-                assumption.
-            * right. intros H. inversion H; subst.
-                apply NI. assumption.
-                pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-                apply STUPID in H3; try apply Nat.eq_dec; subst.
-                apply IH. assumption.
-Qed.
-
-Definition vinstanceb {n : nat} (ps : pvec n) (v : value) := 
-    existsb (fun p => instanceb p v) ps.
-
-Theorem vinstance_refl : forall {n : nat} (ps : pvec n) (v : value),
-    vinstance ps v <-> vinstanceb ps v = true.
-Proof.
-    intros. unfold vinstance. unfold vinstanceb.
-    induction ps; split; intros.
-    - inversion H.
-    - discriminate H.
-    - simpl. unfold eq_rect_r. simpl.
-        apply orb_true_iff.
-        pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-        inversion H; subst.
-        + left. apply instance_refl. assumption.
-        + right. apply IHps.
-            apply STUPID in H3; subst;
-            try apply Nat.eq_dec. assumption.
-    - simpl in H. unfold eq_rect_r in H. simpl in H.
-        apply orb_true_iff in H as [H | H].
-        + apply V.Exists_cons_hd. apply instance_refl.
-            assumption.
-        + apply V.Exists_cons_tl. apply IHps.
-            assumption.
-Qed.
-
-Definition vinstance_row {n : nat} (ps : pvec n) (v : value) :=
-    exists (i : nat) (Hin : i < n), 
-    instance (V.nth_order ps Hin) v.
-
-Import V.VectorNotations.
-
-Fixpoint vinstanceb_row {n : nat} (ps : pvec n) (v : value) : (option nat) :=
-    match ps with
-    | [] => None
-    | h::t =>
-        match instanceb h v with
-        | true => Some 0
-        | false =>
-            match vinstanceb_row t v with
-            | None => None
-            | Some k => Some (S k)
-            end
-        end
-    end.
-
-Lemma vinstance_vinstance_row_refl :
-    forall {n : nat} (ps : pvec n) (v : value),
-    vinstance ps v <-> vinstance_row ps v.
-Proof.
-    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-    pose proof_irrelevance as PI.
-    unfold CF.proof_irrelevance in PI.
-    intros. induction ps; split; intros;
-    inversion H; subst.
-    - destruct H0 as [Hin _]. inversion Hin.
-    - apply STUPID in H3; try apply Nat.eq_dec; subst.
-        unfold vinstance_row. exists 0. 
-        assert (H0Sn : 0 < S n); try omega.
-        exists H0Sn. unfold V.nth_order.
-        simpl. assumption.
-    - apply STUPID in H3; try apply Nat.eq_dec; subst.
-        apply IHps in H2. unfold vinstance_row in H2.
-        destruct H2 as [i [Hin HI]].
-        unfold vinstance_row. exists (S i).
-        assert (HSiSn : S i < S n); try omega.
-        exists HSiSn. unfold V.nth_order.
-        simpl. unfold V.nth_order in HI.
-        pose proof (PI (i < n) Hin (lt_S_n i n HSiSn)) as HPI; subst.
-        assumption.
-    - destruct H0 as [Hin HI].
-        unfold vinstance in *.
-        unfold vinstance_row in *.
-        destruct x as [| x]; cbn in HI.
-        + apply V.Exists_cons_hd. assumption.
-        + apply V.Exists_cons_tl. apply IHps.
-            exists x. exists ((lt_S_n x n Hin)).
-            unfold V.nth_order. assumption.
-Qed.
-
-Lemma vinstanceb_vinstanceb_row_refl :
-    forall {n : nat} (ps : pvec n) (v : value),
-    vinstanceb ps v = true <-> 
-    exists (i : nat) (Hin : i < n), vinstanceb_row ps v = Some i.
-Proof.
-    intros. induction ps; split; intros.
-    - discriminate H.
-    - destruct H as [i [Hi0 _]]. omega.
-    - simpl in H. unfold eq_rect_r in H. simpl in H.
-        pose proof (instance_dec h v) as ID.
-        apply orb_true_iff in H.
-        destruct ID as [I | NI] eqn:eqi;
-        destruct H as [H' | H'] eqn:eqh; subst.
-        + exists 0. assert (H0Sn : 0 < S n); try omega.
-            exists H0Sn. simpl.
-            rewrite H'. reflexivity.
-        + exists 0. assert (H0Sn : 0 < S n); try omega.
-            exists H0Sn. simpl.
-            apply instance_refl in I.
-            rewrite I. reflexivity.
-        + apply instance_refl in H'. contradiction.
-        + apply IHps in H'. destruct H' as [i [Hin HIV]].
-            exists (S i). assert (HSiSn : S i < S n); try omega.
-            exists HSiSn. simpl.
-            apply NotInstanceRefl.not_refl2 in NI.
-            unfold InstanceRefl.f in NI.
-            rewrite NI. rewrite HIV.
-            reflexivity.
-    - destruct H as [i [HiSn HIVR]]. simpl.
-        unfold eq_rect_r. simpl. apply orb_true_iff.
-        simpl in HIVR. destruct (instanceb h v) eqn:eqib.
-        + left. reflexivity.
-        + right. destruct (vinstanceb_row ps v) eqn:eqvbr.
-            injection HIVR; intros; subst.
-            * apply IHps. exists n0.
-                assert (Hn0n : n0 < n); try omega.
-                exists Hn0n. auto.
-            * discriminate.
-Qed.
-
-Lemma vinstance_row_refl :
-    forall {n : nat} (ps : pvec n) (v : value),
-    vinstance_row ps v <-> exists (i : nat) (Hin : i < n), vinstanceb_row ps v = Some i.
-Proof.
-    split; intros.
-    - apply vinstanceb_vinstanceb_row_refl. apply vinstance_refl.
-        apply vinstance_vinstance_row_refl. assumption.
-    - apply vinstance_vinstance_row_refl. apply vinstance_refl.
-        apply vinstanceb_vinstanceb_row_refl. assumption.
-Qed.
-
-Lemma vinstanceb_row_bounded :
-    forall {n : nat} (ps : pvec n) (v : value) (i : nat),
-    vinstanceb_row ps v = Some i -> i < n.
-Proof.
-    intros. dependent induction ps.
-    - discriminate H.
-    - simpl in H. destruct (instanceb h v).
-        + injection H; intros; subst. omega.
-        + destruct (vinstanceb_row ps v) eqn:eq.
-            * injection H; intros; subst.
-                apply IHps in eq. omega.
-            * discriminate H.
-Qed.
-
-Lemma vinstance_take_cons :
-    forall {n : nat} (p : pattern) (ps : pvec n) 
-    (v : value) (m : nat) (HmSn : m <= n),
-    ~ instance p v ->
-    vinstance (V.take (S m) (le_n_S m n HmSn) (p::ps)) v ->
-    vinstance (V.take m HmSn ps) v.
-Proof.
-    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-    intros. dependent induction ps.
-    - assert (m = 0); try omega; subst.
-        simpl in H0. exfalso. apply H.
-        inversion H0; subst.
-        + assumption.
-        + apply STUPID in H4; try apply Nat.eq_dec; subst.
-            inversion H3.
-    - destruct m as [| m].
-        + cbn in H0. inversion H0; 
-            subst; apply STUPID in H4; 
-            try apply Nat.eq_dec; subst.
-            * contradiction.
-            * inversion H3.
-        + simpl. simpl in H0. 
-            pose proof (instance_dec h v) as [I | NI].
-            * apply V.Exists_cons_hd. assumption.
-            * apply V.Exists_cons_tl.
-                apply IHps; try assumption.
-                inversion H0; subst.
-                { contradiction. }
-                { apply STUPID in H4; try apply Nat.eq_dec; subst.
-                    inversion H3; subst. 
-                    - contradiction.
-                    - apply STUPID in H5; try apply Nat.eq_dec; subst.
-                    simpl. apply V.Exists_cons_tl.
-                    pose proof proof_irrelevance as PI.
-                    unfold CF.proof_irrelevance in PI.
-                    pose proof (PI (S m <= S n) 
-                        (le_n_S m n (le_S_n m n HmSn)) 
-                        (le_S_n (S m) (S n) (le_n_S (S m) (S n) HmSn))) as POOF.
-                        rewrite POOF. assumption. }
-Qed.
-
-Lemma vinstanceb_row_first :
-    forall {n : nat} (ps : pvec n) (v : value) (i : nat),
-    vinstanceb_row ps v = Some i ->
-    exists (Hin : i <= n), ~ vinstance (V.take i Hin ps) v.
-Proof.
-    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-    pose proof_irrelevance as PI.
-    unfold CF.proof_irrelevance in PI.
-    intros. dependent induction ps.
-    - discriminate H.
-    - apply vinstanceb_row_bounded in H as VB.
-        assert (Hin : i <= S n); try omega.
-        exists Hin. intros HF.
-        cbn in H. destruct (instanceb h v) eqn:eqib.
-        + injection H; intros; subst. 
-            simpl in HF. inversion HF.
-        + destruct (vinstanceb_row ps v) eqn:eqvbr.
-            { injection H; intros; subst.
-                simpl in HF.
-                apply vinstance_refl in HF.
-                simpl in HF. unfold eq_rect_r in HF.
-                simpl in HF. apply orb_true_iff in HF.
-                destruct HF as [HH | HT].
-                - rewrite HH in eqib. discriminate.
-                - apply vinstance_refl in HT.
-                    pose proof (IHps v n0 eqvbr) as [Hn0n IH].
-                    apply IH. pose proof (PI (n0 <= n) Hn0n (le_S_n n0 n Hin)).
-                    rewrite H0. assumption. }
-            { discriminate. } 
-Qed.
-
-(* Definition 2 (ML Pattern Matching reformulated with Definition 3) *)
-Definition filters' {n : nat} 
-    (p : pvec n) (v : value) (i : nat) (Hin : i < n) :=
-    (instance (V.nth_order p Hin) v /\ 
-    ~ vinstance (V.take i (lt_le_weak i n Hin) p) v).
-
-(* The Versions of Definition 2 are Equivalent *)
-Theorem filters_equiv : 
-    forall {n : nat} (p : pvec n) (v : value) (i : nat) (Hin : i < n),
-    filters p v i Hin <-> filters' p v i Hin.
-Proof.
-    pose proof VL.nth_take as NT.
-    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
-    unfold filters. unfold filters'.
-    split; intros; destruct H as [H1 H2]; 
-    split; try assumption.
-    - unfold not. intros NV.
-        apply vinstance_vinstance_row_refl in NV.
-        unfold vinstance_row in NV.
-        destruct NV as [j [Hji HIV]].
-        pose proof (H2 j Hji). apply H.
-        pose proof (NT pattern n p j i Hji Hin) as NTH.
-        rewrite NTH. assumption.
-    - intros. intros VI. apply H2.
-        pose proof (NT pattern n p j i Hji Hin) as NTH.
-        apply vinstance_vinstance_row_refl.
-        unfold vinstance_row. exists j. exists Hji.
-        rewrite <- NTH. assumption.
-Qed.
-
-(* Definition 4 (Exhaustiveness): *)
-Definition exhaustive {n : nat} (p : pvec n) :=
-    forall (v : value), exists (i : nat) (Hin : i < n),
-    filters p v i Hin.
-
-(* Correct, well-typed, Exhaustiveness *)
-Definition exhaustive_typed {n : nat} (p : pvec n) (t : type) :=
-    pvec_type p t ->
-    forall (v : value) (vt : value_type),
-    value_judge v vt -> vtt t vt ->
-    exists (i : nat) (Hin : i < n), filters p v i Hin.
-
-(* Definition 5 (Useless Clause): *)
-Definition useless_clause 
-    {n : nat} (p : pvec n) (i : nat) (Hin : i < n) :=
-    ~ exists (v : value), filters p v i Hin.
-
-(* Correct, well-typed, Useless Clause *)
-Definition useless_clause_typed 
-    {n : nat} (p : pvec n) (t : type) (i : nat) (Hin : i < n) :=
-    pvec_type p t -> ~ exists (v : value) (vt : value_type),
-    value_judge v vt -> vtt t vt -> filters p v i Hin.
-
-(* Definition 6 (Useful Clause): *)
-Definition upred {n : nat} (p : pvec n) (q : pattern) (v : value) := 
-    (~ vinstance p v) /\ instance q v.
-
-(* Well-typed Useful Clause *)
-Definition upred_typed 
-    {n : nat} (p : pvec n) (q : pattern) 
-    (t : type) (v : value) (vt : value_type) := 
-    pvec_type p t -> pat_type q t ->
-    value_judge v vt -> vtt t vt ->
-    (~ vinstance p v) /\ instance q v.
-
-(* U(p,q): *)
-Definition U {n : nat} (p : pvec n) (q : pattern) := 
-    exists (v : value), upred p q v.
-
-(* Well-typed U(p,q) *)
-Definition UT {n : nat} (p : pvec n) (q : pattern) (t : type) := 
-    exists (v : value) (vt : value_type), upred_typed p q t v vt.
-
-(* M(p,q): *)
-Definition M {n : nat} (p : pvec n) (q : pattern) := {v : value | upred p q v}.
-
-(* Well-typed M(p,q): *)
-Definition MT {n : nat} (p : pvec n) (q : pattern) (t : type) := 
-    {v : value | exists (vt : value_type), upred_typed p q t v vt}.
-
-Lemma vinstanceb_row_instance :
-    forall {n : nat} (p : pvec n) (v : value) (i : nat) (Hin : i < n),
-    vinstanceb_row p v = Some i -> instance (V.nth_order p Hin) v.
-Proof.
-    intros. dependent induction p; try omega.
-    simpl in H. destruct (instanceb h v) eqn:eqihv.
-    - injection H; intros; subst. cbn. 
-        apply instance_refl. assumption.
-    - destruct (vinstanceb_row p v) eqn:eqvrow.
-        + injection H; intros; subst.
-            cbn. apply IHp. assumption.
-        + discriminate.
-Qed.
-
-(* Proposition 1.1: *)
-Theorem exhaustive_cond : 
-    forall {n : nat} (p : pvec n),
-    exhaustive p <-> ~ U p PWild.
-Proof.
-    unfold exhaustive; unfold U; unfold upred; 
-    split; intros.
-    - intros [v UP]. specialize H with (v := v).
-        destruct H as [i [Hin [H1 H2]]].
-        apply UP. apply vinstance_vinstance_row_refl.
-        exists i. exists Hin. assumption.
-    - eapply CPT.not_ex_all_not in H.
-        eapply CP.not_and_or in H as [H | H].
-        + apply CP.NNPP in H.
-            unfold vinstance in H.
-            eapply vinstance_vinstance_row_refl in H.
-            eapply vinstance_row_refl in H as VRR.
-            destruct VRR as [i [Hin VBR]].
-            exists i. exists Hin. apply filters_equiv. split.
-            * apply vinstanceb_row_instance. apply VBR.
-            * apply vinstanceb_row_first in VBR.
-                destruct VBR as [Hin' NV].
-                pose proof_irrelevance as PI.
-                pose proof (PI (i <= n) Hin' (Nat.lt_le_incl i n Hin)).
-                rewrite <- H0. apply NV.
-        + exfalso. apply H. constructor.
-Qed.
-
-(* Well-typed Proposition 1.1: *)
-Theorem exhaustive_cond_typed :
-    forall {n : nat} (p : pvec n) (t : type),
-    exhaustive_typed p t <-> ~ UT p PWild t.
-Proof.
-    unfold exhaustive_typed; unfold UT; 
-    unfold upred_typed; split; intros.
-    - intros [v [vt POP]].
-        specialize H with (v := v). 
-Admitted.
-    
-(* Proposition 1.2: *)
-Theorem useless_cond : 
-    forall {n : nat} (p : pvec n) (i : nat) (Hin : i < n),
-    useless_clause p i Hin <-> 
-    ~ U (V.take i (lt_le_weak i n Hin) p) (V.nth p (F.of_nat_lt Hin)).
-Proof.
-    unfold useless_clause; unfold U; 
-    unfold upred; split; intros.
-    - intros [v [NV IP]]. apply H. exists v.
-        apply filters_equiv. split; try assumption.
-    - intros [v FH]. apply filters_equiv in FH. 
-        apply H. exists v. 
-        destruct FH as [FH1 FH2]. split; assumption. 
-Qed.
-
-(* Well-typed Proposition 1.2: *)
-Theorem useless_cond_typed :
-    forall {n : nat} (p : pvec n) (t : type) (i : nat) (Hin : i < n),
-    useless_clause_typed p t i Hin <->
-    ~ UT (V.take i (lt_le_weak i n Hin) p) (V.nth p (F.of_nat_lt Hin)) t.
-Proof.
-Admitted.
-
-Module PatternDec <: SE.DecidableType.
-Import SE.
-Require Import RelationClasses.
-Definition t := pattern.
-Definition eq (p1 p2 : t) := p1 = p2.
-Declare Instance eq_equiv : Equivalence eq.
-Theorem eq_dec : forall (p1 p2 : pattern),
-    {p1 = p2} + {p1 <> p2}.
-Proof.
-    induction p1; destruct p2;
-    try (pose proof (IHp1_1 p2_1) as IH1;
-        pose proof (IHp1_2 p2_2) as IH2;
-        destruct IH1 as [IH1 | IH1]; 
-        destruct IH2 as [IH2 | IH2]; subst;
-        try (right; intros NE; inversion NE; 
-        subst; try apply IH1; try apply IH2; reflexivity));
-    try (pose proof (string_dec x x0) as [H | H]; subst;
-        try (right; intros NE; inversion NE; subst; apply H; reflexivity));
-    try (pose proof (IHp1 p2) as IH;
-        pose proof (type_eq_dec t1 t0) as TED1;
-        pose proof (type_eq_dec t2 t3) as TED2;
-        destruct IH as [IH | IH];
-        destruct TED1 as [TED1 | TED1];
-        destruct TED2 as [TED2 | TED2]; subst;
-        try (right; intros NE; inversion NE; contradiction));
-    try (left; reflexivity);
-    try (right; intros H; inversion H).
-Qed.
-Fixpoint pattern_eqb (a b : pattern) : bool :=
-    match a,b with
-    | PWild, PWild  
-    | PUnit, PUnit => true
-    | PVar x, PVar y => (x =? y)%string
-    | PPair a1 a2, PPair b1 b2 =>
-        pattern_eqb a1 b1 && pattern_eqb a2 b2
-    | PLeft a1 a2 a', PLeft b1 b2 b'
-    | PRight a1 a2 a', PRight b1 b2 b' =>
-        type_eqb a1 b1 && type_eqb a2 b2 && pattern_eqb a' b'
-    | _, _ => false
-    end.
-Theorem pattern_eq_refl :
-    forall (a b : pattern), a = b <-> pattern_eqb a b = true.
-Proof.
-    induction a; destruct b; split;
-    intros; try inversion H; subst;
-    try (apply andb_true_iff in H1 as [HT HP];
-        apply andb_true_iff in HT as [HT1 HT2];
-        apply type_eq_refl in HT1;
-        apply type_eq_refl in HT2;
-        apply IHa in HP; subst; reflexivity);
-    try (apply andb_true_iff; split;
-        try (apply andb_true_iff; split;
-            apply type_eq_refl; reflexivity);
-        try (apply IHa; reflexivity));
-    try reflexivity; simpl;
-    fold pattern_eqb.
-    - apply String.eqb_eq. reflexivity.
-    - apply String.eqb_eq in H1; subst. reflexivity.
-    - apply IHa1. reflexivity.
-    - apply IHa2. reflexivity.
-    - apply andb_true_iff in H1 as [H1 H2].
-        apply IHa1 in H1. apply IHa2 in H2.
-        subst. reflexivity.
-Qed.
-End PatternDec.
-
-Module PatternSet := WS.Make(PatternDec).
-Module PS := PatternSet.
-
-Definition filter_pairs (p : PS.t) : PS.t * PS.t :=
-    PS.fold (fun (p : PS.elt) (acc : PS.t * PS.t) => 
-            match p with
-            | PPair pa pb => 
-                let (a,b) := acc in (PS.add pa a, PS.add pb b)
-            | _ => acc 
-            end) p (PS.empty, PS.empty).
-
-Definition filter_eithers (a b : type) (p : PS.t) : PS.t * PS.t :=
-    PS.fold (fun (p : PS.elt) (acc : PS.t * PS.t) => 
-            match p with 
-            | PLeft a' b' p =>
-                if type_eqb a a' && type_eqb b b' 
-                then let (pa,pb) := acc in (PS.add p pa, pb)
-                else acc
-            | PRight a' b' p =>
-                if type_eqb a a' && type_eqb b b' 
-                then let (pa,pb) := acc in (pa, PS.add p pb)
-                else acc
-            | _ => acc
-            end) p (PS.empty, PS.empty).
-
-Definition predb_var (p : pattern) : bool := 
-    match p with
-    | PVar _ => true
-    | _ => false
-    end.
-
-Inductive pred_var : pattern -> Prop := 
-    pred_var_constr : forall (x : id), pred_var (PVar x).
-
-(* Complete Signature Sigma:
-    This was not defined explicitly so I have
-    invented a definition to suit my purposes.
-    Note this relation does not enforce type-checking,
-    this is completeness not correctness. 
-    The notion of correctness will be defined
-    separately with the typing judgment. *)
-Inductive sigma (p : PS.t) : type -> Prop :=
-    | sigma_wild : forall (t : type), 
-        PS.In PWild p -> 
-        sigma p t
-    | sigma_var : forall (t : type), 
-        PS.Exists pred_var p ->
-        sigma p t
-    | sigma_unit :
-        PS.In PUnit p -> sigma p TUnit
-    | sigma_pair : forall (t1 t2 : type) (p1 p2 : PS.t),
-        (p1,p2) = filter_pairs p ->
-        sigma p1 t1 -> 
-        sigma p2 t2 ->
-        sigma p (TPair t1 t2)
-    | sigma_either : forall (t1 t2 : type) (p1 p2 : PS.t),
-        (p1,p2) = filter_eithers t1 t2 p ->
-        sigma p1 t1 ->
-        sigma p2 t2 ->
-        sigma p (TEither t1 t2).
-
-Definition sigmab_catchall (p  : PS.t) :=
-    PS.mem PWild p || PS.exists_ predb_var p.
-
-Fixpoint sigmab (p : PS.t) (t : type) : bool :=
-    match t with
-    | TUnit => PS.mem PUnit p || sigmab_catchall p
-    | TPair t1 t2 => 
-        let (p1,p2) := filter_pairs p in
-        (sigmab p1 t1 && sigmab p2 t2) || sigmab_catchall p
-    | TEither t1 t2 =>
-        (let (p1,p2) := filter_eithers t1 t2 p in sigmab p1 t1 && sigmab p2 t2)
-        || sigmab_catchall p
-    | TFun _ _ => sigmab_catchall p
-    end.
-
-Lemma pred_var_refl :
-    forall (p : pattern),
-    pred_var p <-> predb_var p = true.
-Proof. split; intros.
-    - inversion H; subst. reflexivity.
-    - destruct p; simpl in *; 
-        try discriminate; constructor.
-Qed.
-
-Lemma pred_var_predb :
-    pred_var = (fun x : PS.elt => predb_var x = true).
-Proof.
-    pose proof proof_irrelevance as PI.
-    apply functional_extensionality. intros.
-    apply prop_extensionality. apply pred_var_refl.
-Qed.
-
-Ltac proper :=
-    unfold Morphisms.Proper;
-    unfold Morphisms.respectful;
-    intros; subst; reflexivity.
-
-Module ProveRight.
-Ltac prove_wild :=
-    right; unfold sigmab_catchall;
-    apply orb_true_iff; left;
-    apply PS.mem_spec; assumption.
-Ltac prove_var :=
-    right; unfold sigmab_catchall;
-    apply orb_true_iff; right;
-    apply PS.exists_spec;
-    try proper;
-    pose proof pred_var_predb as PVP;
-    rewrite <- PVP; assumption.
-Ltac try_prove_wv := try prove_wild; try prove_var; try left.
-End ProveRight.
-
-Module ProveLeft.
-Ltac prove_wild := apply sigma_wild; apply PS.mem_spec; assumption.
-Ltac prove_var H := 
-    apply sigma_var; apply PS.exists_spec in H;
-    try (rewrite pred_var_predb; assumption); proper.
-Ltac try_prove_wv H :=
-    unfold sigmab_catchall in H;
-    apply orb_true_iff in H as [H | H];
-    try prove_wild; try prove_var H.
-End ProveLeft.
-
-Theorem sigma_refl : 
-    forall (p : PS.t) (t : type),
-    sigma p t <-> sigmab p t = true.
-Proof.
-    intros. generalize dependent p. 
-    dependent induction t;
-    split; intros; simpl in *.
-    - apply orb_true_iff. inversion H; subst;
-        ProveRight.try_prove_wv.
-        apply PS.mem_spec. assumption.
-    - apply orb_true_iff in H. destruct H.
-        + apply sigma_unit. apply PS.mem_spec.
-            assumption.
-        + ProveLeft.try_prove_wv H.
-    - apply orb_true_iff. inversion H; subst.
-        + left. apply PS.mem_spec. assumption.
-        + right. apply PS.exists_spec.
-            * proper.
-            * rewrite <- pred_var_predb.
-                assumption.
-    - ProveLeft.try_prove_wv H.
-    - destruct (filter_pairs p) as [p1 p2] eqn:eq. 
-        apply orb_true_iff. inversion H; subst;
-        ProveRight.try_prove_wv. apply andb_true_iff.
-        rewrite eq in H2. inversion H2; subst. split.
-        + apply IHt1. assumption.
-        + apply IHt2. assumption.
-    - destruct (filter_pairs p) as [p1 p2] eqn:eq.
-        apply orb_true_iff in H. destruct H.
-        + apply andb_true_iff in H as [H1 H2].
-            eapply sigma_pair.
-            * symmetry. apply eq.
-            * apply IHt1. assumption.
-            * apply IHt2. assumption.
-        + ProveLeft.try_prove_wv H.
-    - destruct (filter_eithers t1 t2 p) as [p1 p2] eqn:eq.
-        apply orb_true_iff. inversion H; subst;
-        ProveRight.try_prove_wv. apply andb_true_iff.
-        rewrite eq in H2. inversion H2; subst. split.
-        + apply IHt1. assumption.
-        + apply IHt2. assumption.
-    - destruct (filter_eithers t1 t2 p) as [p1 p2] eqn:eq.
-        apply orb_true_iff in H. destruct H.
-            + apply andb_true_iff in H as [H1 H2].
-                eapply sigma_either.
-                * symmetry. apply eq.
-                * apply IHt1. assumption.
-                * apply IHt2. assumption.
-            + ProveLeft.try_prove_wv H.
-Qed. 
-
-Definition pvec_to_set {n : nat} (p : pvec n) := 
-    V.fold_right PS.add p PS.empty.
-
-(* is a pattern a constructed pattern? *)
-Inductive cp : pattern -> Prop :=
-    | cp_unit : cp PUnit
-    | cp_pair : forall (p1 p2 : pattern), cp (PPair p1 p2)
-    | cp_left : forall (t1 t2 : type) (p : pattern), cp (PLeft t1 t2 p)
-    | cp_right : forall (t1 t2 : type) (p : pattern), cp (PRight t1 t2 p).
-
-Definition cpb (p : pattern) : bool :=
-    match p with
-    | PUnit 
-    | PPair _ _
-    | PLeft _ _ _
-    | PRight _ _ _ => true
-    | PWild 
-    | PVar _ => false
-    end.
-
-Theorem cp_refl : forall (p : pattern), cp p <-> cpb p = true.
-Proof.
-    destruct p; split; intros; 
-    try inversion H; try discriminate;
-    try reflexivity; try constructor.
-Qed.
-
-Definition constructor_pattern := {p : pattern | cp p}.
-
-End BabyExhaustiveness.
-
-(* Below are is the full-formulation of 
-    exhaustiveness, as a matrix based 
-    algoeithm. It is simply an asbtracted
-    formulation of exhaustiveness *)
-Module AdvancedExhaustiveness.
-
-Definition pvec (n : nat) := V.t pattern n.
-
-Definition pmatrix (m n : nat) := V.t (pvec n) m.
 
 Definition vvec (n : nat) := V.t value n.
 
-(* Definition 1 (Vector Instance Relation) *)
-Definition vinstance 
-    {n : nat} (p : pvec n) (v : vvec n) := 
-    V.Forall2 instance p v.
+Definition tvec (n : nat) := V.t type n.
 
-Definition vinstanceb 
-    {n : nat} (p : pvec n) (v : vvec n) : bool :=
-    forall2b instanceb p v.
+Definition pjudge_vec {n : nat} (p : pvec n) (t : @tvec n) :=
+    V.Forall2 pat_type p t.
 
-Module InstanceRefl <: HasRefl2.
-Definition A := pattern.
-Definition B := value.
-Definition P := instance.
-Definition f := instanceb.
-Theorem refl : forall (a : A) (b : B), P a b <-> f a b = true.
-Proof. apply instance_refl. Qed.
-End InstanceRefl.
+Definition pjudgeb_vec {n : nat} (p : pvec n) (t : @tvec n) :=
+    forall2b pat_typeb p t.
 
-Module PV := VectorForall2Refl(InstanceRefl).
+Module PatJudgeVecRefl := VectorForall2Refl(PatternTypeRefl).
 
-Theorem vinstance_refl : forall {n : nat} (p : pvec n) (v : vvec n),
-    vinstance p v <-> vinstanceb p v = true. 
-Proof. intros. apply (PV.forall2_refl p v). Qed.
+Lemma pjudge_vec_refl :
+    forall {n : nat} (p : pvec n) (t : tvec n),
+    pjudge_vec p t <-> pjudgeb_vec p t = true.
+Proof. intros. apply PatJudgeVecRefl.forall2_refl. Qed.
 
-(* Definition 2 (ML Pattern Matching)
-    A Row  i in P filters v iff
-    - Pi <= v
-    - forall j < i, ~ Pj <= v *)
-Definition row_filters 
-    {m n : nat} (i : nat) (p : pmatrix m n) (v : vvec n) (Him : i < m) :=
-    (vinstance (V.nth_order p Him) v /\ 
-    forall (j : nat) (Hji : j < i),
-    ~ vinstance (V.nth_order p (lt_trans j i m Hji Him)) v).
+Definition vjudge_vec {n : nat} (v : vvec n) (t : @tvec n) :=
+    V.Forall2 val_judge v t.
 
-(* Definition 3 (Instance Relation for Matrices): *)
-Definition minstance
-    {m n : nat} (p : pmatrix m n) (v : vvec n) :=
-    exists (i : nat) (Him : i < m), 
-    vinstance (V.nth_order p Him) v.
+Definition vjudgeb_vec {n : nat} (v : vvec n) (t : @tvec n) :=
+    forall2b val_judgeb v t.
 
-Definition minstanceb
-    {m n : nat} (p : pmatrix m n) (v : vvec n) : bool :=
-    existsb (fun p' => vinstanceb p' v) p.
+Module VJudgeVecRefl := VectorForall2Refl(VJudgeRefl).
 
-Theorem minstance_refl : 
-    forall {m n : nat} (p : pmatrix m n) (v : vvec n),
-    minstance p v <-> minstanceb p v = true.
+Lemma vjudge_vec_refl :
+    forall {n : nat} (v : vvec n) (t : tvec n),
+    vjudge_vec v t <-> vjudgeb_vec v t = true.
+Proof. intros. apply VJudgeVecRefl.forall2_refl. Qed.
+
+Definition pvt {n : nat} (t : tvec n) :=
+    {p : @pvec n | pjudge_vec p t}.
+
+Definition vvt {n : nat} (t : tvec n) :=
+    {v : @vvec n | vjudge_vec v t}.
+
+Definition pvt_nth {n i : nat} {t : tvec n}
+    (p : pvt t) (H : i < n) : patt (V.nth_order t H).
 Proof.
-    unfold minstance. unfold minstanceb. 
-    induction m; split; intros.
-    - destruct H as [i [Him HV]].
-        inversion Him.
-    - discriminate H.
-    - destruct H as [i [Him HV]].
-        pose proof (vect_cons p) as [h [t VC]]; subst.
-        simpl. unfold eq_rect_r. simpl.
-        apply orb_true_iff.
-        induction i.
-        + simpl in HV. left. apply vinstance_refl.
-            assumption.
-        + right. apply IHm. exists i.
-            assert (HO : i < m); try omega.
-            exists HO. simpl in HV.
-            pose proof proof_irrelevance as PI.
-            unfold CF.proof_irrelevance in PI.
-            pose proof (PI (i < m) HO ((lt_S_n i m Him))) as PIHim.
-            rewrite PIHim. assumption.
-    - pose proof (vect_cons p) as [h [t VC]]; subst.
-        simpl in H. unfold eq_rect_r in H.
-        simpl in H. apply orb_true_iff in H as [H| H].
-        + exists 0. assert (Him : 0 < S m); try omega.
-            exists Him. simpl. apply vinstance_refl.
-            assumption.
-        + apply IHm in H. destruct H as [i [Him H]].
-            exists (S i). assert (HSiSm : S i < S m); try omega.
-            exists HSiSm. 
-            pose proof proof_irrelevance as PI.
-            unfold CF.proof_irrelevance in PI.
-            pose proof VL.nth_cons as NC.
-            pose proof (NC (pvec n) i m h t Him).
-            pose proof (PI (S i < S m) HSiSm (lt_n_S i m Him)).
-            rewrite H1. rewrite <- H0.
-            assumption.
+    destruct p as [p pj]. simpl in *.
+    pose proof (PatJudgeVecRefl.forall2_nth p t pj H) as HT.
+    apply (exist (pjudge (V.nth_order t H)) (V.nth_order p H) HT). 
+Defined.
+
+Definition vvt_nth {n i : nat} {t : tvec n}
+    (v : vvt t) (H : i < n) : valt (V.nth_order t H).
+Proof.
+    destruct v as [v vj]. simpl in *.
+    pose proof (VJudgeVecRefl.forall2_nth v t vj H) as HT.
+    apply (exist (vjudge (V.nth_order t H)) (V.nth_order v H) HT). 
+Defined.
+
+Definition vinstancet {n : nat} {t : tvec n} (p : pvt t) (v : vvt t) : Prop :=
+    V.Forall2 instance (proj1_sig p) (proj1_sig v).
+
+Definition vinstancebt {n : nat} {t : tvec n} (p : pvt t) (v : vvt t) : bool :=
+    forall2b instanceb (proj1_sig p) (proj1_sig v).
+
+Module VInstanceRefl := VectorForall2Refl(InstanceRefl).
+
+Theorem vinstancet_refl :
+    forall {n : nat} {t : tvec n} (p : pvt t) (v : vvt t),
+    vinstancet p v <-> vinstancebt p v = true.
+Proof. intros. apply VInstanceRefl.forall2_refl. Qed.
+
+Definition pmt {n : nat} (t : tvec n) := list (@pvt n t).
+
+Definition minstancet {n : nat} {t : tvec n} (p : pmt t) (v : vvt t) :=
+    List.Exists (fun p' => vinstancet p' v) p.
+
+Definition minstancebt {n : nat} {t : tvec n} (p : pmt t) (v : vvt t) :=
+    List.existsb (fun p' => vinstancebt p' v) p.
+
+Lemma minstancet_refl :
+    forall {n : nat} {t : @tvec n} (p : pmt t) (v : vvt t),
+    minstancet p v <-> minstancebt p v = true.
+Proof.
+    unfold minstancet. unfold minstancebt.
+    split; intros.
+    - apply existsb_exists. apply Exists_exists in H as [x [HIn HIV]].
+        exists x. apply vinstancet_refl in HIV. split; assumption.
+    - apply Exists_exists. apply existsb_exists in H as [x [HIn HIV]].
+        exists x. apply vinstancet_refl in HIV. split; assumption.
 Qed.
 
-(* Definition 2 (ML Pattern Matching reformulated with Definition 3) *)
-Definition row_filters' {m n : nat} 
-    (i : nat) (p : pmatrix m n) (v : vvec n) (Him : i < m) :=
-    (vinstance (V.nth_order p Him) v /\ 
-    ~ minstance (V.take i (lt_le_weak i m Him) p) v).
+Definition row_filters {n : nat} {t : tvec n}
+    (p : pmt t) (v : vvt t) (i : nat) :=
+    (exists (row : pvt t), Some row = nth_error p i
+    /\ vinstancet row v) /\ ~ minstancet (take i p) v.
 
-(* The Versions of Definition 2 are Equivalent *)
-Theorem row_filters_equiv : 
-    forall {m n : nat} (p : pmatrix m n) (v : vvec n) (i : nat) (Him : i < m),
-    row_filters i p v Him <-> row_filters' i p v Him.
-Proof.
-    unfold row_filters.
-    unfold row_filters'.
-    split; intros; destruct H as [H1 H2]; 
-    split; try assumption;
-    pose proof VL.nth_take as NT.
-    - unfold not; intros NM.
-        inversion NM; subst.
-        destruct H as [Hxi H].
-        specialize H2 with (j := x) (Hji := Hxi).
-        apply H2.  
-        pose proof (NT (pvec n) m p x i Hxi Him) as HY.
-        rewrite HY. rewrite HY in H2.
-        assumption.
-    - intros j Hji. 
-        unfold not. intros NV.
-        apply H2. unfold minstance.
-        exists j. exists Hji.
-        pose proof (NT (pvec n) m p j i Hji Him) as HY.
-        rewrite <- HY. 
-        assumption.
-Qed.
-
-(* Definition 4 (Exhaustiveness): *)
-Definition exhaustive' {m n : nat} (p : pmatrix m n) := 
-    forall (v : vvec n), exists (i : nat) (Him : i < m),
-    row_filters' i p v Him.
-
-Definition exhaustive {m n : nat} (p : pmatrix m n) :=
-    forall (v : vvec n), exists (i : nat) (Him : i < m),
-    row_filters i p v Him.
-
-(* Definition 5 (Useless Clause): *)
-Definition useless_clause'
-    {m n : nat} (p : pmatrix m n) (i : nat) (Him : i < m) := 
-    ~ exists (v : vvec n), row_filters' i p v Him.
-
-Definition useless_clause 
-    {m n : nat} (p : pmatrix m n) (i : nat) (Him : i < m) :=
-    ~ exists (v : vvec n), row_filters i p v Him.
-
-(* Definition 6 (Useful Clause): *)
-Definition upred {m n : nat} (p : pmatrix m n) (q : pvec n) (v : vvec n) := 
-    (~ minstance p v) /\ vinstance q v.
-
-(* U(p,q): *)
-Definition U {m n : nat} (p : pmatrix m n) (q : pvec n) := 
-    exists (v : vvec n), upred p q v.
-
-(* M(p,q): *)
-Definition M {m n : nat} (p : pmatrix m n) (q : pvec n) := {v : vvec n | upred p q v}.
-
-Import V.VectorNotations.
-
-Fixpoint minstance_row 
-    {m n : nat} (pmat : pmatrix m n) (v : vvec n) : option nat :=
-    match pmat with
-    | [] => None
-    | p::t => 
-        if vinstanceb p v then Some 0
-        else match minstance_row t v with
+Fixpoint row_filters_op {n : nat} {t : tvec n}
+    (p : pmt t) (v : vvt t) : option nat :=
+    match p with
+    | nil => None
+    | ph::pt => 
+        if vinstancebt ph v then Some 0 else 
+        match row_filters_op pt v with
         | None => None
         | Some k => Some (S k)
         end
     end.
 
-(* If P <= v, then there exists a row i in P
-    such that i is the first such row to filter v. *)
-Theorem minstance_row_filters :
-    forall {m n : nat} (p : pmatrix m n) (v : vvec n),
-    minstance p v <-> 
-    exists (i : nat) (Him : i < m), row_filters i p v Him.
+Lemma row_filters_op_minstancebt :
+    forall {n : nat} {t : tvec n} (p : pmt t) (v : vvt t),
+    minstancebt p v = true <-> exists i, row_filters_op p v = Some i.
 Proof.
-    (* intros. dependent induction p; split; intros.
-    - inversion H; subst. destruct H0 as [Him _].
-        inversion Him.
-    - destruct H as [i [Him _]].
-        inversion Him.
-    - inversion H. destruct H0 as [Him HV].
-        apply minstance_refl in H as MR.
-        simpl in MR. unfold eq_rect_r in MR. 
-        simpl in MR. apply orb_true_iff in MR as [MR | MR].
-        + exists 0. assert (HiSn0 : 0 < S n0); try omega.
-            exists HiSn0. unfold row_filters. split.
-            * simpl. apply vinstance_refl. assumption.
-            * intros. inversion Hji.
-        + destruct x as [| i].
-            { exists 0. exists Him.
-                unfold row_filters. split.
-                - assumption.
-                - intros. inversion Hji. }
-            { exists (S i). exists Him.
-                apply minstance_refl in MR as MRR.
-                apply IHp in MRR as IH.
-                unfold row_filters. split.
-                + assumption.
-                + intros. unfold not. intros HVI.
-                    destruct IH as [k [Hkn0 [IH1 IH2]]].
-                    eapply IH2.
-            }
-        
-        exists x. exists Him.
-            unfold row_filters.
-        destruct x as [| i].
-        + exists 0. exists Him.
-            unfold row_filters. split.
-            * simpl. simpl in HV. assumption.
-            * intros. inversion Hji.
-        + simpl in HV.
-            apply minstance_refl in H as MR.   
-            exists (S i). exists Him.
-            simpl in MR. unfold eq_rect_r in MR.
-            simpl in MR. apply orb_true_iff in MR.
-            destruct MR.
-            * simpl in HV.
-            unfold row_filters. split.
-            * assumption.
-            * intros. unfold not.
-                intros HVI. *)
-Admitted.
-
-Fixpoint wild_vec (n : nat) : pvec n :=
-    match n with
-    | 0 => []
-    | S k => PWild::wild_vec k
-    end.
-
-Lemma wild_vinstance : 
-    forall (n : nat) (v : vvec n),
-    vinstance (wild_vec n) v.
-Proof.
-    intros. induction v; constructor.
-    - apply instance_wild.
-    - fold wild_vec. unfold vinstance in IHv.
-        assumption.
+    intros. dependent induction p; 
+    split; intros; try discriminate; simpl in *.
+    - destruct H as [i H]. discriminate.
+    - specialize IHp with (v := v).
+        destruct (vinstancebt a v) eqn:vin.
+        + exists 0. reflexivity.
+        + simpl in H. apply IHp in H as [i H].
+            exists (S i). rewrite H. reflexivity.
+    - destruct H as [i H].
+        destruct (vinstancebt a v) eqn:vin;
+        destruct (row_filters_op p v) eqn:rf;
+        simpl in *; try reflexivity; try discriminate.
+        apply (IHp v). exists n0. apply rf.
 Qed.
 
-(* Proposition 1.1: *)
-Theorem exhaustive_cond' :
-    forall {m n : nat} (p : pmatrix m n),
-    exhaustive' p <-> ~ U p (wild_vec n).
+Lemma nth_error_nil :
+    forall {A : Type} (i : nat),
+    @nth_error A [] i = None.
+Proof. intros. induction i; try reflexivity. Qed.
+
+
+Lemma row_filters_refl :
+    forall {n : nat} {t : tvec n} (p : pmt t) (v : vvt t) (i : nat),
+    row_filters p v i <-> row_filters_op p v = Some i.
+Proof.
+    intros. dependent induction p; split; intros H;
+    simpl in *; try discriminate; try inversion H; subst.
+    - destruct H0 as [row [HF _]]. 
+        rewrite nth_error_nil in HF. discriminate.
+    - destruct H0 as [row [SR HIV]].
+        destruct i as [| i]; simpl in *.
+        + injection SR; intros; subst.
+            apply vinstancet_refl in HIV. 
+            rewrite HIV. reflexivity.
+        + destruct (vinstancebt a v) eqn:eq.
+            { exfalso. apply H1. constructor.
+                apply vinstancet_refl. assumption. }
+            { assert (HRF : row_filters p v i).
+                - unfold row_filters. split.
+                    + exists row. split; assumption.
+                    + intros HF. apply H1.
+                        apply Exists_cons_tl.
+                        assumption.
+                - apply IHp in HRF. rewrite HRF.
+                    reflexivity. }
+    - destruct (vinstancebt a v) eqn:eq.
+        + injection H1; intros; subst.
+            unfold row_filters. split.
+            * exists a. split; try reflexivity.
+                apply vinstancet_refl. assumption.
+            * intros HM. inversion HM.
+        + destruct (row_filters_op p v) eqn:eqrf.
+            { injection H1; intros; subst.
+                apply IHp in eqrf. unfold row_filters in *.
+                destruct eqrf as [[row [SR HIV]] NHM].
+                split.
+                - exists row. split.
+                    + simpl. assumption.
+                    + assumption.
+                - simpl. intros NSHM. apply NHM.
+                    inversion NSHM; subst.
+                    + apply VInstanceRefl.forall2_not_refl in eq.
+                        contradiction.
+                    + assumption. }
+            { discriminate. }
+Qed.
+
+Lemma row_filters_minstancet :
+    forall {n : nat} {t : tvec n} (p : pmt t) (v : vvt t),
+    minstancet p v <-> exists i, row_filters p v i.
+Proof.
+    split; intros.
+    - apply minstancet_refl in H. 
+        apply row_filters_op_minstancebt in H as [i H].
+        exists i. apply row_filters_refl. assumption.
+    - destruct H as [i H]. apply minstancet_refl.
+        apply row_filters_op_minstancebt. exists i.
+        apply row_filters_refl. assumption.
+Qed.      
+
+(* Definition 4 (Exhaustiveness): *)
+Definition exhaustive {n : nat} {t : tvec n} (p : pmt t) :=
+    forall (v : vvt t), exists (i : nat), row_filters p v i.
+
+(* Definition 5 (Useless Clause): *)
+Definition useless_clause 
+    {n : nat} {t : tvec n} (p : pmt t) (i : nat) :=
+    ~ exists (v : vvt t), row_filters p v i.
+
+(* Definition 6 (Useful Clause): *)
+Definition upred {n : nat} {t : tvec n} (p : pmt t) (q : pvt t) (v : vvt t) := 
+    (~ minstancet p v) /\ vinstancet q v.
+
+(* U(p,q): *)
+Definition U {n : nat} {t : tvec n} (p : pmt t) (q : pvt t) := 
+    exists (v : vvt t), upred p q v.
+
+(* M(p,q): *)
+Definition M {n : nat} {t : tvec n} (p : pmt t) (q : pvt t) := {v : vvt t | upred p q v}.
+
+Import V.VectorNotations.
+
+Fixpoint pwild_vec (n : nat) : @pvec n :=
+    match n with
+    | 0 => []
+    | S k => PWild :: pwild_vec k
+    end.
+
+Definition pwildt_vec {n : nat} (t : tvec n) : pvt t.
+Proof.
+    assert (HW : pjudge_vec (pwild_vec n) t).
+    - induction t.
+        + constructor.
+        + constructor.
+            * constructor.
+            * apply IHt.
+    - apply (exist (fun p => pjudge_vec p t) (pwild_vec n) HW).
+Defined.
+
+Lemma pwild_vec_instance :
+    forall {n : nat} {t : tvec n} (v : vvt t),
+    vinstancet (pwildt_vec t) v.
+Proof.
+    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+    intros. destruct v as [v vj]. 
+    unfold vinstancet. simpl. induction v.
+    - constructor.
+    - inversion vj; subst. 
+        apply STUPID in H1; try apply Nat.eq_dec.
+        apply STUPID in H2; try apply Nat.eq_dec.
+        subst. constructor.
+        + constructor.
+        + eapply IHv. apply H4.
+Qed.
+
+Lemma PNNP : forall (P : Prop), P -> ~ ~ P.
+Proof. intros. intros NP. apply NP. assumption. Qed.
+
+Theorem exhaustive_wild :
+    forall {n : nat} {t : @tvec n} (p : pmt t),
+    exhaustive p <-> ~ U p (pwildt_vec t).
+Proof.
+    unfold exhaustive; unfold U; 
+    unfold upred; split; intros.
+    - apply CPT.all_not_not_ex. intros v.
+        apply CP.or_not_and.
+        specialize H with (v := v).
+        destruct H as [i [RF1 RF2]].
+        destruct RF1 as [row [SR VI]].
+        left. apply PNNP. unfold minstancet.
+        apply Exists_exists. exists row. split.
+        + eapply nth_error_In. symmetry. apply SR.
+        + assumption.
+    - pose proof CPT.not_ex_all_not as NEAN.
+        specialize NEAN with (n := v).
+        apply NEAN in H. clear NEAN.
+        apply CP.not_and_or in H.
+        destruct H as [H | H].
+        + apply CP.NNPP in H.
+            apply row_filters_minstancet. assumption.
+        + exfalso. apply H. apply pwild_vec_instance.
+Qed.
+
+Theorem useless_row :
+    forall {n : nat} {t : tvec n} (p : pmt t) (i : nat) (row : pvt t),
+    nth_error p i = Some row ->
+    useless_clause p i <-> ~ U (take i p) row.
+Proof.
+    unfold useless_clause. unfold U. unfold upred. split; intros.
+    - intros [v [NM HIV]]. apply H0. exists v.
+        unfold row_filters. split.
+        + exists row. symmetry in H. split; assumption.
+        + assumption.
+    - intros [v [[row' [SR HIV]] NM]]. apply H0.
+        exists v. split; try assumption.
+        rewrite H in SR. injection SR; intros; 
+        subst; assumption.
+Qed.
+
+(* The Specialized Matrix *)
+
+Definition empty_pvt : pvt [].
+Proof.
+    assert (H : pjudge_vec [] []); try constructor.
+    apply (exist (fun p' => pjudge_vec p' []) [] H).
+Defined.
+
+Definition empty_vvt : vvt [].
+Proof.
+    assert (H : vjudge_vec [] []); try constructor.
+    apply (exist (fun v' => vjudge_vec v' []) [] H).
+Defined.
+
+Definition hd_tl_pvt {n : nat} {th : type} {t : tvec n}  (p : pvt (th::t)) : patt th * pvt t.
+Proof.
+    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+    destruct p as [p pj].
+    assert (H : pat_type (V.hd p) th /\ pjudge_vec (V.tl p) t).
+    - inversion pj; subst.
+        apply STUPID in H0;
+        apply STUPID in H2;
+        try apply Nat.eq_dec; subst.
+        simpl; split; assumption.
+    - destruct H as [H1 H2].
+        apply (exist (pjudge th) (V.hd p) H1, exist (fun p' => pjudge_vec p' t) (V.tl p) H2).
+Defined.
+
+Definition cons_pvt {n : nat} {t : tvec n} 
+    {a : type} (r : patt a) (p : pvt t) : pvt (a::t).
+Proof.
+    destruct p as [p pj]. destruct r as [r rj].
+    assert (H : pjudge_vec (r::p) (a::t)).
+    - constructor; assumption.
+    - apply (exist (fun p' => pjudge_vec p' (a::t)) (r::p) H).
+Defined.
+
+(* separate first column *)
+Fixpoint first_column {n : nat} {th : type} {t : tvec n} 
+    (p : pmt (th::t)) : list (patt th * pvt t) :=
+    match p with
+    | nil => nil
+    | (row::rest)%list => 
+        (hd_tl_pvt row :: first_column rest)%list
+    end.
+
+Definition PWS_first_column {n : nat} {th : type} {t : tvec n} (p : pmt (th::t)) : PWS.t :=
+    fold_right (fun r acc => PWS.add (proj1_sig (fst r)) acc) PWS.empty (first_column p).
+
+(* Specialized Matrix for Unit *)
+
+Fixpoint SUnit_row {n : nat} {t : tvec n} (r : pattern) (row : pvt t) : pmt t :=
+    match r with
+    | PUnit => [row]%list
+    | POr r1 r2 => (SUnit_row r1 row ++ SUnit_row r2 row)%list
+    | _ => nil
+    end.
+
+Fixpoint SUnit {n : nat} {t : tvec n} (p : list (patt TUnit * (pvt t))) : pmt t :=
+    match p with
+    | nil => nil
+    | ((r,row)::p')%list => (SUnit_row (proj1_sig r) row ++ SUnit p')%list
+    end.
+
+(* Specialized Matrix for Pair *)
+
+Fixpoint SPair_row {n : nat} {t : tvec n} 
+    {a b : type} (r : pattern) 
+    (H : pat_type r (TPair a b)) (row : pvt t) : pmt (a::b::t).
+Proof.
+    destruct row as [rw rowj] eqn:eqrow. destruct r.
+    - assert (HPV : pjudge_vec (PWild::PWild::rw) (a::b::t)).
+        + constructor; constructor; try constructor; try assumption.
+        + pose proof (exist (fun p' => pjudge_vec p' (a::b::t)) 
+            (PWild::PWild::rw) HPV) as A. apply [A]%list.
+    - apply nil.
+    - exfalso. inversion H.
+    - assert (HPV : pjudge_vec (r1::r2::rw) (a::b::t)).
+        + inversion H; subst. constructor; 
+            try constructor; try assumption.
+        + pose proof (exist (fun p' => pjudge_vec p' (a::b::t)) 
+            (r1::r2::rw) HPV) as A. apply [A]%list.
+    - exfalso. inversion H.
+    - exfalso. inversion H.
+    - assert (HR : pat_type r1 (TPair a b) /\ pat_type r2 (TPair a b)).
+        + inversion H; subst; split; assumption.
+        + destruct HR as [HR1 HR2]. 
+            pose proof (SPair_row n t a b r1 HR1 row) as A.
+            pose proof (SPair_row n t a b r2 HR2 row) as B.
+            apply (A ++ B)%list.
+Defined.
+
+Fixpoint SPair {n : nat} {t : tvec n} {a b : type}
+    (p : list (patt (TPair a b) * (pvt t))) : pmt (a::b::t) :=
+    match p with
+    | nil => nil
+    | ((r,row)::p')%list => 
+        ((SPair_row (proj1_sig r) (proj2_sig r) row) ++ SPair p')%list
+    end.
+
+Fixpoint SLeft_row {n : nat} {t : tvec n} {a b : type}
+    (r : pattern) (H : pat_type r (TEither a b)) (row : pvt t) : pmt (a::t).
+    destruct row as [rw rj] eqn:eqrow. destruct r.
+    - assert (HPV : pjudge_vec (PWild::rw) (a::t)).
+        + constructor; try constructor; try assumption.
+        + pose proof (exist (fun p'=> pjudge_vec p' (a::t))
+            (PWild::rw) HPV) as A. apply [A]%list.
+    - apply nil.
+    - exfalso. inversion H.
+    - exfalso. inversion H.
+    - assert (HPV : pjudge_vec (r::rw) (a::t)).
+        + inversion H; subst. constructor;
+            try constructor; assumption.
+        + pose proof (exist (fun p' => pjudge_vec p' (a::t)) 
+            (r::rw) HPV) as A. apply [A]%list.
+    - apply nil.
+    - assert (HR : pat_type r1 (TEither a b) 
+        /\ pat_type r2 (TEither a b)).
+        + inversion H; subst. split; assumption.
+        + destruct HR as [HR1 HR2].
+            pose proof (SLeft_row n t a b r1 HR1 row) as A.
+            pose proof (SLeft_row n t a b r2 HR2 row) as B.
+            apply (A ++ B)%list.
+Defined.
+
+Fixpoint SLeft {n : nat} {t : tvec n} {a b : type}
+    (p : list (patt (TEither a b) * (pvt t))) : pmt (a::t) :=
+    match p with
+    | nil => nil
+    | ((r,row)::p')%list => 
+        ((SLeft_row (proj1_sig r) (proj2_sig r) row) ++ SLeft p')%list
+    end.
+
+Fixpoint SRight_row {n : nat} {t : tvec n} {a b : type}
+    (r : pattern) (H : pat_type r (TEither a b)) (row : pvt t) : pmt (b::t).
+    destruct row as [rw rj] eqn:eqrow. destruct r.
+    - assert (HPV : pjudge_vec (PWild::rw) (b::t)).
+        + constructor; try constructor; try assumption.
+        + pose proof (exist (fun p'=> pjudge_vec p' (b::t))
+            (PWild::rw) HPV) as A. apply [A]%list.
+    - apply nil.
+    - exfalso. inversion H.
+    - exfalso. inversion H.
+    - apply nil.
+    - assert (HPV : pjudge_vec (r::rw) (b::t)).
+        + inversion H; subst. constructor;
+            try constructor; assumption.
+        + pose proof (exist (fun p' => pjudge_vec p' (b::t)) 
+            (r::rw) HPV) as A. apply [A]%list.
+    - assert (HR : pat_type r1 (TEither a b) 
+        /\ pat_type r2 (TEither a b)).
+        + inversion H; subst. split; assumption.
+        + destruct HR as [HR1 HR2].
+            pose proof (SRight_row n t a b r1 HR1 row) as A.
+            pose proof (SRight_row n t a b r2 HR2 row) as B.
+            apply (A ++ B)%list.
+Defined.
+
+Fixpoint SRight {n : nat} {t : tvec n} {a b : type}
+    (p : list (patt (TEither a b) * (pvt t))) : pmt (b::t) :=
+    match p with
+    | nil => nil
+    | ((r,row)::p')%list => 
+        ((SRight_row (proj1_sig r) (proj2_sig r) row) ++ SRight p')%list
+    end.
+
+Fixpoint D_row {n : nat} {t : tvec n} (r : pattern) (row : pvt t) : pmt t.
+    destruct r eqn:eqr.
+    - apply [row]%list.
+    - apply nil.
+    - apply nil.
+    - apply nil.
+    - apply nil.
+    - apply nil.
+    - pose proof (D_row n t p1 row) as A.
+        pose proof (D_row n t p2 row) as B.
+        apply (A ++ B)%list.
+Defined.
+
+(* default matrix *)
+Fixpoint D {n : nat} {th : type} {t : tvec n} 
+    (p : list (patt th * (pvt t))) : pmt t :=
+    match p with
+    | nil => nil
+    | ((r,row)::p')%list => 
+        (D_row (proj1_sig r) row ++ D p')%list
+    end.
+
+Inductive URec : forall {n : nat} {t : tvec n}, pmt t -> pvt t -> Prop :=
+    (* Base Case, n = 0 *)
+    | urec_empty : URec nil empty_pvt
+    (* q0 = unit *)
+    | urec_q0_unit : forall {n : nat} {t : tvec n} 
+        (p : pmt (TUnit::t)) (q : pvt (TUnit::t)) (qt : pvt t),
+        (exist _ PUnit pt_unit,qt) = hd_tl_pvt q ->
+        URec (SUnit (first_column p)) qt ->
+        URec p q
+    (* q0 = (r1,r2) *)
+    | urec_q0_pair : forall {n : nat} {a b : type} {t : tvec n} 
+        (p : pmt ((TPair a b)::t)) (q : pvt ((TPair a b)::t)) 
+        (qh : patt (TPair a b)) (qt : pvt t) (r1 : patt a) (r2 : patt b),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = PPair (proj1_sig r1) (proj1_sig r2) ->
+        URec (SPair (first_column p)) (cons_pvt r1 (cons_pvt r2 qt)) ->
+        URec p q
+    (* q0 = Left a b r *)
+    | urec_q0_either_left : forall {n : nat} {a b : type} {t : tvec n} 
+        (p : pmt ((TEither a b)::t)) (q : pvt ((TEither a b)::t)) 
+        (qh : patt (TEither a b)) (qt : pvt t) (r : patt a),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = PLeft a b (proj1_sig r) ->
+        URec (SLeft (first_column p)) (cons_pvt r qt) ->
+        URec p q
+    (* q0 = Right a b r *)
+    | urec_q0_either_right : forall {n : nat} {a b : type} {t : tvec n} 
+        (p : pmt ((TEither a b)::t)) (q : pvt ((TEither a b)::t)) 
+        (qh : patt (TEither a b)) (qt : pvt t) (r : patt b),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = PRight a b (proj1_sig r) ->
+        URec (SRight (first_column p)) (cons_pvt r qt) ->
+        URec p q
+    (* q0 = _ : unit, p's first column's signature is complete *)
+    | urec_wild_complete_unit : forall {n : nat} {t : tvec n}
+        (p : pmt (TUnit::t)) (q : pvt (TUnit::t)) (qt : pvt t),
+        (exist _ PWild (pt_wild TUnit), qt) = hd_tl_pvt q ->
+        sigma (PWS_first_column p) TUnit ->
+        URec (SUnit (first_column p)) qt ->
+        URec p q
+    (* q0 = _ : a * b, p's first column's signature is complete *)
+    | urec_wild_complete_pair : forall {n : nat} {t : tvec n} {a b : type}
+        (p : pmt (TPair a b :: t)) (q : pvt (TPair a b :: t)) (qt : pvt t),
+        (exist _ PWild (pt_wild (TPair a b)), qt) = hd_tl_pvt q ->
+        sigma (PWS_first_column p) (TPair a b) ->
+        URec (SPair (first_column p)) 
+            (cons_pvt (exist _ PWild (pt_wild a)) (cons_pvt (exist _ PWild (pt_wild b)) qt)) ->
+        URec p q
+    (* q0 = _ : a + b, p's first column's signature is complete *)
+    | urec_wild_complete_either : forall {n : nat} {t : tvec n} {a b : type}
+        (p : pmt (TEither a b :: t)) (q : pvt (TEither a b :: t)) (qt : pvt t),
+        (exist _ PWild (pt_wild (TEither a b)), qt) = hd_tl_pvt q ->
+        sigma (PWS_first_column p) (TEither a b) ->
+        URec (SLeft (first_column p))
+            (cons_pvt (exist _ PWild (pt_wild a)) qt) \/
+        URec (SRight (first_column p))
+            (cons_pvt (exist _ PWild (pt_wild b)) qt) ->
+        URec p q
+    (* q0 = _, p's first column's signature is incomplete *)
+    | urec_wild_incomplete : forall {n : nat} {a : type} {t : tvec n} 
+        (p : pmt (a::t)) (q : pvt (a::t)) (qt : pvt t),
+        (exist _ PWild (pt_wild a), qt) = hd_tl_pvt q ->
+        ~ sigma (PWS_first_column p) a ->
+        URec (D (first_column p)) qt ->
+        URec p q
+    (* q0 is an or-pattern *)
+    | urec_or_pat : forall {n : nat} {a : type} {t : tvec n} 
+        (p : pmt (a::t)) (q : pvt (a::t)) (qh : patt a) (qt : pvt t) 
+        (r1 r2 : patt a),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = POr (proj1_sig r1) (proj1_sig r2) ->
+        URec p (cons_pvt r1 qt) \/ URec p (cons_pvt r2 qt) ->
+        URec p q.
+
+Lemma first_column_pws_judge :
+    forall {n : nat} {a : type} {t : tvec n} (p : pmt (a::t)),
+    pws_judge a (PWS_first_column p).
 Proof.
 Admitted.
 
-Theorem exhaustive_cond : 
-    forall {m n : nat} (p : pmatrix m n),
-    exhaustive p <-> ~ U p (wild_vec n).
-Proof.
-Admitted.
+Ltac irrelevant_pat_type_proof eqhtq qhj p t pf :=
+    rewrite eqhtq; pose proof (proof_irrelevance 
+        (pat_type p t) qhj pf) as PIH;
+    rewrite PIH; reflexivity.
 
-(* Proposition 1.2: *)
-Theorem useless_cond : 
-    forall {m n : nat} (p : pmatrix m n) (i : nat) (Him : i < m),
-    useless_clause p i Him <-> 
-    ~ U (V.take i (lt_le_weak i m Him) p) (V.nth p (F.of_nat_lt Him)).
-Proof.
-Admitted.
+Ltac irrelevant_wild_pat_type_proof eqhtq qhj t :=
+    irrelevant_pat_type_proof eqhtq qhj PWild t (pt_wild t).
+    
+Ltac wild_urec_simpl eqhtq qhj t :=
+    try irrelevant_wild_pat_type_proof eqhtq qhj t;
+    try assumption.
 
-End AdvancedExhaustiveness.
+Theorem URec_correct :
+    forall {n : nat} {t : tvec n} (p : pmt t) (q : pvt t), 
+    U p q <-> URec p q. 
+Proof.
+    pose proof proof_irrelevance as PI. unfold CF.proof_irrelevance in PI.
+    pose proof Eqdep_dec.inj_pair2_eq_dec as STUPID.
+    intros n. induction t; split; intros.
+    - destruct q as [q qj]. destruct p.
+        + inversion qj. apply STUPID in H0; try apply Nat.eq_dec; subst.
+            pose proof urec_empty as URE. unfold empty_pvt in URE. 
+            pose proof (PI (pjudge_vec [] []) qj (V.Forall2_nil pat_type)) as PEqj.
+            rewrite PEqj. assumption.
+        + unfold U in H. unfold upred in H.
+            destruct H as [v [NM HIV]].
+            destruct v as [v vj]. exfalso.
+            apply NM. apply minstancet_refl.
+            reflexivity.
+    - destruct q as [q qj]. destruct p.
+        + unfold U. exists empty_vvt.
+            unfold upred. split.
+            * intros HM. apply minstancet_refl in HM.
+                simpl in HM. discriminate.
+            * unfold vinstancet. simpl.
+                pose proof (vect_nil q) as QN; subst.
+                constructor.
+        + inversion H.
+    - destruct (hd_tl_pvt q) as [qh qt] eqn:eqhtq. 
+        destruct qh as [qh' qhj] eqn:eqqh. destruct qh'.
+        { pose proof (first_column_pws_judge p) as FCPWS.
+            destruct (sigmab (PWS_first_column p) h FCPWS) eqn:eqsigma.
+            - apply sigma_refl in eqsigma. destruct h.
+                + apply (urec_wild_complete_unit p q qt); 
+                    wild_urec_simpl eqhtq qhj TUnit. admit.
+                + inversion eqsigma.
+                + apply (urec_wild_complete_pair p q qt);
+                    wild_urec_simpl eqhtq qhj (TPair h1 h2). admit.
+                + apply (urec_wild_complete_either p q qt);
+                    wild_urec_simpl eqhtq qhj (TEither h1 h2). admit.
+            - apply sigma_refl_not in eqsigma.
+                apply (urec_wild_incomplete p q qt);
+                    wild_urec_simpl eqhtq qhj h. admit. }
+        { admit. (* URec needs to handle variables *) }
+        { inversion qhj; subst. apply (urec_q0_unit p q qt);
+            try irrelevant_pat_type_proof eqhtq qhj PUnit TUnit pt_unit. admit. }
+        (* { revert eqqh. revert qh. inversion qhj. subst. intros.
+            apply (urec_q0_pair p q qh qt qh'1, qh'2). } *)
+Admitted.
