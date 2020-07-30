@@ -1690,7 +1690,7 @@ Fixpoint D {n : nat} {th : type} {t : tvec n}
         (D_row (proj1_sig r) row ++ D p')%list
     end.
 
-Inductive URec : forall {n : nat} {t : tvec n}, pmt t -> pvt t -> Prop :=
+    Inductive URec : forall {n : nat} {t : tvec n}, pmt t -> pvt t -> Prop :=
     (* Base Case, n = 0 *)
     | urec_empty : URec nil empty_pvt
     (* q0 = unit *)
@@ -1755,6 +1755,38 @@ Inductive URec : forall {n : nat} {t : tvec n}, pmt t -> pvt t -> Prop :=
         ~ sigma (PWS_first_column p) a ->
         URec (D (first_column p)) qt ->
         URec p q
+    (* q0 = x : unit, p's first column's signature is complete *)
+    | urec_var_complete_unit : forall {n : nat} {t : tvec n} (x : id)
+        (p : pmt (TUnit::t)) (q : pvt (TUnit::t)) (qt : pvt t),
+        (exist _ (PVar x) (pt_name x TUnit), qt) = hd_tl_pvt q ->
+        sigma (PWS_first_column p) TUnit ->
+        URec (SUnit (first_column p)) qt ->
+        URec p q
+    (* q0 = x : a * b, p's first column's signature is complete *)
+    | urec_var_complete_pair : forall {n : nat} {t : tvec n} {a b : type} (x : id)
+        (p : pmt (TPair a b :: t)) (q : pvt (TPair a b :: t)) (qt : pvt t),
+        (exist _ (PVar x) (pt_name x (TPair a b)), qt) = hd_tl_pvt q ->
+        sigma (PWS_first_column p) (TPair a b) ->
+        URec (SPair (first_column p)) 
+            (cons_pvt (exist _ PWild (pt_wild a)) (cons_pvt (exist _ PWild (pt_wild b)) qt)) ->
+        URec p q
+    (* q0 = x : a + b, p's first column's signature is complete *)
+    | urec_var_complete_either : forall {n : nat} {t : tvec n} {a b : type} (x : id)
+        (p : pmt (TEither a b :: t)) (q : pvt (TEither a b :: t)) (qt : pvt t),
+        (exist _ (PVar x) (pt_name x (TEither a b)), qt) = hd_tl_pvt q ->
+        sigma (PWS_first_column p) (TEither a b) ->
+        URec (SLeft (first_column p))
+            (cons_pvt (exist _ PWild (pt_wild a)) qt) \/
+        URec (SRight (first_column p))
+            (cons_pvt (exist _ PWild (pt_wild b)) qt) ->
+        URec p q
+    (* q0 = x, p's first column's signature is incomplete *)
+    | urec_var_incomplete : forall {n : nat} {a : type} {t : tvec n} (x : id)
+        (p : pmt (a::t)) (q : pvt (a::t)) (qt : pvt t),
+        (exist _ (PVar x) (pt_name x a), qt) = hd_tl_pvt q ->
+        ~ sigma (PWS_first_column p) a ->
+        URec (D (first_column p)) qt ->
+        URec p q
     (* q0 is an or-pattern *)
     | urec_or_pat : forall {n : nat} {a : type} {t : tvec n} 
         (p : pmt (a::t)) (q : pvt (a::t)) (qh : patt a) (qt : pvt t) 
@@ -1777,9 +1809,16 @@ Ltac irrelevant_pat_type_proof eqhtq qhj p t pf :=
 
 Ltac irrelevant_wild_pat_type_proof eqhtq qhj t :=
     irrelevant_pat_type_proof eqhtq qhj PWild t (pt_wild t).
-    
+
 Ltac wild_urec_simpl eqhtq qhj t :=
     try irrelevant_wild_pat_type_proof eqhtq qhj t;
+    try assumption.
+
+Ltac irrelevant_var_type_proof eqhtq qhj t x :=
+    irrelevant_pat_type_proof eqhtq qhj (PVar x) t (pt_name x t).
+
+Ltac var_urec_simpl eqhtq qhj t x :=
+    try irrelevant_var_type_proof eqhtq qhj t x;
     try assumption.
 
 Theorem URec_correct :
@@ -1822,8 +1861,20 @@ Proof.
                     wild_urec_simpl eqhtq qhj (TEither h1 h2). admit.
             - apply sigma_refl_not in eqsigma.
                 apply (urec_wild_incomplete p q qt);
-                    wild_urec_simpl eqhtq qhj h. admit. }
-        { admit. (* URec needs to handle variables *) }
+                wild_urec_simpl eqhtq qhj h. admit. }
+        { pose proof (first_column_pws_judge p) as FCPWS.
+            destruct (sigmab (PWS_first_column p) h FCPWS) eqn:eqsigma.
+            - apply sigma_refl in eqsigma. destruct h.
+                + apply (urec_var_complete_unit x p q qt);
+                    var_urec_simpl eqhtq qhj TUnit x. admit.
+                + inversion eqsigma.
+                + apply (urec_var_complete_pair x p q qt);
+                    var_urec_simpl eqhtq qhj (TPair h1 h2) x. admit.
+                + apply (urec_var_complete_either x p q qt);
+                    var_urec_simpl eqhtq qhj (TEither h1 h2) x. admit.
+            - apply sigma_refl_not in eqsigma.
+                apply (urec_var_incomplete x p q qt);
+                var_urec_simpl eqhtq qhj h x. admit. }
         { inversion qhj; subst. apply (urec_q0_unit p q qt);
             try irrelevant_pat_type_proof eqhtq qhj PUnit TUnit pt_unit. admit. }
         (* { revert eqqh. revert qh. inversion qhj. subst. intros.
