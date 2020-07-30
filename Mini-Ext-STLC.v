@@ -1577,7 +1577,10 @@ Proof.
         + constructor; constructor; try constructor; try assumption.
         + pose proof (exist (fun p' => pjudge_vec p' (a::b::t)) 
             (PWild::PWild::rw) HPV) as A. apply [A]%list.
-    - apply nil.
+    - assert (HPV : pjudge_vec (PWild::PWild::rw) (a::b::t)).
+        + constructor; constructor; try constructor; try assumption.
+        + pose proof (exist (fun p' => pjudge_vec p' (a::b::t)) 
+            (PWild::PWild::rw) HPV) as A. apply [A]%list.
     - exfalso. inversion H.
     - assert (HPV : pjudge_vec (r1::r2::rw) (a::b::t)).
         + inversion H; subst. constructor; 
@@ -1604,12 +1607,16 @@ Fixpoint SPair {n : nat} {t : tvec n} {a b : type}
 
 Fixpoint SLeft_row {n : nat} {t : tvec n} {a b : type}
     (r : pattern) (H : pat_type r (TEither a b)) (row : pvt t) : pmt (a::t).
+Proof.
     destruct row as [rw rj] eqn:eqrow. destruct r.
     - assert (HPV : pjudge_vec (PWild::rw) (a::t)).
         + constructor; try constructor; try assumption.
         + pose proof (exist (fun p'=> pjudge_vec p' (a::t))
             (PWild::rw) HPV) as A. apply [A]%list.
-    - apply nil.
+    - assert (HPV : pjudge_vec (PWild::rw) (a::t)).
+        + constructor; try constructor; try assumption.
+        + pose proof (exist (fun p'=> pjudge_vec p' (a::t))
+            (PWild::rw) HPV) as A. apply [A]%list.
     - exfalso. inversion H.
     - exfalso. inversion H.
     - assert (HPV : pjudge_vec (r::rw) (a::t)).
@@ -1637,12 +1644,16 @@ Fixpoint SLeft {n : nat} {t : tvec n} {a b : type}
 
 Fixpoint SRight_row {n : nat} {t : tvec n} {a b : type}
     (r : pattern) (H : pat_type r (TEither a b)) (row : pvt t) : pmt (b::t).
+Proof.
     destruct row as [rw rj] eqn:eqrow. destruct r.
     - assert (HPV : pjudge_vec (PWild::rw) (b::t)).
         + constructor; try constructor; try assumption.
         + pose proof (exist (fun p'=> pjudge_vec p' (b::t))
             (PWild::rw) HPV) as A. apply [A]%list.
-    - apply nil.
+    - assert (HPV : pjudge_vec (PWild::rw) (b::t)).
+        + constructor; try constructor; try assumption.
+        + pose proof (exist (fun p'=> pjudge_vec p' (b::t))
+            (PWild::rw) HPV) as A. apply [A]%list.
     - exfalso. inversion H.
     - exfalso. inversion H.
     - apply nil.
@@ -1671,7 +1682,7 @@ Fixpoint SRight {n : nat} {t : tvec n} {a b : type}
 Fixpoint D_row {n : nat} {t : tvec n} (r : pattern) (row : pvt t) : pmt t.
     destruct r eqn:eqr.
     - apply [row]%list.
-    - apply nil.
+    - apply [row]%list.
     - apply nil.
     - apply nil.
     - apply nil.
@@ -1680,7 +1691,6 @@ Fixpoint D_row {n : nat} {t : tvec n} (r : pattern) (row : pvt t) : pmt t.
         pose proof (D_row n t p2 row) as B.
         apply (A ++ B)%list.
 Defined.
-
 (* default matrix *)
 Fixpoint D {n : nat} {th : type} {t : tvec n} 
     (p : list (patt th * (pvt t))) : pmt t :=
