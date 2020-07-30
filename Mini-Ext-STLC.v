@@ -1555,6 +1555,8 @@ Definition PWS_first_column {n : nat} {th : type} {t : tvec n} (p : pmt (th::t))
 
 Fixpoint SUnit_row {n : nat} {t : tvec n} (r : pattern) (row : pvt t) : pmt t :=
     match r with
+    | PWild 
+    | PVar _ 
     | PUnit => [row]%list
     | POr r1 r2 => (SUnit_row r1 row ++ SUnit_row r2 row)%list
     | _ => nil
