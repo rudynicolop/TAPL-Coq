@@ -2145,6 +2145,22 @@ Fixpoint pat_vars (p : pattern) : IdSet.t :=
 Definition pats_vars (ps : list pattern) : IdSet.t :=
     fold_right (fun p acc => IdSet.union (pat_vars p) acc) IdSet.empty ps.
 
+Module IdSetFacts := MSF.WFactsOn(IdDec)(IdSet).
+
+Lemma pats_vars_correct :
+    forall (x : id) (ps : list pattern),
+    ~ IdSet.In x (pats_vars ps) <->
+    Forall (fun p => ~ IdSet.In x (pat_vars p)) ps.
+Proof.
+Admitted.
+
+Lemma pats_vars_complete :
+    forall (x : id) (ps : list pattern),
+    IdSet.In x (pats_vars ps) <->
+    Exists (fun p => IdSet.In x (pat_vars p)) ps.
+Proof.
+Admitted.
+
 (* Free Variables *)
 Fixpoint fv (e : expr) : IdSet.t :=
     match e with
@@ -2168,7 +2184,7 @@ Fixpoint fv (e : expr) : IdSet.t :=
 
 
 Lemma pat_bind_bind_in :
-    forall (g g' : gamma) (p : pattern) (t t' : type) (x : id),
+    forall (x : id) (g g' : gamma) (p : pattern) (t t' : type),
     IdSet.In x (pat_vars p) ->
     pat_bind g p t g' <-> pat_bind (bind x t' g) p t g'.
 Proof.
@@ -2180,20 +2196,69 @@ Proof.
 Admitted.
 
 Lemma pat_bind_bind_out :
-    forall (g g' : gamma) (p : pattern) (t t' : type) (x : id),
+    forall (x : id) (g g' : gamma) (p : pattern) (t t' : type),
     ~ IdSet.In x (pat_vars p) ->
     pat_bind g p t g' <-> pat_bind (bind x t' g) p t (bind x t' g').
 Proof.
 Admitted.
 
 Lemma pat_bind_bind_pres :
-    forall (g g' : gamma) (p : pattern) (t t' : type) (x : id),
+    forall (x : id) (g g' : gamma) (p : pattern) (t t' : type),
     ~ IdSet.In x (pat_vars p) ->
     pat_bind (bind x t' g) p t g' -> bound x t' g'.
 Proof.
 Admitted.
 
-Module IdSetFacts := MSF.WFactsOn(IdDec)(IdSet).
+Definition pats_partition (x : id) (ps : list pattern) : (list pattern) * (list pattern) :=
+    partition (fun p => IdSet.mem x (pat_vars p)) ps.
+
+Lemma pats_partition_correct : forall (x : id) (ps pin pout : list pattern),
+    pats_partition x ps = (pin,pout) ->
+    Forall (fun p => IdSet.In x (pat_vars p)) pin /\ 
+    Forall (fun p => ~ IdSet.In x (pat_vars p)) pout.
+Proof.
+Admitted.
+
+Lemma pats_partition_pat_bind :
+    forall (x : id) (ps pin pout : list pattern) (g : gamma) (gs : list gamma) (t : type),
+    pats_partition x ps = (pin,pout) ->
+    (Forall2 (fun p g' => pat_bind g p t g') ps gs <->
+    Forall2 (fun p g' => pat_bind g p t g') pin gs /\
+    Forall2 (fun p g' => pat_bind g p t g') pout gs).
+Proof.
+Admitted.
+
+Lemma pat_bind_bind_in_forall2 :
+    forall (x : id) (g : gamma) (gs : list gamma) (ps : list pattern) (t t' : type),
+    Forall (fun p => IdSet.In x (pat_vars p)) ps ->
+    Forall2 (fun p g' => pat_bind g p t g') ps gs <-> 
+    Forall2 (fun p g' => pat_bind (bind x t' g) p t g') ps gs.
+Proof.
+Admitted.
+
+Lemma pat_bind_bind_out_forall2 :
+    forall (x : id) (g : gamma) (gs : list gamma) (ps : list pattern) (t t' : type),
+    Forall (fun p => ~ IdSet.In x (pat_vars p)) ps ->
+    Forall2 (fun p g' => pat_bind g p t g') ps gs <-> 
+    Forall2 (fun p g' => pat_bind (bind x t' g) p t (bind x t' g')) ps gs.
+Proof.
+Admitted.
+
+Lemma pat_bind_bind_pres_forall2 :
+    forall (x : id) (g : gamma) (gs : list gamma) (ps : list pattern) (t t' : type),
+    Forall (fun p => ~ IdSet.In x (pat_vars p)) ps ->
+    Forall2 (fun p g' => pat_bind (bind x t' g) p t g') ps gs <-> 
+    Forall (fun g' => bound x t' g') gs.
+Proof.
+Admitted.
+
+Lemma pat_bind_forall_bound :
+    forall (x : id) (g : gamma) (gs : list gamma) (ps : list pattern) (t t' : type),
+    Forall (fun g' => bound x t' g') gs ->
+    (Forall2 (fun p g' => pat_bind (bind x t' g) p t g') ps gs <->
+    Forall2 (fun p g' => pat_bind (bind x t' g) p t (bind x t' g')) ps gs).
+Proof.
+Admitted.
 
 Ltac not_in_union H :=
     intros HF; apply H; apply IdSet.union_spec;
@@ -2280,9 +2345,21 @@ Proof.
             left. assumption.
         + assumption.
         + assumption.
-        + destruct (IdSet.mem x (pats_vars ps)) eqn:eqp.
-            * apply IdSet.mem_spec in eqp. admit.
-            * apply IdSetFacts.not_mem_iff in eqp. admit.
+        + destruct (pats_partition x ps) as [pin pout] eqn:eqp.
+            apply (pats_partition_pat_bind x ps pin pout);
+            try apply eqp. 
+            eapply pats_partition_pat_bind in H7 as [Hinp Houtp];
+            try apply eqp.
+            apply pats_partition_correct in eqp as [Hxin Hxout].
+            split.
+            * apply pat_bind_bind_in_forall2;
+                try assumption. apply Hinp.
+            * admit.
+                (* eapply pat_bind_bind_pres_forall2.
+                apply Hnin in Houtp as Hb.
+                pose proof (pat_bind_forall_bound x g gs pout t0 t' Hb) as Hp.
+                eapply Hp. 
+                eapply pat_bind_bind_out_forall2; try assumption. *)
         + apply H9.
     - econstructor.
         + apply H3.
@@ -2292,8 +2369,20 @@ Proof.
             left. assumption.
         + assumption.
         + assumption.
-        + destruct (IdSet.mem x (pats_vars ps)) eqn:eqp.
-            * apply IdSet.mem_spec in eqp. admit.
-            * apply IdSetFacts.not_mem_iff in eqp. admit.
+        + destruct (pats_partition x ps) as [pin pout] eqn:eqp.
+            apply (pats_partition_pat_bind x ps pin pout);
+            try apply eqp. 
+            eapply pats_partition_pat_bind in H7 as [Hinp Houtp];
+            try apply eqp.
+            apply pats_partition_correct in eqp as [Hxin Hxout].
+            split.
+            * eapply pat_bind_bind_in_forall2.
+                apply Hxin. apply Hinp.
+            * eapply pat_bind_bind_pres_forall2 in Hxout as Hnin.
+                apply Hnin in Houtp as Hb.
+                eapply pat_bind_forall_bound in Hb as Hp.
+                apply Hp in Houtp.
+                eapply pat_bind_bind_out_forall2.
+                apply Hxout. apply Houtp.
         + apply H9.
 Admitted.
