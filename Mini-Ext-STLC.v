@@ -2011,6 +2011,16 @@ Inductive exhausts
 (* Gamma *)
 Definition gamma := id -> option type.
 
+Definition gamma_eqb (xs : IdSet.t) (g1 g2 : gamma) :=
+    IdSet.for_all
+        (fun x => 
+            match g1 x, g2 x with
+            | None, None => true
+            | Some t1, Some t2 =>
+                type_eqb t1 t2
+            | _, _ => false
+            end) xs.
+
 Definition empty : gamma := fun x => None.
 
 Definition bind (x : id) (t : type) (g : gamma) : gamma :=
@@ -2091,6 +2101,74 @@ Inductive pat_bind (g : gamma) : pattern -> type -> gamma -> Prop :=
         g' = g'' ->
         pat_bind g (POr p1 p2) t g'.
 
+(* a type-unsafe version of free_varsb *)
+Fixpoint pat_vars (p : pattern) : IdSet.t :=
+    match p with
+    | PWild | PUnit => IdSet.empty
+    | PVar x => IdSet.singleton x
+    | PPair p1 p2 => IdSet.union (pat_vars p1) (pat_vars p2)
+    | PLeft _ _ p 
+    | PRight _ _ p => pat_vars p
+    | POr p1 p2 => IdSet.inter (pat_vars p1) (pat_vars p2)
+    end.
+
+Definition pats_vars (ps : list pattern) : IdSet.t :=
+    fold_right (fun p acc => IdSet.union (pat_vars p) acc) IdSet.empty ps.
+
+Module IdSetFacts := MSF.WFactsOn(IdDec)(IdSet).
+
+Lemma pats_vars_correct :
+    forall (x : id) (ps : list pattern),
+    ~ IdSet.In x (pats_vars ps) <->
+    Forall (fun p => ~ IdSet.In x (pat_vars p)) ps.
+Proof.
+Admitted.
+
+Lemma pats_vars_complete :
+    forall (x : id) (ps : list pattern),
+    IdSet.In x (pats_vars ps) <->
+    Exists (fun p => IdSet.In x (pat_vars p)) ps.
+Proof.
+Admitted.
+
+Fixpoint pat_bindb (p : pattern) (t : type) (g : gamma) : option gamma :=
+    match p, t with
+    | PWild, _ 
+    | PUnit, TUnit => Some g
+    | PVar x, _ => Some (bind x t g)
+    | PPair p1 p2, TPair a b =>
+        if ws_disjoint (pat_vars p1) (pat_vars p2) then
+            match pat_bindb p1 a g with
+            | None => None
+            | Some g1 => pat_bindb p2 b g
+            end
+        else None
+    | PLeft a b p, TEither a' b' =>
+        if type_eqb a a' && type_eqb b b' 
+        then pat_bindb p a g else None
+    | PRight a b p, TEither a' b' =>
+        if type_eqb a a' && type_eqb b b' 
+        then pat_bindb p b g else None
+    | POr p1 p2, _ =>
+        if IdSet.equal (pat_vars p1) (pat_vars p2) then 
+            match pat_bindb p1 t g, pat_bindb p2 t g with
+            | Some g1, Some g2 =>
+                if gamma_eqb (pat_vars p1) g1 g2 
+                    && gamma_eqb (pat_vars p2) g1 g2
+                then Some g1
+                else None
+            | _, _ => None
+            end
+        else None
+    | _, _ => None
+    end.
+
+
+Lemma pat_bind_refl : forall (g g' : gamma) (p : pattern) (t : type),
+    pat_bind g p t g' <-> pat_bindb p t g = Some g'.
+Proof.
+Admitted.
+
 Inductive check (g : gamma) : expr -> type -> Prop :=
     | check_unit : check g EUnit TUnit
     | check_name : forall (x : id) (t : type), 
@@ -2130,36 +2208,6 @@ Inductive check (g : gamma) : expr -> type -> Prop :=
         Forall2 (fun p g' => pat_bind g p t g') ps gs ->
         Forall2 (fun g' e => check g' e t') gs es ->
         check g (EMatch e pes) t'.
-
-(* a type-unsafe version of free_varsb *)
-Fixpoint pat_vars (p : pattern) : IdSet.t :=
-    match p with
-    | PWild | PUnit => IdSet.empty
-    | PVar x => IdSet.singleton x
-    | PPair p1 p2 => IdSet.union (pat_vars p1) (pat_vars p2)
-    | PLeft _ _ p 
-    | PRight _ _ p => pat_vars p
-    | POr p1 p2 => IdSet.inter (pat_vars p1) (pat_vars p2)
-    end.
-
-Definition pats_vars (ps : list pattern) : IdSet.t :=
-    fold_right (fun p acc => IdSet.union (pat_vars p) acc) IdSet.empty ps.
-
-Module IdSetFacts := MSF.WFactsOn(IdDec)(IdSet).
-
-Lemma pats_vars_correct :
-    forall (x : id) (ps : list pattern),
-    ~ IdSet.In x (pats_vars ps) <->
-    Forall (fun p => ~ IdSet.In x (pat_vars p)) ps.
-Proof.
-Admitted.
-
-Lemma pats_vars_complete :
-    forall (x : id) (ps : list pattern),
-    IdSet.In x (pats_vars ps) <->
-    Exists (fun p => IdSet.In x (pat_vars p)) ps.
-Proof.
-Admitted.
 
 (* Free Variables *)
 Fixpoint fv (e : expr) : IdSet.t :=
