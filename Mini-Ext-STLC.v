@@ -998,7 +998,8 @@ Inductive expr : Type :=
     | EFun (p : pattern) (t : type) (e : expr)
     | EApp (e1 e2 : expr)
     | EPair (e1 e2 : expr)
-    | EProj (e : expr) (n : nat)
+    | EFst (e : expr)
+    | ESnd (e : expr)
     | ELeft (t1 t2 : type) (e : expr)
     | ERight (t1 t2 : type) (e : expr)
     | EMatch (e : expr) (cases : list (pattern * expr)).
@@ -2064,7 +2065,21 @@ Inductive pat_bind (g : gamma) : pattern -> type -> gamma -> Prop :=
         E.Disjoint id (set_of_fv f1) (set_of_fv f2) ->
         pat_bind g p1 a g' ->
         pat_bind g' p2 b g'' ->
-        pat_bind g (PPair p1 p2) (TPair a b) g''.
+        pat_bind g (PPair p1 p2) (TPair a b) g''
+    | pb_left : forall (p : pattern) (a b : type) (g' : gamma),
+        pat_bind g p a g' ->
+        pat_bind g (PLeft a b p) (TEither a b) g
+    | pb_right : forall (p : pattern) (a b : type) (g' : gamma),
+        pat_bind g p b g' ->
+        pat_bind g (PRight a b p) (TEither a b) g'
+    | pb_or : forall (p1 p2 : pattern) (t : type) (f1 f2 : fvt) (g' g'' : gamma),
+        free_vars p1 t f1 ->
+        free_vars p2 t f2 ->
+        FV.Equivb type_eqb f1 f2 ->
+        pat_bind g p1 t g' ->
+        pat_bind g p2 t g'' -> 
+        g' = g'' ->
+        pat_bind g (POr p1 p2) t g'.
 
 Inductive check (g : gamma) : expr -> type -> Prop :=
     | check_unit : check g EUnit TUnit
@@ -2075,13 +2090,33 @@ Inductive check (g : gamma) : expr -> type -> Prop :=
         exhausts t [p] -> 
         pat_bind g p t g' ->
         check g' e t' ->
-        check g (EFun p t e) (TFun t t').
-
-(* Inductive expr : Type :=
-| EFun (p : pattern) (t : type) (e : expr)
-| EApp (e1 e2 : expr)
-| EPair (e1 e2 : expr)
-| EProj (e : expr) (n : nat)
-| ELeft (t1 t2 : type) (e : expr)
-| ERight (t1 t2 : type) (e : expr)
-| EMatch (e : expr) (cases : list (pattern * expr)). *)
+        check g (EFun p t e) (TFun t t')
+    | check_app : forall (e1 e2 : expr) (t t' : type),
+        check g e1 (TFun t t') ->
+        check g e2 t ->
+        check g (EApp e1 e2) t'
+    | check_pair : forall (e1 e2 : expr) (a b : type),
+        check g e1 a ->
+        check g e2 b ->
+        check g (EPair e1 e2) (TPair a b)
+    | check_fst : forall (e : expr) (a b : type),
+        check g e (TPair a b) ->
+        check g (EFst e) a
+    | check_snd : forall (e : expr) (a b : type),
+        check g e (TPair a b) ->
+        check g (ESnd e) b
+    | check_left : forall (e : expr) (a b : type),
+        check g e a ->
+        check g (ELeft a b e) (TEither a b)
+    | check_right : forall (e : expr) (a b : type),
+        check g e b ->
+        check g (ERight a b e) (TEither a b)
+    | check_match : forall (e : expr) (ps : list pattern) 
+        (es : list expr) (pes : list (pattern * expr)) (t t' : type) (gs : list gamma),
+        (ps,es) = List.split pes ->
+        check g e t ->
+        Forall (pjudge t) ps ->
+        exhausts t ps ->
+        Forall2 (fun p g' => pat_bind g p t g') ps gs ->
+        Forall2 (fun g' e => check g' e t') gs es ->
+        check g (EMatch e pes) t'.
