@@ -2142,6 +2142,9 @@ Fixpoint pat_vars (p : pattern) : IdSet.t :=
     | POr p1 p2 => IdSet.inter (pat_vars p1) (pat_vars p2)
     end.
 
+Definition pats_vars (ps : list pattern) : IdSet.t :=
+    fold_right (fun p acc => IdSet.union (pat_vars p) acc) IdSet.empty ps.
+
 (* Free Variables *)
 Fixpoint fv (e : expr) : IdSet.t :=
     match e with
@@ -2269,6 +2272,28 @@ Proof.
     - eapply IHe.
         + apply H.
         + apply H5.
-    - admit.
-    - admit.
+    - econstructor.
+        + apply H3.
+        + apply IHe; try apply H4.
+            intros HF. apply H.
+            apply IdSet.union_spec.
+            left. assumption.
+        + assumption.
+        + assumption.
+        + destruct (IdSet.mem x (pats_vars ps)) eqn:eqp.
+            * apply IdSet.mem_spec in eqp. admit.
+            * apply IdSetFacts.not_mem_iff in eqp. admit.
+        + apply H9.
+    - econstructor.
+        + apply H3.
+        + eapply IHe; try apply H4.
+            intros HF. apply H.
+            apply IdSet.union_spec.
+            left. assumption.
+        + assumption.
+        + assumption.
+        + destruct (IdSet.mem x (pats_vars ps)) eqn:eqp.
+            * apply IdSet.mem_spec in eqp. admit.
+            * apply IdSetFacts.not_mem_iff in eqp. admit.
+        + apply H9.
 Admitted.
