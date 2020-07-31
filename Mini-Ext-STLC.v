@@ -1833,6 +1833,82 @@ Ltac var_urec_simpl eqhtq qhj t x :=
     try irrelevant_var_type_proof eqhtq qhj t x;
     try assumption.
 
+Lemma U_SUnit : forall {n : nat} {t : tvec n} 
+    (p : pmt (TUnit::t)) (q : pvt (TUnit::t)) 
+    (qh : patt TUnit) (qt : pvt t),
+    (qh,qt) = hd_tl_pvt q ->
+    U p q <-> U (SUnit (first_column p)) qt.
+Proof.
+Admitted.
+
+Lemma U_SPair : forall {n : nat} {t : tvec n} {a b : type}
+    (p : pmt (TPair a b :: t)) (q : pvt (TPair a b :: t)) 
+    (qh : patt (TPair a b)) (qt : pvt t) 
+    (r1 : patt a) (r2 : patt b) (qt : pvt t),
+    (qh,qt) = hd_tl_pvt q ->
+    proj1_sig qh = PPair (proj1_sig r1) (proj1_sig r2) ->
+    U p q <-> U (SPair (first_column p)) (cons_pvt r1 (cons_pvt r2 qt)).
+Proof.
+Admitted.
+
+Lemma U_SLeft : forall {n : nat} {a b : type} {t : tvec n} 
+    (p : pmt ((TEither a b)::t)) (q : pvt ((TEither a b)::t)) 
+    (qh : patt (TEither a b)) (qt : pvt t) (r : patt a),
+    (qh,qt) = hd_tl_pvt q ->
+    proj1_sig qh = PLeft a b (proj1_sig r) ->
+    U p q <-> U (SLeft (first_column p)) (cons_pvt r qt).
+Proof.
+Admitted.
+
+Lemma U_SRight : forall {n : nat} {a b : type} {t : tvec n} 
+    (p : pmt ((TEither a b)::t)) (q : pvt ((TEither a b)::t)) 
+    (qh : patt (TEither a b)) (qt : pvt t) (r : patt b),
+    (qh,qt) = hd_tl_pvt q ->
+    proj1_sig qh = PRight a b (proj1_sig r) ->
+    U p q <-> U (SRight (first_column p)) (cons_pvt r qt).
+Proof.
+Admitted.
+
+Lemma U_SPair_wild : forall {n : nat} {t : tvec n} {a b : type}
+    (p : pmt (TPair a b :: t)) (q : pvt (TPair a b :: t)) (qt : pvt t),
+    (exist _ PWild (pt_wild (TPair a b)), qt) = hd_tl_pvt q ->
+    U p q <->
+    U (SPair (first_column p)) 
+        (cons_pvt (exist _ PWild (pt_wild a)) (cons_pvt (exist _ PWild (pt_wild b)) qt)).
+Proof.
+Admitted.
+
+Lemma U_SPair_var : forall {n : nat} {t : tvec n} {a b : type} (x : id)
+    (p : pmt (TPair a b :: t)) (q : pvt (TPair a b :: t)) (qt : pvt t),
+    (exist _ (PVar x) (pt_name x (TPair a b)), qt) = hd_tl_pvt q ->
+    U p q <->
+    U (SPair (first_column p)) 
+        (cons_pvt (exist _ PWild (pt_wild a)) (cons_pvt (exist _ PWild (pt_wild b)) qt)).
+Proof.
+Admitted.
+
+Lemma U_SEither_wild : forall {n : nat} {t : tvec n} {a b : type}
+    (p : pmt (TEither a b :: t)) (q : pvt (TEither a b :: t)) (qt : pvt t),
+    (exist _ PWild (pt_wild (TEither a b)), qt) = hd_tl_pvt q ->
+    U p q <->
+    U (SLeft (first_column p))
+        (cons_pvt (exist _ PWild (pt_wild a)) qt) \/
+    U (SRight (first_column p))
+        (cons_pvt (exist _ PWild (pt_wild b)) qt).
+Proof.
+Admitted.
+
+Lemma U_SEither_var : forall {n : nat} {t : tvec n} {a b : type} {x : id}
+    (p : pmt (TEither a b :: t)) (q : pvt (TEither a b :: t)) (qt : pvt t),
+    (exist _ (PVar x) (pt_name x (TEither a b)), qt) = hd_tl_pvt q ->
+    U p q <->
+    U (SLeft (first_column p))
+        (cons_pvt (exist _ PWild (pt_wild a)) qt) \/
+    U (SRight (first_column p))
+        (cons_pvt (exist _ PWild (pt_wild b)) qt).
+Proof.
+Admitted.
+
 Theorem URec_correct :
     forall {n : nat} {t : tvec n} (p : pmt t) (q : pvt t), 
     U p q <-> URec p q. 
@@ -1865,7 +1941,10 @@ Proof.
             destruct (sigmab (PWS_first_column p) h FCPWS) eqn:eqsigma.
             - apply sigma_refl in eqsigma. destruct h.
                 + apply (urec_wild_complete_unit p q qt); 
-                    wild_urec_simpl eqhtq qhj TUnit. admit.
+                    wild_urec_simpl eqhtq qhj TUnit.
+                    apply IHt. eapply U_SUnit.
+                    * symmetry. apply eqhtq.
+                    * assumption.
                 + inversion eqsigma.
                 + apply (urec_wild_complete_pair p q qt);
                     wild_urec_simpl eqhtq qhj (TPair h1 h2). admit.
@@ -1878,7 +1957,10 @@ Proof.
             destruct (sigmab (PWS_first_column p) h FCPWS) eqn:eqsigma.
             - apply sigma_refl in eqsigma. destruct h.
                 + apply (urec_var_complete_unit x p q qt);
-                    var_urec_simpl eqhtq qhj TUnit x. admit.
+                    var_urec_simpl eqhtq qhj TUnit x.
+                    apply IHt. eapply U_SUnit.
+                    * symmetry. apply eqhtq.
+                    * assumption.
                 + inversion eqsigma.
                 + apply (urec_var_complete_pair x p q qt);
                     var_urec_simpl eqhtq qhj (TPair h1 h2) x. admit.
@@ -1888,7 +1970,12 @@ Proof.
                 apply (urec_var_incomplete x p q qt);
                 var_urec_simpl eqhtq qhj h x. admit. }
         { inversion qhj; subst. apply (urec_q0_unit p q qt);
-            try irrelevant_pat_type_proof eqhtq qhj PUnit TUnit pt_unit. admit. }
-        (* { revert eqqh. revert qh. inversion qhj. subst. intros.
-            apply (urec_q0_pair p q qh qt qh'1, qh'2). } *)
+            try irrelevant_pat_type_proof eqhtq qhj PUnit TUnit pt_unit. 
+            apply IHt.
+            admit. }
+        { admit. }
+        { admit. }
+        { admit. }
+        { admit. }
+    -
 Admitted.
