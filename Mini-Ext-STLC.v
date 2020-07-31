@@ -32,6 +32,8 @@ Require Coq.Structures.Equalities.
 Module SE := Coq.Structures.Equalities.
 Require Coq.MSets.MSetWeakList.
 Module WS := Coq.MSets.MSetWeakList.
+Require Coq.MSets.MSetFacts.
+Module MSF := Coq.MSets.MSetFacts.
 Require Coq.FSets.FMapWeakList.
 Module FM := Coq.FSets.FMapWeakList.
 Require Import Coq.Logic.FunctionalExtensionality.
@@ -2014,6 +2016,14 @@ Definition empty : gamma := fun x => None.
 Definition bind (x : id) (t : type) (g : gamma) : gamma :=
     fun y => if String.eqb x y then Some t else g y.
 
+Definition bound (x : id) (t : type) (g : gamma) : Prop := g x = Some t.
+
+Lemma bound_rebound :
+    forall (x : id) (t : type) (g : gamma),
+    bound x t g <-> (bind x t g) = g.
+Proof.
+Admitted.
+
 Lemma bind_correct : 
     forall (x : id) (t : type) (g : gamma),
     bind x t g x = Some t.
@@ -2120,3 +2130,145 @@ Inductive check (g : gamma) : expr -> type -> Prop :=
         Forall2 (fun p g' => pat_bind g p t g') ps gs ->
         Forall2 (fun g' e => check g' e t') gs es ->
         check g (EMatch e pes) t'.
+
+(* a type-unsafe version of free_varsb *)
+Fixpoint pat_vars (p : pattern) : IdSet.t :=
+    match p with
+    | PWild | PUnit => IdSet.empty
+    | PVar x => IdSet.singleton x
+    | PPair p1 p2 => IdSet.union (pat_vars p1) (pat_vars p2)
+    | PLeft _ _ p 
+    | PRight _ _ p => pat_vars p
+    | POr p1 p2 => IdSet.inter (pat_vars p1) (pat_vars p2)
+    end.
+
+(* Free Variables *)
+Fixpoint fv (e : expr) : IdSet.t :=
+    match e with
+    | EUnit => IdSet.empty
+    | EVar x => IdSet.singleton x
+    | EFun p _ e => IdSet.diff (fv e) (pat_vars p)
+    | EApp e1 e2 
+    | EPair e1 e2 => IdSet.union (fv e1) (fv e2)
+    | EFst e
+    | ESnd e
+    | ELeft _ _ e
+    | ERight _ _ e => fv e
+    | EMatch e pes =>
+        IdSet.union (fv e) 
+            (fold_right 
+                (fun (pe : pattern * expr) acc => 
+                    let (p,e) := pe in
+                    IdSet.union acc (IdSet.diff (fv e) (pat_vars p)))
+                IdSet.empty pes)
+    end.
+
+
+Lemma pat_bind_bind_in :
+    forall (g g' : gamma) (p : pattern) (t t' : type) (x : id),
+    IdSet.In x (pat_vars p) ->
+    pat_bind g p t g' <-> pat_bind (bind x t' g) p t g'.
+Proof.
+    intros. dependent induction p; split; 
+    intros; inversion H0; subst.
+    - inversion H.
+    - inversion H.
+    - inversion H; subst.
+Admitted.
+
+Lemma pat_bind_bind_out :
+    forall (g g' : gamma) (p : pattern) (t t' : type) (x : id),
+    ~ IdSet.In x (pat_vars p) ->
+    pat_bind g p t g' <-> pat_bind (bind x t' g) p t (bind x t' g').
+Proof.
+Admitted.
+
+Lemma pat_bind_bind_pres :
+    forall (g g' : gamma) (p : pattern) (t t' : type) (x : id),
+    ~ IdSet.In x (pat_vars p) ->
+    pat_bind (bind x t' g) p t g' -> bound x t' g'.
+Proof.
+Admitted.
+
+Module IdSetFacts := MSF.WFactsOn(IdDec)(IdSet).
+
+Ltac not_in_union H :=
+    intros HF; apply H; apply IdSet.union_spec;
+    try (left; apply HF); try (right; apply HF).
+
+Lemma bind_unfree_var :
+    forall (e : expr) (x : string) (t' t : type) (g : gamma),
+    ~ IdSet.In x (fv e) ->
+    check g e t <-> check (bind x t' g) e t.
+Proof.
+    induction e; split; intros; simpl in H; 
+    inversion H0; subst; try constructor.
+    - apply bind_complete; try assumption.
+        unfold not in *; intros; subst.
+        apply H. left. reflexivity.
+    - destruct ((x0 =? x)%string) eqn:eq.
+        + apply String.eqb_eq in eq; subst. simpl in H. 
+            exfalso. apply H. left. reflexivity.
+        + apply eqb_neq in eq. eapply bind_complete.
+            * apply eq.
+            * apply H2.
+    - destruct (IdSet.mem x (pat_vars p)) eqn:eq.
+        + apply IdSet.mem_spec in eq.
+            eapply check_fun; try assumption.
+            * apply pat_bind_bind_in;
+                try apply H7;
+                try assumption.
+            * assumption.
+        + apply IdSetFacts.not_mem_iff in eq.
+            eapply check_fun; try assumption.
+            * apply pat_bind_bind_out;
+                try assumption. apply H7.
+            * apply IHe; try assumption.
+                intros HE. apply H. 
+                apply IdSetFacts.diff_3;
+                try assumption.
+    - destruct (IdSet.mem x (pat_vars p)) eqn:eq.
+        + apply IdSet.mem_spec in eq.
+            eapply check_fun; try assumption.
+            * eapply pat_bind_bind_in.
+                apply eq. apply H7.
+            * assumption.
+        + apply IdSetFacts.not_mem_iff in eq.
+            eapply check_fun; try assumption.
+            * eapply pat_bind_bind_pres in H7 as H'';
+                try assumption. apply bound_rebound in H''.
+                eapply pat_bind_bind_out;
+                try apply eq. rewrite <- H'' in H7.
+                apply H7.
+            * assumption.
+    - eapply check_app.
+        + apply IHe1; try not_in_union H. apply H3.
+        + apply IHe2; try not_in_union H. assumption.
+    - eapply check_app.
+        + eapply IHe1; try not_in_union H. apply H3.
+        + eapply IHe2; try not_in_union H. apply H5.
+    - apply IHe1; try assumption. try not_in_union H.
+    - apply IHe2; try assumption; try not_in_union H.
+    - eapply IHe1; try not_in_union H. apply H3.
+    - eapply IHe2; try not_in_union H. apply H5.
+    - eapply check_fst. apply IHe; 
+        try assumption. apply H2.
+    - eapply check_fst. eapply IHe.
+        + apply H.
+        + apply H2.
+    - eapply check_snd. apply IHe; 
+        try assumption. apply H2.
+    - eapply check_snd. eapply IHe.
+        + apply H.
+        + apply H2.
+    - eapply IHe in H. apply H in H5. apply H5.
+    - eapply IHe.
+        + apply H.
+        + apply H5.
+    - eapply IHe in H. apply H in H5. apply H5.
+    - eapply IHe.
+        + apply H.
+        + apply H5.
+    - admit.
+    - admit.
+Admitted.
