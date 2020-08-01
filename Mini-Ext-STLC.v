@@ -2200,14 +2200,15 @@ Inductive check (g : gamma) : expr -> type -> Prop :=
         check g e b ->
         check g (ERight a b e) (TEither a b)
     | check_match : forall (e : expr) (ps : list pattern) 
-        (es : list expr) (pes : list (pattern * expr)) (t t' : type) (gs : list gamma),
-        (ps,es) = List.split pes ->
+        (es : list expr) (cases : list (pattern * expr)) (t t' : type),
+        (ps,es) = List.split cases ->
         check g e t ->
         Forall (pjudge t) ps ->
         exhausts t ps ->
-        Forall2 (fun p g' => pat_bind g p t g') ps gs ->
-        Forall2 (fun g' e => check g' e t') gs es ->
-        check g (EMatch e pes) t'.
+        Forall (fun (pe : (pattern * expr)) => 
+                    exists g', pat_bindb (fst pe) t g = Some g'/\ check g' (snd pe) t') 
+                cases ->
+        check g (EMatch e cases) t'.
 
 (* Free Variables *)
 Fixpoint fv (e : expr) : IdSet.t :=
@@ -2257,56 +2258,8 @@ Lemma pat_bind_bind_pres :
 Proof.
 Admitted.
 
-Definition pats_partition (x : id) (ps : list pattern) : (list pattern) * (list pattern) :=
-    partition (fun p => IdSet.mem x (pat_vars p)) ps.
-
-Lemma pats_partition_correct : forall (x : id) (ps pin pout : list pattern),
-    pats_partition x ps = (pin,pout) ->
-    Forall (fun p => IdSet.In x (pat_vars p)) pin /\ 
-    Forall (fun p => ~ IdSet.In x (pat_vars p)) pout.
-Proof.
-Admitted.
-
-Lemma pats_partition_pat_bind :
-    forall (x : id) (ps pin pout : list pattern) (g : gamma) (gs : list gamma) (t : type),
-    pats_partition x ps = (pin,pout) ->
-    (Forall2 (fun p g' => pat_bind g p t g') ps gs <->
-    Forall2 (fun p g' => pat_bind g p t g') pin gs /\
-    Forall2 (fun p g' => pat_bind g p t g') pout gs).
-Proof.
-Admitted.
-
-Lemma pat_bind_bind_in_forall2 :
-    forall (x : id) (g : gamma) (gs : list gamma) (ps : list pattern) (t t' : type),
-    Forall (fun p => IdSet.In x (pat_vars p)) ps ->
-    Forall2 (fun p g' => pat_bind g p t g') ps gs <-> 
-    Forall2 (fun p g' => pat_bind (bind x t' g) p t g') ps gs.
-Proof.
-Admitted.
-
-Lemma pat_bind_bind_out_forall2 :
-    forall (x : id) (g : gamma) (gs : list gamma) (ps : list pattern) (t t' : type),
-    Forall (fun p => ~ IdSet.In x (pat_vars p)) ps ->
-    Forall2 (fun p g' => pat_bind g p t g') ps gs <-> 
-    Forall2 (fun p g' => pat_bind (bind x t' g) p t (bind x t' g')) ps gs.
-Proof.
-Admitted.
-
-Lemma pat_bind_bind_pres_forall2 :
-    forall (x : id) (g : gamma) (gs : list gamma) (ps : list pattern) (t t' : type),
-    Forall (fun p => ~ IdSet.In x (pat_vars p)) ps ->
-    Forall2 (fun p g' => pat_bind (bind x t' g) p t g') ps gs <-> 
-    Forall (fun g' => bound x t' g') gs.
-Proof.
-Admitted.
-
-Lemma pat_bind_forall_bound :
-    forall (x : id) (g : gamma) (gs : list gamma) (ps : list pattern) (t t' : type),
-    Forall (fun g' => bound x t' g') gs ->
-    (Forall2 (fun p g' => pat_bind (bind x t' g) p t g') ps gs <->
-    Forall2 (fun p g' => pat_bind (bind x t' g) p t (bind x t' g')) ps gs).
-Proof.
-Admitted.
+(* current induction principle is too weak... *)
+Check expr_ind.
 
 Ltac not_in_union H :=
     intros HF; apply H; apply IdSet.union_spec;
@@ -2317,7 +2270,7 @@ Lemma bind_unfree_var :
     ~ IdSet.In x (fv e) ->
     check g e t <-> check (bind x t' g) e t.
 Proof.
-    induction e; split; intros; simpl in H; 
+    dependent induction e; split; intros; simpl in H; 
     inversion H0; subst; try constructor.
     - apply bind_complete; try assumption.
         unfold not in *; intros; subst.
@@ -2393,22 +2346,30 @@ Proof.
             left. assumption.
         + assumption.
         + assumption.
-        + destruct (pats_partition x ps) as [pin pout] eqn:eqp.
-            apply (pats_partition_pat_bind x ps pin pout);
-            try apply eqp. 
-            eapply pats_partition_pat_bind in H7 as [Hinp Houtp];
-            try apply eqp.
-            apply pats_partition_correct in eqp as [Hxin Hxout].
-            split.
-            * apply pat_bind_bind_in_forall2;
-                try assumption. apply Hinp.
-            * admit.
-                (* eapply pat_bind_bind_pres_forall2.
-                apply Hnin in Houtp as Hb.
-                pose proof (pat_bind_forall_bound x g gs pout t0 t' Hb) as Hp.
-                eapply Hp. 
-                eapply pat_bind_bind_out_forall2; try assumption. *)
-        + apply H9.
+        + apply Forall_forall.
+            intros pe Hpe.
+            eapply Forall_forall in H8;
+            try apply Hpe. 
+            destruct H8 as [g' [Hpb Hchk]].
+            destruct pe as [p e'] eqn:eqp; 
+            subst; simpl in *.
+            apply pat_bind_refl in Hpb.
+            destruct (IdSet.mem x (pat_vars p)) eqn:eqin.
+            { exists g'. split; try assumption.
+                apply pat_bind_refl.
+                apply IdSet.mem_spec in eqin.
+                apply pat_bind_bind_in; assumption. }
+            { apply IdSetFacts.not_mem_iff in eqin.
+                eapply pat_bind_bind_out in eqin as Hpbbo.
+                eapply Hpbbo in Hpb as Hpbb.
+                exists (bind x t' g'). split.
+                - apply pat_bind_refl.
+                    apply pat_bind_bind_out; assumption.
+                - admit.
+                    (* Coq's automatically generated
+                        induction principle for
+                        expressions isn't strong
+                        enough... *) }
     - econstructor.
         + apply H3.
         + eapply IHe; try apply H4.
@@ -2417,20 +2378,28 @@ Proof.
             left. assumption.
         + assumption.
         + assumption.
-        + destruct (pats_partition x ps) as [pin pout] eqn:eqp.
-            apply (pats_partition_pat_bind x ps pin pout);
-            try apply eqp. 
-            eapply pats_partition_pat_bind in H7 as [Hinp Houtp];
-            try apply eqp.
-            apply pats_partition_correct in eqp as [Hxin Hxout].
-            split.
-            * eapply pat_bind_bind_in_forall2.
-                apply Hxin. apply Hinp.
-            * eapply pat_bind_bind_pres_forall2 in Hxout as Hnin.
-                apply Hnin in Houtp as Hb.
-                eapply pat_bind_forall_bound in Hb as Hp.
-                apply Hp in Houtp.
-                eapply pat_bind_bind_out_forall2.
-                apply Hxout. apply Houtp.
-        + apply H9.
+        + apply Forall_forall.
+            intros pe Hpe.
+            eapply Forall_forall in H8;
+            try apply Hpe. 
+            destruct H8 as [g' [Hpb Hchk]].
+            destruct pe as [p e'] eqn:eqp; 
+            subst; simpl in *.
+            apply pat_bind_refl in Hpb.
+            destruct (IdSet.mem x (pat_vars p)) eqn:eqin.
+            { exists g'. split; try assumption.
+                apply pat_bind_refl.
+                apply IdSet.mem_spec in eqin.
+                eapply pat_bind_bind_in.
+                - apply eqin.
+                - apply Hpb. }
+            { exists g'. split; try assumption.
+                apply pat_bind_refl.
+                apply IdSetFacts.not_mem_iff in eqin.
+                eapply pat_bind_bind_pres in eqin as Hpbbp;
+                try apply Hpb. apply bound_rebound in Hpbbp.
+                rewrite <- Hpbbp in Hpb.
+                eapply pat_bind_bind_out.
+                * apply eqin.
+                * apply Hpb. }
 Admitted.
