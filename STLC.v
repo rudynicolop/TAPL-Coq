@@ -871,4 +871,145 @@ Proof.
         + apply H2.
         + assumption.
 Qed.
+
+(* Normalization *)
+
+Require Import Coq.Logic.Classical_Pred_Type.
+
+Inductive halts (e : expr) : Prop :=
+    | halts_value : value e -> halts e
+    | halts_step : forall (e' : expr),
+        step e e' -> halts e' -> halts e.
+
+Lemma value_halts : forall (v : expr),
+    value v <-> ~ exists (e : expr), step v e.
+Proof.
+    intros v; split.
+    - intros Hv; inversion Hv; subst;
+        intros [e' He]; inversion He.
+    - intros NHe. eapply not_ex_all_not in NHe. admit.
+Admitted.
+
+Lemma step_unique : forall (e e' e'' : expr),
+    step e e' -> step e e'' -> e' = e''.
+Proof.
+    induction e; intros e' e'' H' H''.
+    - inversion H'; inversion H''; subst.
+    - inversion H'; inversion H''; subst.
+    - inversion H'; inversion H''; subst.
+    - inversion H'; inversion H''; subst.
+        + injection H2; intros; subst. reflexivity.
+        + admit.
+Admitted.
+
+Lemma halts_red : forall (e e' : expr),
+    step e e' -> halts e -> halts e'.
+Proof.
+    intros. inversion H0; subst.
+    - apply value_halts in H1 as H'.
+        exfalso. apply H'. exists e'. assumption.
+    - pose proof (step_unique e e' e'0 H H1) as eq; 
+        subst. assumption.
+Qed.
+
+Fail Inductive R : ltype -> expr -> Prop :=
+| Rnat : forall (e : expr),
+    checks empty e TNat ->
+    halts e -> 
+    R TNat e
+| Rbool : forall (e : expr),
+    checks empty e TBool -> 
+    halts e -> 
+    R TBool e
+| Rarrow : forall (e : expr) (t1 t2 : ltype),
+    checks empty e (TArrow t1 t2) -> 
+    halts e ->
+    (forall (e' : expr), R t1 e' -> R t2 (EApp e e')) ->
+    R (TArrow t1 t2) e.
+
+(* This definition was borrowed from Software Foundations,
+    after I found that Coq rejected the above. *)
+Fixpoint R (t : ltype) (e : expr) {struct t} : Prop :=
+    checks empty e t /\ halts e /\
+    match t with
+    | TNat => True 
+    | TBool => True
+    | TArrow t1 t2 => 
+        forall (e' : expr), R t1 e' -> R t2 (EApp e e')
+    end.
+
+Lemma R_halts : forall (t : ltype) (e : expr), R t e -> halts e.
+Proof.
+    dependent induction t; intros e H; unfold R in H;
+    destruct H as [chks [hlts ih]]; try assumption.
+Qed.
+
+Lemma R_checks : 
+    forall (t : ltype) (e : expr), 
+    R t e -> checks empty e t.
+Proof.
+    intros. destruct t; unfold R in *; fold R in *;
+    destruct H as [chks [hlts ih]]; try assumption.
+Qed.
+
+(* Parsing Lemma in TAPL... *)
+Lemma R_step' :
+    forall (t : ltype) (e e' : expr),
+    checks empty e t -> step e e' ->
+    R t e <-> R t e'.
+Proof.
+    dependent induction t; unfold R; split; intros.
+    - destruct H1 as [chks [hlts ih]]. split.
+        + eapply preservation_holds.
+            * apply H0.
+            * assumption.
+        + split; try trivial. eapply halts_red.
+            * apply H0.
+            * assumption.
+    - destruct H1 as [chks [hlts ih]]. split.
+        + assumption.
+        + split; try trivial. eapply halts_step.
+            * apply H0.
+            * assumption.
+    - destruct H1 as [chks [hlts ih]]. split.
+        + eapply preservation_holds.
+            * apply H0.
+            * assumption.
+        + split; try trivial. eapply halts_red.
+            * apply H0.
+            * assumption.
+    - destruct H1 as [chks [hlts ih]]. split.
+        + assumption.
+        + split; try trivial. eapply halts_step.
+            * apply H0.
+            * assumption.
+    - destruct H1 as [chks [hlts ih]]. split.
+        { eapply preservation_holds.
+            - apply H0.
+            - assumption. }
+        { split; try trivial. eapply halts_red.
+            - apply H0.
+            - assumption.
+            - fold R in *. intros.
+                specialize ih with (e' := e'0).
+                apply ih in H1. eapply IHt2.
+                + apply R_checks in H1.
+                    eapply preservation_holds.
+                    * eapply appstep. apply H0.
+                    * assumption.
+                + apply appstep. admit. }
+    - destruct H1 as [chks [hlts ih]]. split.
+        + assumption.
+        + split; try trivial. eapply halts_step.
+            * apply H0.
+            * assumption.
+            * fold R in *. admit.
+Admitted.
+    
+
+
+
+
+
+
     
