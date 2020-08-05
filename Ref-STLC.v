@@ -135,6 +135,8 @@ Inductive check (g : gamma) (s : sigma) : expr -> type -> Prop :=
 (* variable sets *)
 Module IS := WS.Make(IdDec).
 
+Module ISF := MSF.WFactsOn(IdDec)(IS).
+
 (* free variables of an expression *)
 Fixpoint fv (e : expr) : IS.t :=
     match e with
@@ -275,6 +277,7 @@ Definition substitution_lemma
     check g s e2 a ->
     check g s e1' b.
 
+(* Can probably be replaced with a lemma about type-checking *)
 Axiom add_twice : 
     forall {T : Type} (x : id) (a b : T) (map : IM.t T),
     IM.add x a (IM.add x b map) = IM.add x a map.
@@ -290,7 +293,96 @@ Lemma bind_unfree_var :
     ~ IS.In x (fv e) ->
     check g s e t <-> check (IM.add x t' g) s e t.
 Proof.
-Admitted.
+    induction e; split; intros; 
+    simpl in H; inversion H0; 
+    subst; try constructor; try assumption.
+    - assert (XI: x <> i).
+        + intros XI. subst. apply H.
+            constructor. reflexivity.
+        + apply IFF.add_neq_mapsto_iff;
+            assumption.
+    - assert (XI: x <> i).
+        + intros XI. subst. apply H.
+            constructor. reflexivity.
+        + apply IFF.add_neq_mapsto_iff in H2;
+            assumption.
+    - destruct (IdDec.eq_dec i x); subst.
+        + rewrite add_twice. assumption.
+        + rewrite add_diff_comm; try assumption.
+            apply IHe; try assumption.
+            intros HIn. apply H.
+            apply ISF.remove_2; assumption.
+    - destruct (IdDec.eq_dec i x); subst.
+        + rewrite add_twice in H5. assumption.
+        + rewrite add_diff_comm in H5;
+            try assumption.
+            specialize IHe with
+            (x := x) (t' := t') (t := t'0) 
+            (g := (IM.add i t g)).
+            apply IHe; try assumption.
+            intros HIn. apply H.
+            apply ISF.remove_2; assumption.
+    - econstructor.
+        + specialize IHe1 with (x := x)
+            (t' := t') (t := (TFun t0 t))
+            (g := g) (s := s). apply IHe1;
+            try assumption. intros HIn.
+            apply H. apply ISF.union_2.
+            assumption.
+        + specialize IHe2 with (x := x)
+            (t' := t') (t := t0)
+            (g := g) (s := s). apply IHe2;
+            try assumption. intros HIn.
+            apply H. apply ISF.union_3.
+            assumption.
+    - econstructor.
+        + specialize IHe1 with (x := x)
+            (t' := t') (t := (TFun t0 t))
+            (g := g) (s := s). apply IHe1;
+            try assumption. intros HIn.
+            apply H. apply ISF.union_2.
+            assumption.
+        + specialize IHe2 with (x := x)
+            (t' := t') (t := t0)
+            (g := g) (s := s). apply IHe2;
+            try assumption. intros HIn.
+            apply H. apply ISF.union_3.
+            assumption.
+    - apply IHe; assumption.
+    - eapply IHe.
+        + apply H.
+        + apply H2.
+    - apply IHe; assumption.
+    - eapply IHe.
+        + apply H.
+        + apply H2.
+    - econstructor.
+        + specialize IHe1 with (x := x)
+            (t' := t') (t := (TRef t0))
+            (g := g) (s := s). apply IHe1;
+            try assumption. intros HIn.
+            apply H. apply ISF.union_2.
+            assumption.
+        + specialize IHe2 with (x := x)
+            (t' := t') (t := t0)
+            (g := g) (s := s). apply IHe2;
+            try assumption. intros HIn.
+            apply H. apply ISF.union_3.
+            assumption.
+    - econstructor.
+        + specialize IHe1 with (x := x)
+            (t' := t') (t := (TRef t0))
+            (g := g) (s := s). apply IHe1;
+            try assumption. intros HIn.
+            apply H. apply ISF.union_2.
+            assumption.
+        + specialize IHe2 with (x := x)
+            (t' := t') (t := t0)
+            (g := g) (s := s). apply IHe2;
+            try assumption. intros HIn.
+            apply H. apply ISF.union_3.
+            assumption.
+Qed.
 
 Lemma substitution_lemma_holds : 
     forall (x : id) (e1 e1' e2 : expr),
