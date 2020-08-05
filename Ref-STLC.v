@@ -253,7 +253,7 @@ Definition preservation
     forall (g : gamma) (s : sigma) (t : type),
     well_typed_ctxts m s g ->
     check g s e t ->
-    forall (s' : sigma), subset s s' ->
+    exists (s' : sigma), subset s s' ->
     well_typed_ctxts m' s' g /\ check g s' e' t.
 
 Definition substitution_lemma 
@@ -319,7 +319,7 @@ Admitted.
 Lemma mu_update :
     forall (m : mu) (s : sigma) (g : gamma),
     well_typed_ctxts m s g ->
-    forall (e : expr) (l : loc) (x : id) (t : type),
+    forall (e : expr) (l : loc) (t : type),
     check g s e t ->
     LM.MapsTo l t s ->
     well_typed_ctxts (LM.add l e m) s g.
@@ -354,7 +354,30 @@ Theorem preservation_thm :
     preservation e e' m m'.
 Proof.
     unfold preservation. intros e e' m m' H.
-    induction H; intros; split.
+    induction H; intros.
+    - exists s. intros; split;
+        try assumption.
+        inversion H1; subst.
+        eapply substitution_lemma_holds.
+        + apply H.
+        + inversion H5; subst. apply H4.
+        + assumption.
+    - inversion H1; subst. 
+        specialize IHstep with (g := g) (s := s) (t := (TFun t0 t)).
+        pose proof (IHstep H0 H4) as [s' IH]. exists s'. intros SS. 
+        apply IH in SS as IH'. destruct IH' as [WT CHK]. 
+        split; try assumption. eapply check_app.
+        + apply CHK.
+        + eapply mu_monotonic.
+            * apply H6.
+            * assumption.
+    - inversion H1; subst. exists (LM.add l t0 s). intros SS; split.
+        + admit. (* need helper lemma for new location *)
+        + constructor. apply LM.find_1.
+            apply LM.add_1. reflexivity.
+    - inversion H1; subst. exists s. intros SS; 
+        split; try assumption.
+        inversion H3; subst. unfold well_typed_ctxts in H0.
 Admitted.
 
 
