@@ -279,6 +279,19 @@ Axiom add_twice :
     forall {T : Type} (x : id) (a b : T) (map : IM.t T),
     IM.add x a (IM.add x b map) = IM.add x a map.
 
+(* Can probably be replaced with a lemma about type-checking *)
+Axiom add_diff_comm :
+    forall {T : Type} (x y : id) (a b : T) (map : IM.t T),
+    x <> y ->
+    IM.add x a (IM.add y b map) = IM.add y b (IM.add x a map). 
+
+Lemma bind_unfree_var :
+    forall (e : expr) (x : id) (t' t : type) (g : gamma) (s : sigma),
+    ~ IS.In x (fv e) ->
+    check g s e t <-> check (IM.add x t' g) s e t.
+Proof.
+Admitted.
+
 Lemma substitution_lemma_holds : 
     forall (x : id) (e1 e1' e2 : expr),
     substitution_lemma x e1 e1' e2.
@@ -295,10 +308,28 @@ Proof.
     - inversion H; subst. constructor. 
         rewrite add_twice in H5. assumption.
     - inversion H1; subst. constructor.
-        specialize IHHS with 
-            (g := g) (s := s) (a := a) (b := t').
-            admit.
-    - inversion H5; subst. admit.
+        specialize IHHS with (g := (IM.add y t g)) 
+            (s := s) (a := a) (b := t'). apply IHHS.
+            + pose proof (add_diff_comm x y a t g H) as ADC.
+                rewrite ADC. assumption.
+            + apply bind_unfree_var; assumption.
+    - inversion H5; subst. constructor.
+        specialize IHHS2 with (g := (IM.add z t g)) 
+            (s := s) (a := a) (b := t'). apply IHHS2;
+            pose proof (add_diff_comm x z a t g H0) as ADC.
+                rewrite ADC. specialize IHHS1 with 
+                (g := (IM.add z t (IM.add x a g)))
+                (s := s) (a := t) (b := t').
+                apply IHHS1.
+                + pose proof (add_diff_comm y z t t
+                    (IM.add x a g) H1) as ACDC.
+                    rewrite ACDC. apply bind_unfree_var; 
+                    assumption.
+                + rewrite <- ADC. apply bind_unfree_var.
+                    * intros NIN. inversion NIN; 
+                        try contradiction. inversion H8. 
+                    * constructor. apply IM.add_1. reflexivity.
+                + apply bind_unfree_var; assumption. 
     - inversion H; subst. eapply check_app.
         + eapply IHHS1.
             * apply H3.
@@ -325,7 +356,7 @@ Proof.
             * assumption.
     - inversion H; subst.
         constructor. assumption.
-Admitted.
+Qed.
 
 Lemma mu_update :
     forall (m : mu) (s : sigma) (g : gamma),
@@ -452,9 +483,3 @@ Proof.
             * apply H6.
             * assumption.
 Qed.
-
-
-
-
-
-
