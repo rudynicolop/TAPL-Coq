@@ -575,3 +575,44 @@ Proof.
             * apply H6.
             * assumption.
 Qed.
+
+Definition gempty : gamma := IM.empty type.
+
+Definition canonical_forms_unit (v : expr) :=
+    value v -> forall (s : sigma), 
+    check gempty s v TUnit -> v = EUnit.
+
+Definition canonical_forms_loc (v : expr) := 
+    value v -> forall (s : sigma) (t : type),
+    check gempty s v (TRef t) ->
+    exists (l : loc),
+    v = (ELoc l).
+
+Definition canonical_forms_fun (v : expr) :=
+    value v -> forall (s : sigma) (t t' : type),
+    check gempty s v (TFun t t') ->
+    exists (x : id) (e : expr),
+    v = EFun x t e.
+
+Lemma canonical_forms_unit_lemma :
+    forall (v : expr), canonical_forms_unit v.
+Proof.
+    unfold canonical_forms_unit. intros v HV s HCHK.
+    inversion HCHK; subst; inversion HV. reflexivity.
+Qed.
+
+Lemma canonical_forms_loc_lemma :
+    forall (v : expr), canonical_forms_loc v.
+Proof.
+    unfold canonical_forms_loc. intros v HV s t HCHK.
+    inversion HCHK; subst; inversion HV; subst.
+    exists l. reflexivity.
+Qed.
+
+Lemma canonical_forms_fun_lemma :
+    forall (v : expr), canonical_forms_fun v.
+Proof.
+    unfold canonical_forms_fun. intros v HV s t t' HCHK.
+    inversion HCHK; subst; inversion HV; subst.
+    exists x. exists e. reflexivity.
+Qed.
