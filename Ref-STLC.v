@@ -232,15 +232,25 @@ Qed.
 Definition dom_eq {A B : Type} (fa : LM.t A) (fb : LM.t B) : Prop :=
     forall (l : loc), LM.In l fa <-> LM.In l fb.
 
+Compute LF.elements_in_iff.
+
+Definition find_default {A : Type} (default : A) (l : loc) (map : LM.t A) : A :=
+    match LM.find l map with
+    | None => default
+    | Some found => found
+    end.
+
+Definition fdm : loc -> mu -> expr := find_default EUnit.
+
+Definition fds : loc -> sigma -> type := find_default TUnit.
+
 Definition well_typed_ctxts (m : mu) (s : sigma) (g : gamma) : Prop :=
-    dom_eq m s /\ forall (l : loc) (e : expr) (t : type), 
-        LM.MapsTo l e m ->
-        LM.MapsTo l t s ->
-        check g s e t.
+    dom_eq m s /\ forall (l : loc), check g s (fdm l m) (fds l s).
 
 Definition preservation 
-    (g : gamma) (s : sigma) (e e' : expr) (m m' : mu) (t : type) : Prop := 
+    (e e' : expr) (m m' : mu) : Prop := 
     step m e e' m' ->
+    forall (g : gamma) (s : sigma) (t : type),
     well_typed_ctxts m s g ->
     check g s e t ->
     forall (s' : sigma), subset s s' ->
@@ -258,7 +268,7 @@ Axiom add_twice :
     forall {T : Type} (x : id) (a b : T) (map : IM.t T),
     IM.add x a (IM.add x b map) = IM.add x a map.
 
-Theorem substitution_lemma_holds : 
+Lemma substitution_lemma_holds : 
     forall (x : id) (e1 e1' e2 : expr),
     substitution_lemma x e1 e1' e2.
 Proof.
@@ -305,6 +315,43 @@ Proof.
     - inversion H; subst.
         constructor. assumption.
 Admitted.
+
+Lemma mu_update :
+    forall (m : mu) (s : sigma) (g : gamma),
+    well_typed_ctxts m s g ->
+    forall (e : expr) (l : loc) (x : id) (t : type),
+    check g s e t ->
+    LM.MapsTo l t s ->
+    well_typed_ctxts (LM.add l e m) s g.
+Proof.
+    intros. unfold well_typed_ctxts in *.
+    destruct H as [DE H]. split.
+    - unfold dom_eq in *. split; intros.
+        + destruct (LocDec.eq_dec l l0); subst.
+            * apply LF.find_mapsto_iff in H1.
+                apply LF.in_find_iff.
+                intros H'. rewrite H1 in H'.
+                discriminate.
+            * apply DE. eapply LF.add_neq_in_iff in n.
+                apply n. apply H2.
+        + apply LF.add_in_iff. right.
+            apply DE. assumption.
+    - intros. unfold fdm in *.
+        unfold fds in *. unfold find_default in *.
+        destruct (LM.find (elt:=expr) l m) eqn:eqm;
+        destruct (LM.find (elt:=type) l s) eqn:eqs;
+        subst.
+Admitted.
+
+
+Theorem preservation_thm :
+    forall (e e' : expr) (m m' : mu),
+    preservation e e' m m'.
+Proof.
+    unfold preservation. intros e e' m m' H.
+    induction H; intros; split.
+Admitted.
+
 
 
 
