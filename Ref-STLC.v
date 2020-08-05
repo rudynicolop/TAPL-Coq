@@ -338,11 +338,16 @@ Proof.
             apply DE. assumption.
     - intros. unfold fdm in *.
         unfold fds in *. unfold find_default in *.
-        destruct (LM.find (elt:=expr) l m) eqn:eqm;
-        destruct (LM.find (elt:=type) l s) eqn:eqs;
-        subst.
-Admitted.
-
+        destruct (LocDec.eq_dec l l0); subst.
+        + specialize H with (l := l0).
+            assert (HF : LM.find l0 (LM.add l0 e m) = Some e).
+            * apply LF.add_eq_o. reflexivity.
+            * rewrite HF. apply LM.find_1 in H1.
+                rewrite H1. assumption.
+        + assert (HF : LM.find l0 (LM.add l e m) = LM.find l0 m).
+            * apply LF.add_neq_o. assumption.
+            * rewrite HF. apply H.
+Qed.
 
 Theorem preservation_thm :
     forall (e e' : expr) (m m' : mu),
