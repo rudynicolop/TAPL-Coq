@@ -129,7 +129,7 @@ Inductive check (g : gamma) (s : sigma) : expr -> type -> Prop :=
         check g s e2 t ->
         check g s (EAss e1 e2) TUnit
     | check_loc : forall (l : loc) (t : type),
-        LM.find l s = Some t ->
+        LM.MapsTo l t s ->
         check g s (ELoc l) (TRef t).
 
 (* variable sets *)
@@ -217,7 +217,20 @@ Inductive step (m : mu) : expr -> expr -> mu -> Prop :=
 Definition subset (s s' : sigma) :=
     forall (l : loc) (t : type), LM.MapsTo l t s -> LM.MapsTo l t s'.
 
-Lemma mu_monotonic :
+Lemma subset_add :
+    forall (l : loc) (t : type) (s : sigma),
+    ~ LM.In l s ->
+    subset s (LM.add l t s).
+Proof.
+    unfold subset. intros.
+    destruct (LocDec.eq_dec l l0); subst.
+    - apply LF.not_find_in_iff in H.
+        apply LF.find_mapsto_iff in H0.
+        rewrite H in H0. discriminate.
+    - apply LM.add_2; assumption.
+Qed.
+
+Lemma sigma_monotonic :
     forall (g : gamma) (s s' : sigma) (e : expr) (t : type),
     check g s e t -> subset s s' -> check g s' e t.
 Proof.
@@ -225,8 +238,6 @@ Proof.
     try constructor; try assumption; auto.
     - eapply check_app; auto.
     - eapply check_ass; auto.
-    - eapply LF.find_mapsto_iff. apply H0. 
-        eapply LF.find_mapsto_iff. assumption.
 Qed.
 
 Definition dom_eq {A B : Type} (fa : LM.t A) (fb : LM.t B) : Prop :=
@@ -349,6 +360,42 @@ Proof.
             * rewrite HF. apply H.
 Qed.
 
+Lemma sigma_add :
+    forall (m : mu) (s : sigma) (g : gamma),
+    well_typed_ctxts m s g ->
+    forall (e : expr) (l : loc) (t : type),
+    check g s e t ->
+    ~ LM.In l m ->
+    well_typed_ctxts (LM.add l e m) (LM.add l t s) g.
+Proof.
+    intros. unfold well_typed_ctxts in *.
+    destruct H as [DE H]. split.
+    - unfold dom_eq in *. split; intros;
+        destruct (LocDec.eq_dec l l0); subst;
+        try (apply LF.add_in_iff; left; reflexivity);
+        try (eapply LF.add_neq_in_iff in n as NINS; apply NINS;
+            eapply LF.add_neq_in_iff in n as NINM;
+            apply -> NINM in H2; apply DE; assumption).
+    - intros. unfold fdm in *. unfold fds in *. 
+        unfold find_default in *.
+        destruct (LocDec.eq_dec l l0); subst.
+        + specialize H with (l := l0).
+            assert (LL: l0 = l0); try reflexivity.
+            rewrite (LF.add_eq_o s t LL).
+            rewrite (LF.add_eq_o m e LL).
+            eapply sigma_monotonic.
+            * apply H0.
+            * apply subset_add. intros NIn. apply H1.
+                eapply DE. assumption.
+        + pose proof (LF.add_neq_o s t n) as SANE. rewrite SANE. 
+            pose proof (LF.add_neq_o m e n) as MANE.
+            rewrite MANE.
+            eapply sigma_monotonic.
+            * apply H.
+            * apply subset_add. intros NIn.
+                apply H1. eapply DE. assumption.
+Qed.
+
 Theorem preservation_thm :
     forall (e e' : expr) (m m' : mu),
     preservation e e' m m'.
@@ -368,17 +415,43 @@ Proof.
         apply IH in SS as IH'. destruct IH' as [WT CHK]. 
         split; try assumption. eapply check_app.
         + apply CHK.
-        + eapply mu_monotonic.
+        + eapply sigma_monotonic.
             * apply H6.
             * assumption.
     - inversion H1; subst. exists (LM.add l t0 s). intros SS; split.
-        + admit. (* need helper lemma for new location *)
-        + constructor. apply LM.find_1.
-            apply LM.add_1. reflexivity.
+        + apply sigma_add; try assumption.
+        + constructor. apply LM.add_1. reflexivity.
     - inversion H1; subst. exists s. intros SS; 
         split; try assumption.
         inversion H3; subst. unfold well_typed_ctxts in H0.
-Admitted.
+        destruct H0 as [DE CHK]. specialize CHK with l.
+        unfold fdm in CHK. unfold fds in CHK.
+        unfold find_default in CHK.
+        apply LM.find_1 in H5. rewrite H5 in CHK.
+        apply LM.find_1 in H. rewrite H in CHK.
+        assumption.
+    - inversion H1; subst. 
+        specialize IHstep with (g := g) (s := s) (t := TRef t).
+        pose proof (IHstep H0 H3) as [s' IH].
+        exists s'. intros SS. apply IH in SS as IH'.
+        destruct IH' as [WTC CHK]. split;
+        try assumption. constructor. assumption.
+    - inversion H0; subst. exists s. 
+        intros SS. split.
+        + eapply mu_update; try assumption.
+            * apply H5.
+            * inversion H3; subst. assumption.
+        + constructor.
+    - inversion H1; subst.
+        specialize IHstep with (g := g) (s := s) (t := TRef t0).
+        pose proof (IHstep H0 H4) as [s' IH]. exists s'.
+        intros SS. apply IH in SS as IH'. destruct IH' as [WTC CHK].
+        split; try assumption. eapply check_ass.
+        + apply CHK.
+        + eapply sigma_monotonic.
+            * apply H6.
+            * assumption.
+Qed.
 
 
 
