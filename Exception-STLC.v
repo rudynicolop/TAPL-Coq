@@ -199,7 +199,10 @@ Inductive step : expr -> expr -> Prop :=
         step (ETryWith v catch) v
     | step_try_catch : forall (v catch : expr),
         value v ->
-        step (ETryWith (EThrow v) catch) (EApp catch v).
+        step (ETryWith (EThrow v) catch) (EApp catch v)
+    | step_try_step : forall (e e' catch : expr),
+        step e e' ->
+        step (ETryWith e catch) (ETryWith e' catch).
 
 Lemma bind_unfree_var :
     forall (e : expr) (x : id) (t' t : type) (g : gamma),
@@ -378,6 +381,7 @@ Proof.
     - inv H0. inv H3. econstructor.
         + apply H5.
         + assumption.
+    - inv H0. constructor; auto.
 Qed.
 
 Definition canonical_forms_fun (v : expr) : Prop :=
@@ -432,8 +436,6 @@ Definition progress_thm (e : expr) (t : type) : Prop :=
     (exists (v : expr), e = EThrow v /\ value v) \/
     exists (e' : expr), step e e'.
 
-(* Maybe should have decidable for values... *)
-
 Theorem Progress : 
     forall (e : expr) (t : type), progress_thm e t.
 Proof.
@@ -441,5 +443,31 @@ Proof.
     - left. constructor.
     - inv H. inversion H1.
     - left. constructor.
-    - right.
-Admitted.
+    - right. inv H. apply IHe1 in H2 as H1'.
+        apply IHe2 in H4 as H2'.
+        destruct H1' as [V1 | [[e1t [T1 V1]] | [e1' IH1]]];
+        destruct H2' as [V2 | [[e2t [T2 V2]] | [e2' IH2]]]; 
+        subst; right;
+        try (exists (EThrow e1t); constructor; assumption);
+        try (exists (EThrow e2t); constructor; assumption).
+        + pose proof (canonical_forms_fun_holds e1 t0 t V1 H2) as [x [e HFun]].
+            subst. pose proof (sub_exists x e2 e) as [e' HSub].
+            exists e'. apply step_redux; assumption.
+        + exists (EApp e1 e2'). constructor; assumption.
+        + exists (EApp e1' e2). constructor; assumption.
+        + exists (EApp e1' (EThrow e2t)). constructor; assumption.
+        + exists (EApp e1' e2). constructor; assumption.
+    - left. constructor.
+    - right. inv H. apply IHe in H1 as H'.
+        destruct H' as [V |[[v [T V]] | [e' HS]]]; subst.
+        + left. exists e; split; auto.
+        + right. exists (EThrow v).
+            apply step_throw_throw; assumption.
+        + right. exists (EThrow e'). constructor; assumption.
+    - right. right. inv H. apply IHe1 in H2 as H1'.
+        apply IHe2 in H4 as H2'.
+        destruct H1' as [V1 | [[v1 [T1 V1]] | [e1' HS1']]]; subst.
+        + exists e1; constructor; assumption.
+        + exists (EApp e2 v1). constructor; assumption.
+        + exists (ETryWith e1' e2). constructor. assumption.
+Qed. 
