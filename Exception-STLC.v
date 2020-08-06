@@ -279,3 +279,71 @@ Proof.
                 apply ISF.union_3. apply H1.
             * apply H5.
 Qed.
+
+Axiom sub_exists : forall (x : id) (es e : expr), exists e', sub x es e e'.
+
+Definition substitution_lemma 
+    (x : id) (es e e' : expr) :=
+    sub x es e e' ->
+    forall (t ts : type) (g : gamma),
+    check (bind x ts g) e t -> 
+    check g es ts -> 
+    check g e' t.
+
+Lemma substitution_lemma_holds :
+    forall (x : id) (es e e' : expr),
+    substitution_lemma x es e e'.
+Proof.
+    unfold substitution_lemma.
+    intros x es e e' HS.
+    induction HS; intros.
+    - inversion H; subst; constructor.
+    - inversion H; subst. rewrite bind_correct in H2.
+        injection H2 as h2; subst. assumption.
+    - inversion H0; subst. apply bind_complete in H3.
+        + constructor; assumption.
+        + auto.
+    - inversion H; subst. constructor.
+        erewrite rebind_correct. apply H5.
+    - inversion H1; subst. constructor. eapply IHHS.
+        + pose proof bind_diff_comm.
+            eapply H3 in H as h.
+            rewrite h. apply H7.
+        + pose proof bind_unfree_var.
+            eapply (H3 es y t ts g); assumption.
+    - inversion H5; subst. constructor. eapply IHHS2.
+        + pose proof bind_diff_comm.
+            eapply H7 in H0 as h0. rewrite h0.
+            eapply (IHHS1 t' t).
+            * pose proof rebind_correct.
+                eapply H7 in H1 as h1. rewrite h1.
+                pose proof bind_unfree_var.
+                eapply (H9 e z t t' (bind y t (bind x ts g))).
+                assumption. assumption.
+            * constructor. unfold bind.
+                destruct ((z =? z)%string) eqn:eq.
+                reflexivity. simpl in eq.
+                apply eqb_neq in eq. contradiction.
+        + pose proof bind_unfree_var.
+            eapply (H7 es z t ts g) in H3.
+            apply H3. assumption.
+    - inversion H; subst; econstructor.
+        + eapply IHHS1.
+            * apply H3.
+            * assumption.
+        + eapply IHHS2.
+            * apply H5.
+            * assumption.
+    - inversion H; subst. constructor.
+    - inversion H; subst. constructor.
+        eapply IHHS.
+        + apply H2.
+        + apply H0.
+    - inversion H; subst. constructor.
+        + eapply IHHS1.
+            * apply H3.
+            * assumption.
+        + eapply IHHS2.
+            * apply H5.
+            * assumption.
+Qed.
