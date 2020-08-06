@@ -1,3 +1,5 @@
+(* STLC with references *)
+
 Require Import String.
 Require Import Coq.Init.Nat.
 Require Import Coq.Bool.Bool.
