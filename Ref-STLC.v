@@ -245,8 +245,6 @@ Qed.
 Definition dom_eq {A B : Type} (fa : LM.t A) (fb : LM.t B) : Prop :=
     forall (l : loc), LM.In l fa <-> LM.In l fb.
 
-Compute LF.elements_in_iff.
-
 Definition find_default {A : Type} (default : A) (l : loc) (map : LM.t A) : A :=
     match LM.find l map with
     | None => default
@@ -260,7 +258,7 @@ Definition fds : loc -> sigma -> type := find_default TUnit.
 Definition well_typed_ctxts (m : mu) (s : sigma) (g : gamma) : Prop :=
     dom_eq m s /\ forall (l : loc), check g s (fdm l m) (fds l s).
 
-Definition preservation 
+Definition Preservation 
     (e e' : expr) (m m' : mu) : Prop := 
     step m e e' m' ->
     forall (g : gamma) (s : sigma) (t : type),
@@ -521,9 +519,9 @@ Qed.
 
 Theorem preservation_thm :
     forall (e e' : expr) (m m' : mu),
-    preservation e e' m m'.
+    Preservation e e' m m'.
 Proof.
-    unfold preservation. intros e e' m m' H.
+    unfold Preservation. intros e e' m m' H.
     induction H; intros.
     - exists s. intros; split;
         try assumption.
@@ -615,4 +613,75 @@ Proof.
     unfold canonical_forms_fun. intros v HV s t t' HCHK.
     inversion HCHK; subst; inversion HV; subst.
     exists x. exists e. reflexivity.
+Qed.
+
+Lemma canonical_forms : forall (v : expr),
+    canonical_forms_unit v /\
+    canonical_forms_loc v /\
+    canonical_forms_fun v.
+Proof.
+    intros v. split.
+    - apply canonical_forms_unit_lemma.
+    - split.
+        + apply canonical_forms_loc_lemma.
+        + apply canonical_forms_fun_lemma.
+Qed.
+
+Definition Progress (e : expr) (t : type) (s : sigma) :=
+    check gempty s e t ->
+    value e \/ forall (m : mu),
+    well_typed_ctxts m s gempty ->
+    exists (e' : expr) (m' : mu), step m e e' m'.
+
+Axiom exists_loc : 
+    forall {A : Type} (map : LM.t A), 
+    exists (l : loc), ~ LM.In l map.
+
+Theorem progress_thm :
+    forall (e : expr) (t : type) (s : sigma),
+    Progress e t s.
+Proof.
+    unfold Progress. induction e; intros;
+    try (left; constructor); right; intros m WTC;
+    inversion H; subst.
+    - inversion H1.
+    - apply IHe1 in H2 as IH1. 
+        destruct IH1 as [V1 | IH1].
+        inversion V1; subst; inversion H2; subst.
+        + pose proof (sub_exists x e2 e) as [e' HS].
+            exists e'. exists m. constructor; assumption.
+        + apply IH1 in WTC as [e1' [m' HS]].
+            exists (EApp e1' e2). exists m'. 
+            constructor. assumption.
+    - pose proof (exists_loc m) as [l HL].
+        pose proof (step_ref m l e HL). exists (ELoc l).
+        exists (LM.add l e m). assumption.
+    - apply IHe in H1 as IH. destruct IH as [V | IH].
+        + inversion V; subst; inversion H1; subst.
+            assert (HE : exists (e : expr), LM.MapsTo l e m).
+            * unfold well_typed_ctxts in WTC.
+                destruct WTC as [DE CHK].
+                specialize CHK with l.
+                unfold fdm in CHK. unfold fds in CHK.
+                unfold find_default in CHK.
+                apply LF.find_mapsto_iff in H3.
+                rewrite H3 in CHK.
+                destruct (LM.find (elt:=expr) l m) eqn:eqf.
+                apply LF.find_mapsto_iff in eqf.
+                exists e. assumption.
+                exfalso. apply LF.not_find_in_iff in eqf.
+                apply eqf. apply DE. apply LF.in_find_iff.
+                intros HF. rewrite H3 in HF. discriminate.
+            * destruct HE as [e MT]. exists e. exists m.
+                constructor. assumption.
+        + apply IH in WTC as [e' [m' HS]].
+            exists (EBang e'). exists m'.
+            constructor. assumption.
+    - apply IHe1 in H2 as IH. destruct IH as [V | IH].
+        + inversion V; subst; inversion H2; subst.
+            exists EUnit. exists (LM.add l e2 m).
+            constructor.
+        + apply IH in WTC as [e1' [m' HS]].
+            exists (EAss e1' e2). exists m'.
+            constructor. assumption.
 Qed.

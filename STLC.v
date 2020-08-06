@@ -137,7 +137,6 @@ Lemma bind_unfree_var :
     ~ set_In x (fv e) ->
     checks g e t <-> checks (bind x t' g) e t.
 Proof.
-    
     induction e; split; intros; simpl in H; inversion H0; subst.
     - apply natchecks.
     - apply natchecks. 
@@ -1004,12 +1003,4 @@ Proof.
             * apply H0.
             * assumption.
             * fold R in *. admit.
-Admitted.
-    
-
-
-
-
-
-
-    
+Admitted.  
