@@ -347,3 +347,35 @@ Proof.
             * apply H5.
             * assumption.
 Qed.
+
+Definition preservation (e e' : expr) : Prop :=
+    step e e' -> forall (t : type),
+    check empty e t -> check empty e' t.
+
+Ltac inv H := inversion H; subst.
+
+Theorem Preservation: forall (e e' : expr),
+    preservation e e'.
+Proof.
+    unfold preservation. intros e e' H.
+    induction H; intros.
+    - inv H. constructor. inv H2. assumption.
+    - inv H0. constructor. inv H5. assumption.
+    - inv H1. inv H4.
+        eapply substitution_lemma_holds.
+        + apply H0.
+        + apply H3.
+        + assumption.
+    - inv H0. econstructor.
+        + apply IHstep. apply H3.
+        + assumption.
+    - inv H1. econstructor.
+        + apply H4.
+        + apply IHstep. assumption.
+    - inv H0. constructor. auto.
+    - inv H0. inv H2. constructor. assumption.
+    - inv H0. assumption.
+    - inv H0. inv H3. econstructor.
+        + apply H5.
+        + assumption.
+Qed.
