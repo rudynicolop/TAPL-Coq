@@ -379,3 +379,67 @@ Proof.
         + apply H5.
         + assumption.
 Qed.
+
+Definition canonical_forms_fun (v : expr) : Prop :=
+    forall (t t' : type),
+    value v -> check empty v (TFun t t') -> 
+    exists (x : string) (e : expr), v = EFun x t e.
+
+Lemma canonical_forms_fun_holds :
+    forall (v : expr), canonical_forms_fun v.
+Proof.
+    unfold canonical_forms_fun. intros.
+    inv H0; inv H. exists x. exists e.
+    reflexivity.
+Qed.
+
+Definition canonical_forms_unit (v : expr) : Prop :=
+    value v -> check empty v TUnit -> v = EUnit.
+
+Lemma canonical_forms_unit_holds :
+    forall (v : expr), canonical_forms_unit v.
+Proof.
+    unfold canonical_forms_unit. intros.
+    inv H0; inv H. reflexivity.
+Qed.
+
+Definition canonical_forms_exn (v : expr) : Prop :=
+    value v -> check empty v TExn -> v = EExn.
+
+Lemma canonical_forms_exn_holds :
+    forall (v : expr), canonical_forms_exn v.
+Proof.
+    unfold canonical_forms_exn. intros.
+    inv H0; inv H. reflexivity.
+Qed.
+
+Lemma Canonical_Forms :
+    forall (v : expr),
+    canonical_forms_fun v /\
+    canonical_forms_unit v /\
+    canonical_forms_exn v.
+Proof.
+    intros. split.
+    - apply canonical_forms_fun_holds.
+    - split.
+        + apply canonical_forms_unit_holds.
+        + apply canonical_forms_exn_holds.
+Qed.
+
+Definition progress_thm (e : expr) (t : type) : Prop := 
+    check empty e t -> 
+    value e \/ 
+    (exists (v : expr), e = EThrow v /\ value v) \/
+    exists (e' : expr), step e e'.
+
+(* Maybe should have decidable for values... *)
+
+Theorem Progress : 
+    forall (e : expr) (t : type), progress_thm e t.
+Proof.
+    unfold progress_thm. induction e; intros.
+    - left. constructor.
+    - inv H. inversion H1.
+    - left. constructor.
+    - right.
+Admitted.
