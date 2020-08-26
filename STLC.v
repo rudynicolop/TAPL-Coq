@@ -56,7 +56,7 @@ Proof.
     intros. unfold bind. destruct ((x =? x)%string) eqn:eq.
     - reflexivity.
     - apply eqb_neq in eq. contradiction.
-Qed. 
+Qed.
 
 Lemma bind_complete :
     forall (x x' : string) (t t' : ltype) (g : gamma),
@@ -667,74 +667,74 @@ Qed.
 Definition progress (e : expr) (t : ltype) : Prop := 
     checks empty e t -> value e \/ exists (e' : expr), step e e'.
 
-    Theorem progress_holds : forall (e : expr) (t : ltype), progress e t.
-    Proof.
-        unfold progress. 
-        induction e; intros.
-        - left. apply natvalue.
-        - left. apply boolvalue.
-        - inversion H. inversion H1.
-        - right. inversion H; subst.
-          apply IHe in H1 as h1. destruct h1 as [h | [e' h]].
-          + apply (bool_canonical_forms_holds e h) in H1 as [b cfh]; subst.
-            exists (EBool (negb b)). apply notstep.
-          + exists (ENot e'). apply innerstep. apply h.
-        - right. inversion H; subst; apply IHe1 in H4 as h1; apply IHe2 in H5 as h2; 
-            destruct h1; destruct h2; 
-            try (apply (nat_canonical_forms_holds e1 H0) in H4 as [n1 v1]; subst;
-            apply (nat_canonical_forms_holds e2 H1) in H5 as [n2 v2]; subst);
-            try (apply (nat_canonical_forms_holds e1 H0) in H4 as [n1 v1]; subst;
-                destruct H1 as [e2' h]);
-            try (apply (bool_canonical_forms_holds e1 H0) in H4 as [b1 v1]; subst;
-            apply (bool_canonical_forms_holds e2 H1) in H5 as [b2 v2]; subst);
-            try (apply (bool_canonical_forms_holds e1 H0) in H4 as [b1 v1]; subst;
-                destruct H1 as [e2' h]);
-            try (destruct H0 as [e1' h]).
-              + exists (ENat (n1 + n2)). apply addstep.
-              + exists (EBOp EAdd (ENat n1) e2'). apply right_nat_step. apply h.
-              + exists (EBOp EAdd e1' e2). apply left_bop_step. apply h.
-              + exists (EBOp EAdd e1' e2). apply left_bop_step. apply h.
-              + exists (ENat (n1 * n2)). apply mulstep.
-              + exists (EBOp EMul (ENat n1) e2'). apply right_nat_step. apply h.
-              + exists (EBOp EMul e1' e2). apply left_bop_step. apply h.
-              + exists (EBOp EMul e1' e2). apply left_bop_step. apply h.
-              + exists (ENat (n1 - n2)). apply substep.
-              + exists (EBOp ESub (ENat n1) e2'). apply right_nat_step. apply h.
-              + exists (EBOp ESub e1' e2). apply left_bop_step. apply h.
-              + exists (EBOp ESub e1' e2). apply left_bop_step. apply h.
-              + exists (EBool (n1 =? n2)). apply eqstep.
-              + exists (EBOp EEq (ENat n1) e2'). apply right_nat_step. apply h.
-              + exists (EBOp EEq e1' e2). apply left_bop_step. apply h.
-              + exists (EBOp EEq e1' e2). apply left_bop_step. apply h.
-              + exists (EBool (n1 <? n2)). apply lestep.
-              + exists (EBOp ELe (ENat n1) e2'). apply right_nat_step. apply h.
-              + exists (EBOp ELe e1' e2). apply left_bop_step. apply h.
-              + exists (EBOp ELe e1' e2). apply left_bop_step. apply h.
-              + exists (EBool (andb b1 b2)). apply andstep.
-              + exists (EBOp EAnd (EBool b1) e2'). apply right_bool_step. apply h.
-              + exists (EBOp EAnd e1' e2). apply left_bop_step. apply h.
-              + exists (EBOp EAnd e1' e2). apply left_bop_step. apply h.
-              + exists (EBool (orb b1 b2)). apply orstep.
-              + exists (EBOp EOr (EBool b1) e2'). apply right_bool_step. apply h.
-              + exists (EBOp EOr e1' e2). apply left_bop_step. apply h.
-              + exists (EBOp EOr e1' e2). apply left_bop_step. apply h.
-        - right. inversion H; subst; 
-          apply IHe1 in H3 as h1; apply IHe2 in H5 as h2; apply IHe3 in H6 as h3; subst.
-          destruct h1 as [h1 | [e1' h1]].
-            + apply (bool_canonical_forms_holds e1 h1) in H3 as [b v1].
-                destruct b; subst.
-                * exists e2. apply truestep.
-                * exists e3. apply falsestep.
-            + exists (ECond e1' e2 e3). apply condstep. apply h1.
-        - left. apply lamvalue.
-        - right. inversion H; subst;
-            apply IHe1 in H2 as h1; apply IHe2 in H4 as h2; subst.
-            destruct h1 as [h1 | [e1' h1]].
-            + apply (lam_canonical_forms_holds e1 t0 t h1) in H2 as [x [e v1]]; subst.
-              pose proof (sub_exists x e2 e) as [e'' hsub].
-              exists e''. apply lamstep. apply hsub.
-            + exists (EApp e1' e2). apply appstep. apply h1.
- Qed.
+Theorem progress_holds : forall (e : expr) (t : ltype), progress e t.
+Proof.
+    unfold progress. 
+    induction e; intros.
+    - left. apply natvalue.
+    - left. apply boolvalue.
+    - inversion H. inversion H1.
+    - right. inversion H; subst.
+        apply IHe in H1 as h1. destruct h1 as [h | [e' h]].
+        + apply (bool_canonical_forms_holds e h) in H1 as [b cfh]; subst.
+        exists (EBool (negb b)). apply notstep.
+        + exists (ENot e'). apply innerstep. apply h.
+    - right. inversion H; subst; apply IHe1 in H4 as h1; apply IHe2 in H5 as h2; 
+        destruct h1; destruct h2; 
+        try (apply (nat_canonical_forms_holds e1 H0) in H4 as [n1 v1]; subst;
+        apply (nat_canonical_forms_holds e2 H1) in H5 as [n2 v2]; subst);
+        try (apply (nat_canonical_forms_holds e1 H0) in H4 as [n1 v1]; subst;
+            destruct H1 as [e2' h]);
+        try (apply (bool_canonical_forms_holds e1 H0) in H4 as [b1 v1]; subst;
+        apply (bool_canonical_forms_holds e2 H1) in H5 as [b2 v2]; subst);
+        try (apply (bool_canonical_forms_holds e1 H0) in H4 as [b1 v1]; subst;
+            destruct H1 as [e2' h]);
+        try (destruct H0 as [e1' h]).
+            + exists (ENat (n1 + n2)). apply addstep.
+            + exists (EBOp EAdd (ENat n1) e2'). apply right_nat_step. apply h.
+            + exists (EBOp EAdd e1' e2). apply left_bop_step. apply h.
+            + exists (EBOp EAdd e1' e2). apply left_bop_step. apply h.
+            + exists (ENat (n1 * n2)). apply mulstep.
+            + exists (EBOp EMul (ENat n1) e2'). apply right_nat_step. apply h.
+            + exists (EBOp EMul e1' e2). apply left_bop_step. apply h.
+            + exists (EBOp EMul e1' e2). apply left_bop_step. apply h.
+            + exists (ENat (n1 - n2)). apply substep.
+            + exists (EBOp ESub (ENat n1) e2'). apply right_nat_step. apply h.
+            + exists (EBOp ESub e1' e2). apply left_bop_step. apply h.
+            + exists (EBOp ESub e1' e2). apply left_bop_step. apply h.
+            + exists (EBool (n1 =? n2)). apply eqstep.
+            + exists (EBOp EEq (ENat n1) e2'). apply right_nat_step. apply h.
+            + exists (EBOp EEq e1' e2). apply left_bop_step. apply h.
+            + exists (EBOp EEq e1' e2). apply left_bop_step. apply h.
+            + exists (EBool (n1 <? n2)). apply lestep.
+            + exists (EBOp ELe (ENat n1) e2'). apply right_nat_step. apply h.
+            + exists (EBOp ELe e1' e2). apply left_bop_step. apply h.
+            + exists (EBOp ELe e1' e2). apply left_bop_step. apply h.
+            + exists (EBool (andb b1 b2)). apply andstep.
+            + exists (EBOp EAnd (EBool b1) e2'). apply right_bool_step. apply h.
+            + exists (EBOp EAnd e1' e2). apply left_bop_step. apply h.
+            + exists (EBOp EAnd e1' e2). apply left_bop_step. apply h.
+            + exists (EBool (orb b1 b2)). apply orstep.
+            + exists (EBOp EOr (EBool b1) e2'). apply right_bool_step. apply h.
+            + exists (EBOp EOr e1' e2). apply left_bop_step. apply h.
+            + exists (EBOp EOr e1' e2). apply left_bop_step. apply h.
+    - right. inversion H; subst; 
+        apply IHe1 in H3 as h1; apply IHe2 in H5 as h2; apply IHe3 in H6 as h3; subst.
+        destruct h1 as [h1 | [e1' h1]].
+        + apply (bool_canonical_forms_holds e1 h1) in H3 as [b v1].
+            destruct b; subst.
+            * exists e2. apply truestep.
+            * exists e3. apply falsestep.
+        + exists (ECond e1' e2 e3). apply condstep. apply h1.
+    - left. apply lamvalue.
+    - right. inversion H; subst;
+        apply IHe1 in H2 as h1; apply IHe2 in H4 as h2; subst.
+        destruct h1 as [h1 | [e1' h1]].
+        + apply (lam_canonical_forms_holds e1 t0 t h1) in H2 as [x [e v1]]; subst.
+            pose proof (sub_exists x e2 e) as [e'' hsub].
+            exists e''. apply lamstep. apply hsub.
+        + exists (EApp e1' e2). apply appstep. apply h1.
+Qed.
     
 Definition substitution_lemma 
     (x : string) (s e e' : expr) :=
@@ -749,7 +749,7 @@ Lemma substitution_lemma_holds :
     substitution_lemma x s e e'.
 Proof.
     unfold substitution_lemma.
-    intros x s e e' HS. 
+    intros x s e e' HS.
     dependent induction HS; intros.
     - inversion H; subst. apply natchecks.
     - inversion H; subst. apply boolchecks.

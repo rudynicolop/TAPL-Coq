@@ -1705,111 +1705,111 @@ Fixpoint D {n : nat} {th : type} {t : tvec n}
         (D_row (proj1_sig r) row ++ D p')%list
     end.
 
-    Inductive URec : forall {n : nat} {t : tvec n}, pmt t -> pvt t -> Prop :=
-        (* Base Case, n = 0 *)
-        | urec_empty : URec nil empty_pvt
-        (* q0 = unit *)
-        | urec_q0_unit : forall {n : nat} {t : tvec n} 
-            (p : pmt (TUnit::t)) (q : pvt (TUnit::t)) (qt : pvt t),
-            (exist _ PUnit pt_unit,qt) = hd_tl_pvt q ->
-            URec (SUnit (first_column p)) qt ->
-            URec p q
-        (* q0 = (r1,r2) *)
-        | urec_q0_pair : forall {n : nat} {a b : type} {t : tvec n} 
-            (p : pmt ((TPair a b)::t)) (q : pvt ((TPair a b)::t)) 
-            (qh : patt (TPair a b)) (qt : pvt t) (r1 : patt a) (r2 : patt b),
-            (qh,qt) = hd_tl_pvt q ->
-            proj1_sig qh = PPair (proj1_sig r1) (proj1_sig r2) ->
-            URec (SPair (first_column p)) (cons_pvt r1 (cons_pvt r2 qt)) ->
-            URec p q
-        (* q0 = Left a b r *)
-        | urec_q0_either_left : forall {n : nat} {a b : type} {t : tvec n} 
-            (p : pmt ((TEither a b)::t)) (q : pvt ((TEither a b)::t)) 
-            (qh : patt (TEither a b)) (qt : pvt t) (r : patt a),
-            (qh,qt) = hd_tl_pvt q ->
-            proj1_sig qh = PLeft a b (proj1_sig r) ->
-            URec (SLeft (first_column p)) (cons_pvt r qt) ->
-            URec p q
-        (* q0 = Right a b r *)
-        | urec_q0_either_right : forall {n : nat} {a b : type} {t : tvec n} 
-            (p : pmt ((TEither a b)::t)) (q : pvt ((TEither a b)::t)) 
-            (qh : patt (TEither a b)) (qt : pvt t) (r : patt b),
-            (qh,qt) = hd_tl_pvt q ->
-            proj1_sig qh = PRight a b (proj1_sig r) ->
-            URec (SRight (first_column p)) (cons_pvt r qt) ->
-            URec p q
-        (* q0 = _ : unit, p's first column's signature is complete *)
-        | urec_wild_complete_unit : forall {n : nat} {t : tvec n}
-            (p : pmt (TUnit::t)) (q : pvt (TUnit::t)) (qt : pvt t),
-            (exist _ PWild (pt_wild TUnit), qt) = hd_tl_pvt q ->
-            sigma (PWS_first_column p) TUnit ->
-            URec (SUnit (first_column p)) qt ->
-            URec p q
-        (* q0 = _ : a * b, p's first column's signature is complete *)
-        | urec_wild_complete_pair : forall {n : nat} {t : tvec n} {a b : type}
-            (p : pmt (TPair a b :: t)) (q : pvt (TPair a b :: t)) (qt : pvt t),
-            (exist _ PWild (pt_wild (TPair a b)), qt) = hd_tl_pvt q ->
-            sigma (PWS_first_column p) (TPair a b) ->
-            URec (SPair (first_column p)) 
-                (cons_pvt (exist _ PWild (pt_wild a)) (cons_pvt (exist _ PWild (pt_wild b)) qt)) ->
-            URec p q
-        (* q0 = _ : a + b, p's first column's signature is complete *)
-        | urec_wild_complete_either : forall {n : nat} {t : tvec n} {a b : type}
-            (p : pmt (TEither a b :: t)) (q : pvt (TEither a b :: t)) (qt : pvt t),
-            (exist _ PWild (pt_wild (TEither a b)), qt) = hd_tl_pvt q ->
-            sigma (PWS_first_column p) (TEither a b) ->
-            URec (SLeft (first_column p))
-                (cons_pvt (exist _ PWild (pt_wild a)) qt) \/
-            URec (SRight (first_column p))
-                (cons_pvt (exist _ PWild (pt_wild b)) qt) ->
-            URec p q
-        (* q0 = _, p's first column's signature is incomplete *)
-        | urec_wild_incomplete : forall {n : nat} {a : type} {t : tvec n} 
-            (p : pmt (a::t)) (q : pvt (a::t)) (qt : pvt t),
-            (exist _ PWild (pt_wild a), qt) = hd_tl_pvt q ->
-            ~ sigma (PWS_first_column p) a ->
-            URec (D (first_column p)) qt ->
-            URec p q
-        (* q0 = x : unit, p's first column's signature is complete *)
-        | urec_var_complete_unit : forall {n : nat} {t : tvec n} (x : id)
-            (p : pmt (TUnit::t)) (q : pvt (TUnit::t)) (qt : pvt t),
-            (exist _ (PVar x) (pt_name x TUnit), qt) = hd_tl_pvt q ->
-            sigma (PWS_first_column p) TUnit ->
-            URec (SUnit (first_column p)) qt ->
-            URec p q
-        (* q0 = x : a * b, p's first column's signature is complete *)
-        | urec_var_complete_pair : forall {n : nat} {t : tvec n} {a b : type} (x : id)
-            (p : pmt (TPair a b :: t)) (q : pvt (TPair a b :: t)) (qt : pvt t),
-            (exist _ (PVar x) (pt_name x (TPair a b)), qt) = hd_tl_pvt q ->
-            sigma (PWS_first_column p) (TPair a b) ->
-            URec (SPair (first_column p)) 
-                (cons_pvt (exist _ PWild (pt_wild a)) (cons_pvt (exist _ PWild (pt_wild b)) qt)) ->
-            URec p q
-        (* q0 = x : a + b, p's first column's signature is complete *)
-        | urec_var_complete_either : forall {n : nat} {t : tvec n} {a b : type} (x : id)
-            (p : pmt (TEither a b :: t)) (q : pvt (TEither a b :: t)) (qt : pvt t),
-            (exist _ (PVar x) (pt_name x (TEither a b)), qt) = hd_tl_pvt q ->
-            sigma (PWS_first_column p) (TEither a b) ->
-            URec (SLeft (first_column p))
-                (cons_pvt (exist _ PWild (pt_wild a)) qt) \/
-            URec (SRight (first_column p))
-                (cons_pvt (exist _ PWild (pt_wild b)) qt) ->
-            URec p q
-        (* q0 = x, p's first column's signature is incomplete *)
-        | urec_var_incomplete : forall {n : nat} {a : type} {t : tvec n} (x : id)
-            (p : pmt (a::t)) (q : pvt (a::t)) (qt : pvt t),
-            (exist _ (PVar x) (pt_name x a), qt) = hd_tl_pvt q ->
-            ~ sigma (PWS_first_column p) a ->
-            URec (D (first_column p)) qt ->
-            URec p q
-        (* q0 is an or-pattern *)
-        | urec_or_pat : forall {n : nat} {a : type} {t : tvec n} 
-            (p : pmt (a::t)) (q : pvt (a::t)) (qh : patt a) (qt : pvt t) 
-            (r1 r2 : patt a),
-            (qh,qt) = hd_tl_pvt q ->
-            proj1_sig qh = POr (proj1_sig r1) (proj1_sig r2) ->
-            URec p (cons_pvt r1 qt) \/ URec p (cons_pvt r2 qt) ->
-            URec p q.
+Inductive URec : forall {n : nat} {t : tvec n}, pmt t -> pvt t -> Prop :=
+    (* Base Case, n = 0 *)
+    | urec_empty : URec nil empty_pvt
+    (* q0 = unit *)
+    | urec_q0_unit : forall {n : nat} {t : tvec n} 
+        (p : pmt (TUnit::t)) (q : pvt (TUnit::t)) (qt : pvt t),
+        (exist _ PUnit pt_unit,qt) = hd_tl_pvt q ->
+        URec (SUnit (first_column p)) qt ->
+        URec p q
+    (* q0 = (r1,r2) *)
+    | urec_q0_pair : forall {n : nat} {a b : type} {t : tvec n} 
+        (p : pmt ((TPair a b)::t)) (q : pvt ((TPair a b)::t)) 
+        (qh : patt (TPair a b)) (qt : pvt t) (r1 : patt a) (r2 : patt b),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = PPair (proj1_sig r1) (proj1_sig r2) ->
+        URec (SPair (first_column p)) (cons_pvt r1 (cons_pvt r2 qt)) ->
+        URec p q
+    (* q0 = Left a b r *)
+    | urec_q0_either_left : forall {n : nat} {a b : type} {t : tvec n} 
+        (p : pmt ((TEither a b)::t)) (q : pvt ((TEither a b)::t)) 
+        (qh : patt (TEither a b)) (qt : pvt t) (r : patt a),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = PLeft a b (proj1_sig r) ->
+        URec (SLeft (first_column p)) (cons_pvt r qt) ->
+        URec p q
+    (* q0 = Right a b r *)
+    | urec_q0_either_right : forall {n : nat} {a b : type} {t : tvec n} 
+        (p : pmt ((TEither a b)::t)) (q : pvt ((TEither a b)::t)) 
+        (qh : patt (TEither a b)) (qt : pvt t) (r : patt b),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = PRight a b (proj1_sig r) ->
+        URec (SRight (first_column p)) (cons_pvt r qt) ->
+        URec p q
+    (* q0 = _ : unit, p's first column's signature is complete *)
+    | urec_wild_complete_unit : forall {n : nat} {t : tvec n}
+        (p : pmt (TUnit::t)) (q : pvt (TUnit::t)) (qt : pvt t),
+        (exist _ PWild (pt_wild TUnit), qt) = hd_tl_pvt q ->
+        sigma (PWS_first_column p) TUnit ->
+        URec (SUnit (first_column p)) qt ->
+        URec p q
+    (* q0 = _ : a * b, p's first column's signature is complete *)
+    | urec_wild_complete_pair : forall {n : nat} {t : tvec n} {a b : type}
+        (p : pmt (TPair a b :: t)) (q : pvt (TPair a b :: t)) (qt : pvt t),
+        (exist _ PWild (pt_wild (TPair a b)), qt) = hd_tl_pvt q ->
+        sigma (PWS_first_column p) (TPair a b) ->
+        URec (SPair (first_column p)) 
+            (cons_pvt (exist _ PWild (pt_wild a)) (cons_pvt (exist _ PWild (pt_wild b)) qt)) ->
+        URec p q
+    (* q0 = _ : a + b, p's first column's signature is complete *)
+    | urec_wild_complete_either : forall {n : nat} {t : tvec n} {a b : type}
+        (p : pmt (TEither a b :: t)) (q : pvt (TEither a b :: t)) (qt : pvt t),
+        (exist _ PWild (pt_wild (TEither a b)), qt) = hd_tl_pvt q ->
+        sigma (PWS_first_column p) (TEither a b) ->
+        URec (SLeft (first_column p))
+            (cons_pvt (exist _ PWild (pt_wild a)) qt) \/
+        URec (SRight (first_column p))
+            (cons_pvt (exist _ PWild (pt_wild b)) qt) ->
+        URec p q
+    (* q0 = _, p's first column's signature is incomplete *)
+    | urec_wild_incomplete : forall {n : nat} {a : type} {t : tvec n} 
+        (p : pmt (a::t)) (q : pvt (a::t)) (qt : pvt t),
+        (exist _ PWild (pt_wild a), qt) = hd_tl_pvt q ->
+        ~ sigma (PWS_first_column p) a ->
+        URec (D (first_column p)) qt ->
+        URec p q
+    (* q0 = x : unit, p's first column's signature is complete *)
+    | urec_var_complete_unit : forall {n : nat} {t : tvec n} (x : id)
+        (p : pmt (TUnit::t)) (q : pvt (TUnit::t)) (qt : pvt t),
+        (exist _ (PVar x) (pt_name x TUnit), qt) = hd_tl_pvt q ->
+        sigma (PWS_first_column p) TUnit ->
+        URec (SUnit (first_column p)) qt ->
+        URec p q
+    (* q0 = x : a * b, p's first column's signature is complete *)
+    | urec_var_complete_pair : forall {n : nat} {t : tvec n} {a b : type} (x : id)
+        (p : pmt (TPair a b :: t)) (q : pvt (TPair a b :: t)) (qt : pvt t),
+        (exist _ (PVar x) (pt_name x (TPair a b)), qt) = hd_tl_pvt q ->
+        sigma (PWS_first_column p) (TPair a b) ->
+        URec (SPair (first_column p)) 
+            (cons_pvt (exist _ PWild (pt_wild a)) (cons_pvt (exist _ PWild (pt_wild b)) qt)) ->
+        URec p q
+    (* q0 = x : a + b, p's first column's signature is complete *)
+    | urec_var_complete_either : forall {n : nat} {t : tvec n} {a b : type} (x : id)
+        (p : pmt (TEither a b :: t)) (q : pvt (TEither a b :: t)) (qt : pvt t),
+        (exist _ (PVar x) (pt_name x (TEither a b)), qt) = hd_tl_pvt q ->
+        sigma (PWS_first_column p) (TEither a b) ->
+        URec (SLeft (first_column p))
+            (cons_pvt (exist _ PWild (pt_wild a)) qt) \/
+        URec (SRight (first_column p))
+            (cons_pvt (exist _ PWild (pt_wild b)) qt) ->
+        URec p q
+    (* q0 = x, p's first column's signature is incomplete *)
+    | urec_var_incomplete : forall {n : nat} {a : type} {t : tvec n} (x : id)
+        (p : pmt (a::t)) (q : pvt (a::t)) (qt : pvt t),
+        (exist _ (PVar x) (pt_name x a), qt) = hd_tl_pvt q ->
+        ~ sigma (PWS_first_column p) a ->
+        URec (D (first_column p)) qt ->
+        URec p q
+    (* q0 is an or-pattern *)
+    | urec_or_pat : forall {n : nat} {a : type} {t : tvec n} 
+        (p : pmt (a::t)) (q : pvt (a::t)) (qh : patt a) (qt : pvt t) 
+        (r1 r2 : patt a),
+        (qh,qt) = hd_tl_pvt q ->
+        proj1_sig qh = POr (proj1_sig r1) (proj1_sig r2) ->
+        URec p (cons_pvt r1 qt) \/ URec p (cons_pvt r2 qt) ->
+        URec p q.
 
 Lemma first_column_pws_judge :
     forall {n : nat} {a : type} {t : tvec n} (p : pmt (a::t)),
