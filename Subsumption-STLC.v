@@ -236,6 +236,8 @@ Inductive check (g : gamma) : expr -> type -> Prop :=
         check g e (TRec ts) ->
         check g (EPrj e x) t.
 
+Check check_ind.
+
 Definition checks : expr -> type -> Prop := check empty.
 
 Example benjy : 
@@ -607,30 +609,27 @@ Section Progress.
         forall (e : expr) (t : type), progress_thm e t.
     Proof.
         unfold progress_thm. intros e t HC.
-        dependent induction e.
+        unfold checks in *. remember empty as o in HC.
+        dependent induction HC; subst;
+        assert (HE : empty = empty);
+        try reflexivity.
+        - destruct IHHC as [V | [e' HS]].
+            + reflexivity.
+            + left. assumption.
+            + right. exists e'. assumption.
         - left. constructor.
-        - apply var_empty_checks in HC. 
-            contradiction.
+        - discriminate.
         - left. constructor.
-        - right. inv HC.
-            + admit.
-            + apply IHe1 in H1 as IH1.
-                apply IHe2 in H3 as IH2.
-                destruct IH1 as [V1 | [e1' HS1]].
-                * pose proof canonical_forms_fun e1 u t V1 H1 
-                    as [x [t' [e [HSe HF]]]]; subst.
-                    pose proof sub_exists x e2 e as [e' HSub].
-                    exists e'. constructor. assumption.
-                * exists (EApp e1' e2). constructor. assumption.
-        - admit.
-        - right. inv HC.
-            + admit.
-            + apply IHe in H3 as IH. 
-                destruct IH as [V | [e' HS]].
-                * pose proof canonical_forms_rec e ts V H3
-                    as [es [us [HR HS]]].
-                    assert (HE : exists (e' : expr), In (x,e') es).
-                    admit. admit.
-                * exists (EPrj e' x). constructor. assumption.
+        - right. pose proof IHHC1 HE as [V | [e1' HS]].
+            + pose proof canonical_forms_fun e1 u v V HC1
+                as [x [t [e [HS HF]]]].
+                pose proof sub_exists x e2 e as [e' HSub].
+                exists e'. subst. constructor. assumption.
+            + exists (EApp e1' e2). constructor. assumption.
+        - destruct (value_dec (ERec es)) as [V | V].
+            + left. assumption.
+            + right.
+            (* Need to define an induction principle 
+                for inductive proposition check! *)
     Admitted.
 End Progress.
