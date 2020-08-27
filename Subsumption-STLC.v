@@ -407,9 +407,10 @@ Section CanonicalForms.
         value v -> checks v TUnit -> v = EUnit.
 
     Definition canon_fun (v : expr) : Prop :=
-        forall (t t' : type),
-        value v -> checks v (TFun t t') -> 
-        exists (x : string) (e : expr), v = EFun x t e.
+        forall (a b : type),
+        value v -> checks v (TFun a b) -> 
+        exists (x : id) (t : type) (e : expr), 
+        subtype a t /\ v = EFun x t e.
 
     Definition canon_rec (v : expr) := 
         forall (ts : fields type),
@@ -417,14 +418,38 @@ Section CanonicalForms.
         exists (es : fields expr), 
         Forall2 (fun e t => fst e = fst t) es ts /\ v = ERec es.
 
-    Lemma canonical_forms_unit : forall (v : expr), canon_unit v.
+    Lemma canonical_forms_unit : 
+        forall (v : expr), canon_unit v.
     Proof.
-        unfold canon_unit. intros v HV HChk.
-        inversion HV; subst;
-        inversion HChk; subst;
-        try reflexivity.
-        - inversion H0; subst.
-            + inversion H; subst.
-                * inversion H1; subst.
-    Admitted.
+        unfold canon_unit. intros v HV HChk;
+        dependent induction HChk.
+        - apply inv_unit in H as HU. auto.
+        - reflexivity.
+        - inversion HV.
+        - inversion HV.
+        - inversion HV.
+    Qed.
+
+    Lemma canonical_forms_fun :
+        forall (v : expr), canon_fun v.
+    Proof.
+        unfold canon_fun. intros v t t' HV HChk.
+        dependent induction HChk.
+        - apply inv_fun in H as HU.
+            destruct HU as [a' [b' [HF [HSA HSB]]]].
+            specialize IHHChk with
+                (t := a') (t' := b').
+            pose proof (IHHChk HV HF) as IH.
+            destruct IH as [x [w [e' [HSW HFW]]]].
+            exists x. exists w. exists e'. split.
+            + apply st_trans with
+                (t := t) (u := a') (v := w);
+                assumption.
+            + assumption.
+        - inversion HV.
+        - exists x. exists t. exists e. 
+            split; constructor.
+        - inversion HV.
+        - inversion HV.
+    Qed.
 End CanonicalForms.
