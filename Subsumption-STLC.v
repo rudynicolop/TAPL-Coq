@@ -12,7 +12,7 @@ Module MSF := Coq.MSets.MSetFacts.
 Require Coq.Structures.Equalities.
 Module SE := Coq.Structures.Equalities.
 Require Import Coq.Logic.FunctionalExtensionality.
-Require Import Coq.Lists.SetoidPermutation.
+Require Import Coq.Sorting.Permutation.
 Require Import Coq.Program.Equality.
     
 Definition id := string.
@@ -21,9 +21,20 @@ Definition field (t : Type) : Type := id * t.
 
 Definition fields (t : Type) : Type := list (field t).
 
-Definition predf {U : Type} (P : U -> Prop) : field U -> Prop := fun f => P (snd f).
+Definition predf {U : Type} (P : U -> Prop) (f : field U) : Prop := 
+    P (snd f).
 
-Definition predfs {U : Type} (P : U -> Prop) (fs : fields U) : Prop := Forall (predf P) fs.
+Definition predfs {U : Type} (P : U -> Prop) : fields U -> Prop := 
+    Forall (predf P).
+
+Definition perm {U : Type} (u1 : fields U) (u2 : fields U) : Prop :=
+    Permutation u1 u2.
+
+Definition relf {U V : Type} (R : U -> V -> Prop) (u : field U) (v : field V) : Prop :=
+    (fst u) = (fst v) /\ R (snd u) (snd v).
+
+Definition relfs {U V : Type} (R : U -> V -> Prop) : fields U -> fields V -> Prop :=
+    Forall2 (relf R).
 
 Inductive type : Type :=
     | TTop
@@ -81,15 +92,25 @@ Inductive subtype : type -> type -> Prop :=
     | st_rec_width : forall (us vs : fields type),
         subtype (TRec (us ++ vs)) (TRec us)
     | st_rec_depth : forall (us vs : fields type),
-        Forall2 
-            (fun u v => 
-                (fst u) = (fst v) /\ 
-                subtype (snd u) (snd v)) 
-            us vs ->
+        relfs subtype us vs ->
         subtype (TRec us) (TRec vs)
     | st_rec_perm : forall (us vs : fields type),
-        PermutationA (fun u v => u = v) us vs ->
+        perm us vs ->
         subtype (TRec us) (TRec vs).
+
+Lemma st_fields_refl :
+    forall (fs : fields type), relfs subtype fs fs.
+Proof. induction fs; constructor.
+    - split; constructor.
+    - assumption.
+Qed.
+
+Lemma st_fields_rec :
+    forall (us vs : fields type),
+    relfs subtype us vs -> subtype (TRec us) (TRec vs).
+Proof.
+    intros us vs HS. constructor. assumption.
+Qed.
 
 Section Gamma.
     Definition gamma := string -> option type.
@@ -202,11 +223,7 @@ Inductive check (g : gamma) : expr -> type -> Prop :=
         check g e2 u ->
         check g (EApp e1 e2) v
     | check_rec : forall (es : fields expr) (ts : fields type),
-        Forall2 
-            (fun e t => 
-                (fst e) = (fst t) /\
-                check g (snd e) (snd t))
-            es ts ->
+        relfs (check g) es ts ->
         check g (ERec es) (TRec ts)
     | check_prj : forall (e : expr) (x : id) (t : type) (ts : fields type),
         In (x,t) ts ->
@@ -269,7 +286,6 @@ End IdDec.
 
 (* variable sets *)
 Module IS := WS.Make(IdDec).
-
 Module ISF := MSF.WFactsOn(IdDec)(IS).
 
 (* free variables *)
@@ -316,11 +332,7 @@ Inductive sub (x : id) (es : expr) : expr -> expr -> Prop :=
         sub x es e2 e2' -> 
         sub x es (EApp e1 e2) (EApp e1' e2')
     | sub_rec : forall (fs fs' : fields expr),
-        Forall2 
-            (fun f f' => 
-                fst f = fst f' /\
-                sub x es (snd f) (snd f'))
-            fs fs' ->
+        relfs (sub x es) fs fs' ->
         sub x es (ERec fs) (ERec fs')
     | sub_prj : forall (e e' : expr) (y : id),
         sub x es e e' ->
@@ -392,14 +404,32 @@ Section InvSubsumption.
             + split; assumption.
     Qed.
 
-    (* Lemma inv_rec :
+    Lemma inv_rec :
         forall (t : type) (ts : fields type),
         subtype t (TRec ts) ->
-        exists (ks : fields type) *)
-
-    (* Maybe fields should be maps, 
-        not association lists. *)
-
+        exists (us : fields type),
+        t = TRec us /\ subtype (TRec us) (TRec ts).
+    Proof.
+        intros t ts HS. dependent induction HS.
+        - exists ts. split; auto.
+            apply st_refl.
+        - specialize IHHS2 with (ts0 := ts).
+            assert (HRts : TRec ts = TRec ts);
+            try reflexivity.
+            apply IHHS2 in HRts as IH2.
+            destruct IH2 as [us [HU HSusts]].
+            specialize IHHS1 with (ts := us).
+            apply IHHS1 in HU as IH1.
+            destruct IH1 as [vs [HT HSvsus]].
+            exists vs. split; auto.
+            apply st_trans with 
+                (t := (TRec vs)) (u := TRec us) (v := TRec ts);
+            assumption.
+        - exists (ts ++ vs). split; constructor.
+        - exists us. split; constructor. assumption.
+        - exists us. split; auto.
+            apply st_rec_perm. assumption.
+    Qed.
 End InvSubsumption.
 
 Section CanonicalForms.
@@ -415,8 +445,8 @@ Section CanonicalForms.
     Definition canon_rec (v : expr) := 
         forall (ts : fields type),
         value v -> checks v (TRec ts) ->
-        exists (es : fields expr), 
-        Forall2 (fun e t => fst e = fst t) es ts /\ v = ERec es.
+        exists (es : fields expr) (us : fields type), 
+        relfs (fun _ _ => True) es us /\ subtype (TRec us) (TRec ts).
 
     Lemma canonical_forms_unit : 
         forall (v : expr), canon_unit v.
@@ -450,6 +480,31 @@ Section CanonicalForms.
         - exists x. exists t. exists e. 
             split; constructor.
         - inversion HV.
+        - inversion HV.
+    Qed.
+
+    Lemma canonical_forms_rec :
+        forall (v : expr), canon_rec v.
+    Proof.
+        unfold canon_rec. intros v ts HV HChk.
+        dependent induction HChk.
+        - apply inv_rec in H as [us [HU HSusts]].
+            specialize IHHChk with (ts := us).
+            apply IHHChk in HV as IH; auto.
+            destruct IH as [es [vs [HR HSvsus]]].
+            exists es. exists vs. split; auto.
+            apply st_trans with
+                (t := (TRec vs)) (u := (TRec us)) (v := (TRec ts));
+            assumption.
+        - inversion HV.
+        - inversion HV.
+        - exists es. exists ts. split.
+            + induction H; subst; constructor.
+                * destruct H as [Hid _]. split; auto.
+                * apply IHForall2. constructor.
+                    inversion HV; subst.
+                    inversion H2; subst. assumption.
+            + constructor.
         - inversion HV.
     Qed.
 End CanonicalForms.
