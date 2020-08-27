@@ -13,6 +13,7 @@ Require Coq.Structures.Equalities.
 Module SE := Coq.Structures.Equalities.
 Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Lists.SetoidPermutation.
+Require Import Coq.Program.Equality.
     
 Definition id := string.
 
@@ -350,17 +351,15 @@ Section InvSubsumption.
         forall (t : type),
         subtype TTop t -> t = TTop.
     Proof.
-        intros t HS.
-    Admitted.
+        intros t HS. dependent induction HS; auto.
+    Qed.
             
     Lemma inv_unit :
         forall (t : type),
         subtype t TUnit -> t = TUnit.
     Proof.
-        intros t HS. inversion HS; subst.
-        - reflexivity.
-        - admit.
-    Admitted.
+        intros t HS. dependent induction HS; auto.
+    Qed.
 
     Lemma inv_fun :
         forall (t a b : type),
@@ -369,15 +368,29 @@ Section InvSubsumption.
         t = TFun a' b' /\ subtype a a' /\ subtype b' b.
     Proof.
         intros t a b HS.
-        inversion HS; subst.
+        dependent induction HS.
         - exists a. exists b. split.
             + reflexivity.
             + split; constructor.
-        - admit.
+        - specialize IHHS2 with 
+            (a0 := a) (b0 := b).
+            assert (HR : TFun a b = TFun a b);
+            try reflexivity.
+            apply IHHS2 in HR as [a' [b' [HU [HSA HSB]]]].
+            apply IHHS1 in HU as [a'' [b'' [HT [HSA' HSB']]]].
+            exists a''. exists b''. split.
+            + assumption.
+            + split.
+                * apply st_trans with
+                    (t := a) (u := a') (v := a'');
+                    assumption.
+                * apply st_trans with
+                    (t := b'') (u := b') (v := b);
+                assumption.
         - exists u. exists v. split.
             + reflexivity.
             + split; assumption.
-    Admitted.
+    Qed.
 
     (* Lemma inv_rec :
         forall (t : type) (ts : fields type),
