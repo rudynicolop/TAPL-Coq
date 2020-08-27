@@ -11,10 +11,13 @@ Require Coq.MSets.MSetFacts.
 Module MSF := Coq.MSets.MSetFacts.
 Require Coq.Structures.Equalities.
 Module SE := Coq.Structures.Equalities.
+Require Import Coq.Logic.Decidable.
 Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Sorting.Permutation.
 Require Import Coq.Program.Equality.
     
+Ltac inv H := inversion H; subst.
+
 Definition id := string.
 
 Definition field (t : Type) : Type := id * t.
@@ -22,6 +25,9 @@ Definition field (t : Type) : Type := id * t.
 Definition fields (t : Type) : Type := list (field t).
 
 Definition predf {U : Type} (P : U -> Prop) (f : field U) : Prop := 
+    P (snd f).
+
+Definition predf_prop {U : Type} {V : Prop} (P : U -> V) (f : field U) : V :=
     P (snd f).
 
 Definition predfs {U : Type} (P : U -> Prop) : fields U -> Prop := 
@@ -267,6 +273,37 @@ Inductive value : expr -> Prop :=
         predfs value vs ->
         value (ERec vs).
 
+Section ValueDec.
+    Fixpoint value_dec (v : expr) : {value v} + {~ value v}. 
+    Proof.
+        destruct v.
+        - left. constructor.
+        - right. intros HF. inv HF.
+        - left. constructor.
+        - right. intros HF. inv HF.
+        - induction fs.
+            + left. constructor. constructor.
+            + destruct (value_dec (snd a)) as [AV | AV].
+                { destruct IHfs as [V | V].
+                    - pose proof 
+                        (fun x : field expr => value_dec (snd x)) as PFV.
+                        pose proof @Forall_dec
+                            (field expr) (predf value) 
+                            PFV fs as FD.
+                        destruct FD as [FV | FV].
+                        + left. constructor. 
+                            constructor; assumption.
+                        + right. intros HF. apply FV.
+                            inv HF. inv H0. assumption.
+                    - right. intros HF. apply V. 
+                        inv HF. inv H0. constructor.
+                        assumption. }
+                { right. intros HF. apply AV. inv HF.
+                    inv H0. assumption. }
+        - right. intros HF. inv HF.
+    Qed.
+End ValueDec.
+
 Module IdDec <: SE.DecidableType.
     Import SE.
     Require Import RelationClasses.
@@ -337,6 +374,8 @@ Inductive sub (x : id) (es : expr) : expr -> expr -> Prop :=
     | sub_prj : forall (e e' : expr) (y : id),
         sub x es e e' ->
         sub x es (EPrj e y) (EPrj e' y).
+
+Axiom sub_exists : forall (x : id) (s e : expr), exists e', sub x s e e'.
 
 (* Dynamic Semantics *)
 Inductive step : expr -> expr -> Prop :=
@@ -508,3 +547,90 @@ Section CanonicalForms.
         - inversion HV.
     Qed.
 End CanonicalForms.
+
+Section Progress.
+
+    Lemma st_fields_name :
+        forall (us ws : fields type),
+        subtype (TRec us) (TRec ws) ->
+        forall (x : id) (w : type),
+        In (x,w) ws ->
+        exists (u : type),
+        In (x,u) us /\ subtype u w.
+    Proof.
+        (* intros us ws HS x w Hinw.
+        remember (TRec us) as ur in HS.
+        remember (TRec ws) as wr in HS.
+        dependent induction HS; subst.
+        - injection Heqwr; intros; 
+            subst. exists w. split.
+            + assumption.
+            + constructor.
+        - apply inv_rec in HS2 as [us' [HU' HSU']]; subst. 
+            assert (HRus' : TRec us' = TRec us');
+            assert (HRws : TRec ws = TRec ws);
+            assert (HRus : TRec us = TRec us);
+            try reflexivity.
+            inv HS1; inv HSU'.
+            + exists w. split.
+                * assumption.
+                * constructor.
+            + pose proof IHHS2 HRus'  
+                try reflexivity.
+                
+                try reflexivity.
+                pose proof IHHS2 HRus' HRws x w Hinw as IH1.
+                destruct IH1 as [u [Hinu HSU]].
+        - admit.
+        - admit.
+        - admit.
+        - admit.
+        - admit. *)
+    Admitted.
+
+    Definition progress_thm (e : expr) (t : type) : Prop :=
+        checks e t -> value e \/ exists (e' : expr), step e e'.
+
+    Lemma var_empty_checks :
+        forall (x : id) (t : type),
+        ~ checks (EVar x) t.
+    Proof.
+        intros x t H. unfold checks in *.
+        remember empty as o in H. 
+        remember (EVar x) as z in H.
+        dependent induction H; 
+        auto; try inv Heqz.
+        discriminate.
+    Qed.
+
+    Theorem Progress :
+        forall (e : expr) (t : type), progress_thm e t.
+    Proof.
+        unfold progress_thm. intros e t HC.
+        dependent induction e.
+        - left. constructor.
+        - apply var_empty_checks in HC. 
+            contradiction.
+        - left. constructor.
+        - right. inv HC.
+            + admit.
+            + apply IHe1 in H1 as IH1.
+                apply IHe2 in H3 as IH2.
+                destruct IH1 as [V1 | [e1' HS1]].
+                * pose proof canonical_forms_fun e1 u t V1 H1 
+                    as [x [t' [e [HSe HF]]]]; subst.
+                    pose proof sub_exists x e2 e as [e' HSub].
+                    exists e'. constructor. assumption.
+                * exists (EApp e1' e2). constructor. assumption.
+        - admit.
+        - right. inv HC.
+            + admit.
+            + apply IHe in H3 as IH. 
+                destruct IH as [V | [e' HS]].
+                * pose proof canonical_forms_rec e ts V H3
+                    as [es [us [HR HS]]].
+                    assert (HE : exists (e' : expr), In (x,e') es).
+                    admit. admit.
+                * exists (EPrj e' x). constructor. assumption.
+    Admitted.
+End Progress.
