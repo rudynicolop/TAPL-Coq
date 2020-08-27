@@ -343,3 +343,75 @@ Inductive step : expr -> expr -> Prop :=
         predfs value vs ->
         step e e' ->
         step (ERec (vs ++ (x,e) :: es)) (ERec (vs ++ (x,e') :: es)).
+
+(* Inversion on Subsumption. *)
+Section InvSubsumption.
+    Lemma top_top :
+        forall (t : type),
+        subtype TTop t -> t = TTop.
+    Proof.
+        intros t HS.
+    Admitted.
+            
+    Lemma inv_unit :
+        forall (t : type),
+        subtype t TUnit -> t = TUnit.
+    Proof.
+        intros t HS. inversion HS; subst.
+        - reflexivity.
+        - admit.
+    Admitted.
+
+    Lemma inv_fun :
+        forall (t a b : type),
+        subtype t (TFun a b) ->
+        exists (a' b' : type),
+        t = TFun a' b' /\ subtype a a' /\ subtype b' b.
+    Proof.
+        intros t a b HS.
+        inversion HS; subst.
+        - exists a. exists b. split.
+            + reflexivity.
+            + split; constructor.
+        - admit.
+        - exists u. exists v. split.
+            + reflexivity.
+            + split; assumption.
+    Admitted.
+
+    (* Lemma inv_rec :
+        forall (t : type) (ts : fields type),
+        subtype t (TRec ts) ->
+        exists (ks : fields type) *)
+
+    (* Maybe fields should be maps, 
+        not association lists. *)
+
+End InvSubsumption.
+
+Section CanonicalForms.
+    Definition canon_unit (v : expr) : Prop :=
+        value v -> checks v TUnit -> v = EUnit.
+
+    Definition canon_fun (v : expr) : Prop :=
+        forall (t t' : type),
+        value v -> checks v (TFun t t') -> 
+        exists (x : string) (e : expr), v = EFun x t e.
+
+    Definition canon_rec (v : expr) := 
+        forall (ts : fields type),
+        value v -> checks v (TRec ts) ->
+        exists (es : fields expr), 
+        Forall2 (fun e t => fst e = fst t) es ts /\ v = ERec es.
+
+    Lemma canonical_forms_unit : forall (v : expr), canon_unit v.
+    Proof.
+        unfold canon_unit. intros v HV HChk.
+        inversion HV; subst;
+        inversion HChk; subst;
+        try reflexivity.
+        - inversion H0; subst.
+            + inversion H; subst.
+                * inversion H1; subst.
+    Admitted.
+End CanonicalForms.
