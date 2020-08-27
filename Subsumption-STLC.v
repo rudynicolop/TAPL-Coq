@@ -182,7 +182,7 @@ End ExprInduction.
 
 Ltac indexpr e := induction e using IHExpr.
 
-(* Typechecking with the subsumption rule *)
+(* Static Semantics with Subsumption *)
 Inductive check (g : gamma) : expr -> type -> Prop :=
     | check_subsume : forall (e : expr) (u v : type),
         subtype u v ->
@@ -239,3 +239,107 @@ Proof.
                     + constructor.
                 - constructor. }
 Qed. 
+
+(* Values *)
+Inductive value : expr -> Prop :=
+    | value_unit : value EUnit
+    | value_fun : forall (x : id) (t : type) (e : expr),
+        value (EFun x t e)
+    | value_rec : forall (vs : fields expr),
+        predfs value vs ->
+        value (ERec vs).
+
+Module IdDec <: SE.DecidableType.
+    Import SE.
+    Require Import RelationClasses.
+    Definition t := id.
+    Definition eq (x1 x2 : t) := x1 = x2.
+    Declare Instance eq_equiv : Equivalence eq.
+    Theorem eq_dec : forall (x1 x2 : t),
+        {x1 = x2} + {x1 <> x2}.
+    Proof. intros. apply string_dec. Qed.
+    Theorem eq_refl : forall (x : t), x = x.
+    Proof. intros. reflexivity. Qed.
+    Theorem eq_sym : forall (x y : t), x = y -> y = x.
+    Proof. unfold eq. intros; subst; reflexivity. Qed.
+    Theorem eq_trans : forall (x y z : t), x = y -> y = z -> x = z.
+    Proof. intros; subst. reflexivity. Qed.
+End IdDec.
+
+(* variable sets *)
+Module IS := WS.Make(IdDec).
+
+Module ISF := MSF.WFactsOn(IdDec)(IS).
+
+(* free variables *)
+Fixpoint fv (e : expr) : IS.t :=
+    match e with
+    | EUnit => IS.empty
+    | EVar x => IS.singleton x
+    | EFun x _ e => IS.remove x (fv e)
+    | EApp e1 e2 => IS.union (fv e1) (fv e2)
+    | ERec (es) => 
+        fold_right 
+            (fun (e : field expr) acc => 
+                IS.union acc (fv (snd e)))
+            IS.empty es
+    | EPrj e _ => fv e
+    end.
+
+(* Capture-avoiding Substitution *)
+Inductive sub (x : id) (es : expr) : expr -> expr -> Prop :=
+    | sub_unit : sub x es EUnit EUnit
+    | sub_hit : sub x es (EVar x) es
+    | sub_miss : forall (y : id), 
+        x <> y -> 
+        sub x es (EVar y) (EVar y)
+    | sub_fun_bound : forall (t : type) (e : expr),
+        sub x es (EFun x t e) (EFun x t e)
+    | sub_fun_notfree : forall (y : string) (t : type) (e e' : expr),
+        x <> y ->
+        ~ IS.In y (fv es) -> 
+        sub x es e e' -> 
+        sub x es (EFun y t e) (EFun y t e')
+    | sub_fun_free : forall (y z : id) (t : type) (e e' e'' : expr),
+        x <> y -> 
+        x <> z -> 
+        y <> z ->
+        IS.In y (fv es) -> 
+        ~ IS.In z (fv es) ->
+        ~ IS.In z (fv e) ->
+        sub y (EVar z) e e' -> 
+        sub x es e' e'' -> 
+        sub x es (EFun y t e) (EFun z t e'')
+    | sub_app : forall (e1 e1' e2 e2' : expr),
+        sub x es e1 e1' -> 
+        sub x es e2 e2' -> 
+        sub x es (EApp e1 e2) (EApp e1' e2')
+    | sub_rec : forall (fs fs' : fields expr),
+        Forall2 
+            (fun f f' => 
+                fst f = fst f' /\
+                sub x es (snd f) (snd f'))
+            fs fs' ->
+        sub x es (ERec fs) (ERec fs')
+    | sub_prj : forall (e e' : expr) (y : id),
+        sub x es e e' ->
+        sub x es (EPrj e y) (EPrj e' y).
+
+(* Dynamic Semantics *)
+Inductive step : expr -> expr -> Prop :=
+    | step_redux : forall (x : id) (t : type) (e es e' : expr),
+        sub x es e e' ->
+        step (EApp (EFun x t e) es) e'
+    | step_app : forall (e1 e2 e1' : expr),
+        step e1 e1' ->
+        step (EApp e1 e2) (EApp e1' e2)
+    | step_prj_rec : forall (es : fields expr) (x : id) (e : expr),
+        In (x,e) es ->
+        step (EPrj (ERec es) x) e
+    | step_prj : forall (e e' : expr) (x : id),
+        step e e' ->
+        step (EPrj e x) (EPrj e' x)
+    | step_rec : forall (vs es : fields expr) (x : id) (e e' : expr),
+        predfs value vs ->
+        step e e' ->
+        step (ERec (vs ++ (x,e) :: es)) (ERec (vs ++ (x,e') :: es)).
