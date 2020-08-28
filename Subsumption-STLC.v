@@ -852,3 +852,56 @@ Section Progress.
             + exists (EPrj e' x). constructor. assumption.
     Qed.
 End Progress.
+
+(* Inversion on the Typing Relation. *)
+Section InvCheck.
+    Lemma inv_chk_fun :
+        forall (g : gamma) (t u v : type) (x : id) (e : expr),
+        check g (EFun x t e)(TFun u v) ->
+        subtype u t /\ check (bind x t g) e v.
+    Proof.
+        intros g t u v x e HC. 
+        dependent induction HC using IHCheck.
+        - pose proof inv_fun u0 u v H as [a [b [Huab [Hua Hbv]]]].
+            subst. assert (HEFun : EFun x t e = EFun x t e);
+            assert (HTFun : TFun a b = TFun a b); try reflexivity.
+            pose proof IHHC t a b x e HEFun HTFun as IH.
+            destruct IH as [HS HCB]. split.
+            + apply st_trans with (u := a); assumption.
+            + apply check_subsume with (u := b); assumption.
+        - split; try apply st_refl. assumption.
+    Qed.
+
+    Lemma inv_chk_rec :
+        forall (g : gamma) (es : fields expr) (ts : fields type),
+        check g (ERec es) (TRec ts) ->
+        forall (x : id) (t : type),
+        In (x,t) ts ->
+        exists (e : expr), 
+        In (x,e) es /\ check g e t.
+    Proof.
+        intros g es ts HC x t Hints.
+        dependent induction HC using IHCheck.
+        - pose proof inv_rec u ts H as HRu.
+            destruct HRu as [us [Huus HSus]].
+            assert (HERec : ERec es = ERec es);
+            try reflexivity.
+            pose proof st_fields_name us ts HSus x t Hints as HT.
+            destruct HT as [w [Hinus HSut]].
+            pose proof IHHC es us HERec Huus x w Hinus as IH.
+            destruct IH as [e [Hines HCew]]. exists e. split.
+            + assumption.
+            + apply check_subsume with (u := w);
+                assumption.
+        - induction H; inv Hints.
+            + destruct x0 as [x0 e0]. exists e0.
+                destruct H as [Hfst Hck].
+                simpl in *; subst. split.
+                * left. reflexivity.
+                * assumption.
+            + inv H0. destruct IHForall2; try assumption.
+                destruct H3 as [Hinl Hchk].
+                exists x1. split; try assumption.
+                apply in_cons. assumption.
+    Qed.
+End InvCheck.
