@@ -697,6 +697,7 @@ Section Progress.
         ~ value e /\ 
         predfs value qs /\
         es = qs ++ (x,e) :: rs.
+    Proof.
         induction es; intros HV.
         - exfalso. apply HV.
             constructor. constructor.
@@ -718,7 +719,7 @@ Section Progress.
                 - constructor.
                 - rewrite app_nil_l. destruct a as (x,e).
                     reflexivity. }
-        Qed.
+    Qed.
 
     Theorem Progress :
         forall (e : expr) (t : type), progress_thm e t.
@@ -741,45 +742,29 @@ Section Progress.
                 pose proof sub_exists x e2 e as [e' HSub].
                 exists e'. subst. constructor. assumption.
             + exists (EApp e1' e2). constructor. assumption.
-        - destruct (value_dec (ERec es)) as [V | V].
-            + left. assumption.
-            + right. apply val_rec_prefix in V as HEX.
-                destruct HEX as [x [e [qs [rs [HV [HP HEQ]]]]]].
-                unfold relfs in H0.
-                dependent induction H0.
-                * exfalso. apply V.
-                    constructor. constructor.
-                * inv H. pose proof H3 HE as YES.
-                    destruct YES as [VX | HX].
-                    { inv H1. assert (HNV : ~ value (ERec l)).
-                        - intros HNV. inv HNV. apply V.
-                            constructor. constructor; auto.
-                        - pose proof IHForall2 H9 HE HNV as IH.
-                            destruct l as [| z lz] eqn:eqq.
-                            + subst. exfalso. apply HNV.
-                                constructor. constructor.
-                            + destruct qs as [| q' qs'].
-                                * rewrite app_nil_l in HEQ.
-                                    injection HEQ as HEXX0 Hlzrs.
-                                    assert (HVZ : ~ value (snd z)). admit.
-                                    assert (HEZ : z :: lz = [] ++ (fst z, snd z) :: lz). 
-                                    rewrite app_nil_l. destruct z. reflexivity.
-                                    pose proof IH (fst z) (snd z) [] lz
-                                        HVZ HP HEZ as IH'. 
-                                    destruct IH' as [e' HS].
-                                    inv HS. exists (ERec ((x0,e) :: vs ++ (x1,e'0) :: es)).
-                                    rewrite app_comm_cons. rewrite app_comm_cons.
-                                    constructor; auto.
-                                    constructor; auto.
-                                * rewrite <- app_comm_cons in HEQ.
-                                    injection HEQ as HExq' HEss.
-                                    inv HP. pose proof IH x0 e qs' 
-                                        rs HV H8 HEss as IH'.
-                                    destruct IH' as [e' HS].
-                                    inv HS. exists (ERec (q' :: vs ++ (x,e'0) :: es)).
-                                    rewrite app_comm_cons.
-                                    rewrite app_comm_cons.
-                                    constructor; auto.
-                                    constructor; auto. }
+        - induction H0.
+            + left. constructor. constructor.
+            + inv H. pose proof IHForall2 H7 as IH2.
+                * destruct (value_dec (ERec l)) as [V | V].
+                    { unfold relf in H0.
+                        destruct H0 as [HFXY YES].
+                        pose proof YES HE as [HVX | [e' HSX]].
+                        - left. constructor. inv V.
+                            constructor; auto.
+                        - right. destruct x as [x e].
+                            simpl in *.
+                            exists (ERec ((x, e') :: l)).
+                            assert (HPV : predfs value []);
+                            try (constructor; constructor).
+                            pose proof step_rec [] l x e e' HPV HSX as HR.
+                            rewrite app_nil_l in HR. rewrite app_nil_l in HR.
+                            assumption. }
+                    { destruct IH2 as [IH2 | IH2]; try contradiction. 
+                        pose proof val_rec_prefix l V as HEX.
+                        destruct HEX as [z [e [qs [rs [HVE [HPV HL]]]]]].
+                        right. subst. destruct IH2 as [e' HS]. inv HS.
+                        exists (ERec (x :: vs ++ (x0,e'0) :: es)).
+                        rewrite app_comm_cons. rewrite app_comm_cons.
+                        constructor; auto.
+                        constructor; auto. admit. }
     Admitted.
-End Progress.
