@@ -104,6 +104,56 @@ Inductive subtype : type -> type -> Prop :=
         perm us vs ->
         subtype (TRec us) (TRec vs).
 
+Check subtype_ind.
+
+Section SubtypeInduction.
+    Variable P : type -> type -> Prop.
+
+    Hypothesis HRefl : forall (t : type), P t t.
+
+    Hypothesis HTrans : forall (t u v : type),
+        subtype t u -> P t u ->
+        subtype u v -> P u v -> P t v.
+
+    Hypothesis HTop : forall (t : type), P t TTop.
+
+    Hypothesis HFun : forall (u u' v v' : type),
+        subtype u' u -> P u' u ->
+        subtype v v' -> P v v' ->
+        P (TFun u v) (TFun u' v').
+
+    Hypothesis HRecWidth : forall (us vs : fields type),
+        P (TRec (us ++ vs)) (TRec us).
+
+    Hypothesis HRecDepth : forall (us vs : fields type),
+        relfs subtype us vs -> relfs P us vs ->
+        P (TRec us) (TRec vs).
+
+    Hypothesis HRecPerm : forall (us vs : fields type),
+        perm us vs -> P (TRec us) (TRec vs).
+    
+    Fixpoint IHSubtype (t t' : type) {struct t'} : subtype t t' -> P t t'.
+    Proof.
+        intros HC. destruct HC.
+        - apply HRefl.
+        - apply HTrans with (u := u); 
+            try apply IHSubtype; try assumption.
+        - apply HTop.
+        - apply HFun; try apply IHSubtype;
+            try assumption.
+        - apply HRecWidth.
+        - apply HRecDepth; try assumption.
+            induction H; constructor.
+            + destruct H as [HXY ASS]. split.
+                * assumption.
+                * apply IHSubtype. assumption.
+            + assumption.
+        - apply HRecPerm. assumption.
+    (* No more subgoals. *)
+    Admitted.
+End SubtypeInduction.
+
+
 Lemma st_fields_refl :
     forall (fs : fields type), relfs subtype fs fs.
 Proof. induction fs; constructor.
@@ -294,10 +344,10 @@ Section CheckInduction.
             + constructor; auto. 
                 inv H. split; auto.
         - apply HPrj with (ts := ts); auto.
+    (* No more subgoals. *)
     Admitted.
     
 End CheckInduction.
-
 
 Definition checks : expr -> type -> Prop := check empty.
 
@@ -621,7 +671,7 @@ Section Progress.
         In (x,u) us /\ subtype u w.
     Proof.
         intros us ws HS.
-        dependent induction HS; intros x w Hinws.
+        dependent induction HS using IHSubtype; intros x w Hinws.
         - subst. exists w. 
             split; auto. constructor.
         - assert (HSusws : subtype (TRec us) (TRec ws)).
@@ -642,14 +692,21 @@ Section Progress.
             + apply in_or_app.
                 left. auto.
             + constructor.
-        - admit.
-            (* need to define induction principle 
-                for subtyping relation... *)
+        - induction H0; inv Hinws.
+            + inv H. inv H5. destruct x0 as [x0 u0].
+                exists u0. split.
+                * constructor. simpl in H2.
+                    rewrite <- H2. reflexivity.
+                * assumption.
+            + inv H. pose proof IHForall2 H8 H2 as HEX.
+                destruct HEX as [u [Hinl HSuw]].
+                exists u. split; try assumption.
+                apply in_cons. assumption.
         - exists w. apply Permutation_sym in H. split.
             + apply Permutation_in with (l := ws);
                 assumption.
             + constructor.
-    Admitted.
+    Qed.
 
     Lemma rec_fields_name :
         forall (es : fields expr) (ts : fields type),
