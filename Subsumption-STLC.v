@@ -236,7 +236,68 @@ Inductive check (g : gamma) : expr -> type -> Prop :=
         check g e (TRec ts) ->
         check g (EPrj e x) t.
 
+(* Insufficient for records. *)
 Check check_ind.
+
+Section CheckInduction.
+    Variable P : gamma -> expr -> type -> Prop.
+
+    Hypothesis HSubsume : 
+        forall (g : gamma) (e : expr) (u v : type),
+        subtype u v -> check g e u -> P g e u -> P g e v.
+
+    Hypothesis HUnit : 
+        forall (g : gamma), P g EUnit TUnit.
+
+    Hypothesis HVar :
+        forall (g : gamma) (x : id) (t : type),
+        g x = Some t -> 
+        P g (EVar x) t.
+
+    Hypothesis HFun :
+        forall (g : gamma) (x : id) (u v : type) (e : expr),
+        check (bind x u g) e v ->
+        P (bind x u g) e v ->
+        P g (EFun x u e) (TFun u v).
+
+    Hypothesis HApp :
+        forall (g : gamma) (e1 e2 : expr) (u v : type),
+        check g e1 (TFun u v) ->
+        P g e1 (TFun u v) ->
+        check g e2 u ->
+        P g e2 u ->
+        P g (EApp e1 e2) v.
+
+    Hypothesis HRec :
+        forall (g : gamma) (es : fields expr) (ts : fields type),
+        relfs (check g) es ts ->
+        relfs (P g) es ts ->
+        P g (ERec es) (TRec ts).
+
+    Hypothesis HPrj :
+        forall (g : gamma) (e : expr) (x : id) (t : type) (ts : fields type),
+        In (x,t) ts ->
+        check g e (TRec ts) ->
+        P g e (TRec ts) ->
+        P g (EPrj e x) t.
+
+    Fixpoint IHCheck (g : gamma) (e : expr) (t : type) {struct e} : check g e t -> P g e t.
+    Proof.
+        intros HC. destruct HC.
+        - apply HSubsume with (u := u); auto.
+        - apply HUnit.
+        - apply HVar. assumption.
+        - apply HFun; auto.
+        - apply HApp with (u := u); auto.
+        - apply HRec; auto. induction H.
+            + constructor.
+            + constructor; auto. 
+                inv H. split; auto.
+        - apply HPrj with (ts := ts); auto.
+    Admitted.
+    
+End CheckInduction.
+
 
 Definition checks : expr -> type -> Prop := check empty.
 
@@ -610,7 +671,7 @@ Section Progress.
     Proof.
         unfold progress_thm. intros e t HC.
         unfold checks in *. remember empty as o in HC.
-        dependent induction HC; subst;
+        dependent induction HC using IHCheck; subst;
         assert (HE : empty = empty);
         try reflexivity.
         - destruct IHHC as [V | [e' HS]].
@@ -628,8 +689,6 @@ Section Progress.
             + exists (EApp e1' e2). constructor. assumption.
         - destruct (value_dec (ERec es)) as [V | V].
             + left. assumption.
-            + right.
-            (* Need to define an induction principle 
-                for inductive proposition check! *)
+            + right. admit.
     Admitted.
 End Progress.
