@@ -906,33 +906,6 @@ Section InvCheck.
     Qed.
 End InvCheck.
 
-(* Using check to infer type. *)
-Section InjCheck.
-    Lemma inj_chk_unit :
-        forall (g : gamma) (u : type),
-        check g EUnit u -> 
-        u = TTop \/ u = TUnit.
-    Proof.
-        intros g u HC.
-        dependent induction HC using IHCheck.
-        - assert (HEUnit : EUnit = EUnit);
-            try reflexivity.
-            pose proof IHHC HEUnit as [UT | UU]; subst.
-            + pose proof inv_top v H as HV.
-                left. assumption.
-            + dependent induction H.
-                * right. reflexivity.
-                * assert (HTUnit : TUnit = TUnit);
-                    try reflexivity.
-                    pose proof IHsubtype1 HTUnit HEUnit as IH1.
-                    destruct IH1 as [HUU | HUT]; subst.
-                    apply inv_top in H0. left. assumption.
-                    apply IHsubtype2; assumption.
-                * left. reflexivity.
-        - right. reflexivity.
-    Qed.
-End InjCheck.
-
 Section SubstitutionLemma.
     Lemma bind_unfree_var :
         forall (e : expr) (x : id) (u v : type) (g : gamma),
@@ -1015,4 +988,84 @@ Section SubstitutionLemma.
             try reflexivity. pose proof IHHC x v g HN HR as IH.
             assumption.
     Qed.
+
+    Definition substitution_lemma (x : id) (esub e e' : expr) :=
+        sub x esub e e' ->
+        forall (u v : type) (g : gamma),
+        check (bind x u g) e v -> 
+        check g esub u -> 
+        check g e' v.
+
+    Lemma Substitution_Lemma :
+        forall (x : id) (esub e e' : expr),
+        substitution_lemma x esub e e'.
+    Proof.
+        intros x esub e e' HS.
+        dependent induction HS;
+        intros u v g HCB HC.
+        - apply bind_unfree_var in HCB; auto.
+            intros Hin. inv Hin.
+        - remember (bind x u g) as g' in HCB.
+            remember (EVar x) as x' in HCB.
+            dependent induction HCB using IHCheck;
+            try (inversion Heqx').
+            + pose proof IHHCB Heqg' Heqx' HC as IH.
+                apply check_subsume with (u := u0);
+                assumption.
+            + subst. rewrite bind_correct in H.
+                injection H; intros; subst.
+                assumption.
+        - remember (bind x u g) as g' in HCB.
+            remember (EVar y) as y' in HCB.
+            dependent induction HCB using IHCheck;
+            try (inversion Heqy').
+            + pose proof IHHCB Heqg' H1 HC as IH.
+                apply check_subsume with (u := u0);
+                assumption.
+            + subst. pose proof 
+                bind_complete y x t u g H as IH.
+                apply IH in H0. constructor.
+                assumption.
+        - remember (bind x u g) as g' in HCB.
+            remember (EFun x t e) as f in HCB.
+            dependent induction HCB using IHCheck;
+            try (inversion Heqf).
+            + pose proof IHHCB Heqg' H0 HC as IH.
+                apply check_subsume with (u := u0);
+                assumption.
+            + subst. constructor.
+                rewrite <- rebind_correct in HCB.
+                assumption.
+        - admit. (* uh oh *)
+        - admit. (* death *)
+        - remember (bind x u g) as g' in HCB.
+            remember (EApp e1' e2') as app in HCB.
+            dependent induction HCB using IHCheck;
+            try (inversion Heqapp);
+            assert (HRbxug : bind x u g = bind x u g);
+            assert (HRapp : EApp e1 e2 = EApp e1 e2);
+            try reflexivity.
+            + pose proof IHHCB e1 e2 HS1 HS2 
+                IHHS1 IHHS2 HRbxug HRapp 
+                HC app Heqapp as IH.
+                apply check_subsume with (u := u0);
+                assumption.
+            + subst. clear IHHCB1. clear IHHCB2.
+                apply check_app with (u := u0).
+                * apply IHHS1 with (u := u); assumption.
+                * apply IHHS2 with (u := u); assumption.
+        - admit. 
+            (* induction principle for 
+                sub is too weak for records *)
+        - remember (bind x u g) as g' in HCB.
+            remember (EPrj e y) as prj in HCB.
+            dependent induction HCB using IHCheck;
+            try (inversion Heqprj).
+            + pose proof IHHCB Heqg' Heqprj HC as IH.
+                apply check_subsume with (u := u0);
+                assumption.
+            + subst. clear IHHCB.
+                apply check_prj with (ts := ts); auto.
+                apply IHHS with (u := u); assumption.
+    Admitted.
 End SubstitutionLemma.
