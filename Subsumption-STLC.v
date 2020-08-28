@@ -511,7 +511,7 @@ Inductive step : expr -> expr -> Prop :=
 
 (* Inversion on Subsumption. *)
 Section InvSubsumption.
-    Lemma top_top :
+    Lemma inv_top :
         forall (t : type),
         subtype TTop t -> t = TTop.
     Proof.
@@ -857,7 +857,7 @@ End Progress.
 Section InvCheck.
     Lemma inv_chk_fun :
         forall (g : gamma) (t u v : type) (x : id) (e : expr),
-        check g (EFun x t e)(TFun u v) ->
+        check g (EFun x t e) (TFun u v) ->
         subtype u t /\ check (bind x t g) e v.
     Proof.
         intros g t u v x e HC. 
@@ -905,3 +905,114 @@ Section InvCheck.
                 apply in_cons. assumption.
     Qed.
 End InvCheck.
+
+(* Using check to infer type. *)
+Section InjCheck.
+    Lemma inj_chk_unit :
+        forall (g : gamma) (u : type),
+        check g EUnit u -> 
+        u = TTop \/ u = TUnit.
+    Proof.
+        intros g u HC.
+        dependent induction HC using IHCheck.
+        - assert (HEUnit : EUnit = EUnit);
+            try reflexivity.
+            pose proof IHHC HEUnit as [UT | UU]; subst.
+            + pose proof inv_top v H as HV.
+                left. assumption.
+            + dependent induction H.
+                * right. reflexivity.
+                * assert (HTUnit : TUnit = TUnit);
+                    try reflexivity.
+                    pose proof IHsubtype1 HTUnit HEUnit as IH1.
+                    destruct IH1 as [HUU | HUT]; subst.
+                    apply inv_top in H0. left. assumption.
+                    apply IHsubtype2; assumption.
+                * left. reflexivity.
+        - right. reflexivity.
+    Qed.
+End InjCheck.
+
+Section SubstitutionLemma.
+    Lemma bind_unfree_var :
+        forall (e : expr) (x : id) (u v : type) (g : gamma),
+        ~ IS.In x (fv e) ->
+        check g e u <-> check (bind x v g) e u.
+    Proof.
+        intros e x u v g HN. split; intros HC;
+        dependent induction HC using IHCheck.
+        - pose proof IHHC HN as IH.
+            apply check_subsume with (u := u);
+            assumption.
+        - constructor.
+        - constructor. simpl in *.
+            assert (Hxx0 : x <> x0).
+            + intros Hxx0. apply HN. subst.
+                constructor. reflexivity.
+            + apply bind_complete; assumption.
+        - constructor. destruct (IdDec.eq_dec x x0) as [HX | HX]; subst.
+            + rewrite <- rebind_correct. assumption.
+            + simpl in *. assert (HNin : ~ IS.In x (fv e)).
+                * intros HNin. apply HN.
+                    apply not_eq_sym in HX.
+                    apply ISF.remove_2; assumption.
+                * pose proof bind_diff_comm x x0 v u g HX as BDC.
+                    rewrite <- BDC. pose proof IHHC HNin as IH.
+                    assumption.
+        - simpl in *. apply check_app with (u := u).
+            + apply IHHC1. intros H1. apply HN.
+                apply ISF.union_2. assumption.
+            + apply IHHC2. intros H2. apply HN.
+                apply ISF.union_3. assumption.
+        - constructor. induction H0;
+            constructor; inv H; inv H0.
+            + split; try assumption. apply H3.
+                intros Hxx0. apply HN. simpl.
+                apply ISF.union_3. assumption.
+            + assert (Hxl : ~ IS.In x (fv (ERec l))).
+                * intros Hxl. apply HN. simpl in *.
+                    apply ISF.union_2. assumption.
+                * apply (IHForall2 Hxl H7).
+        - simpl in *. apply check_prj with (ts := ts);
+            try assumption. auto.
+        - pose proof IHHC x v g HN as IH.
+            apply check_subsume with (u := u); auto.
+        - constructor.
+        - simpl in *. constructor.
+            assert (Hxx0 : x <> x0).
+            + intros Hxx0. apply HN. subst.
+                constructor. reflexivity.
+            + apply bind_complete in H; assumption.
+        - constructor. destruct (IdDec.eq_dec x x0) as [HX | HX]; subst.
+            + rewrite <- rebind_correct in HC. assumption.
+            + simpl in *. assert (HNin : ~ IS.In x (fv e)).
+                * intros HNin. apply HN.
+                    apply not_eq_sym in HX.
+                    apply ISF.remove_2; assumption.
+                * pose proof bind_diff_comm x x0 v u g HX as BDC.
+                    symmetry in BDC.
+                    pose proof IHHC x v (bind x0 u g) HNin BDC as IH.
+                    apply IH.
+        - simpl in *. apply check_app with (u := u).
+            + apply IHHC1 with (x0 := x) (v1 := v); 
+                auto. intros H1. apply HN. 
+                apply ISF.union_2. assumption.
+            + apply IHHC2 with (x0 := x) (v0 := v); 
+                auto. intros H2. apply HN. 
+                apply ISF.union_3. assumption.
+        - constructor. induction H0; 
+            constructor; inv H; inv H0.
+            + split; try assumption.
+                apply H3 with (x1 := x) (v0 := v); auto.
+                intros Hxx0. apply HN. simpl.
+                apply ISF.union_3. assumption.
+            + assert (Hxl : ~ IS.In x (fv (ERec l))).
+                * intros Hxl. apply HN. simpl in *.
+                    apply ISF.union_2. assumption.
+                * apply (IHForall2 H7 Hxl).
+        - apply check_prj with (ts := ts); auto.
+            simpl in *. assert (HR : bind x v g = bind x v g);
+            try reflexivity. pose proof IHHC x v g HN HR as IH.
+            assumption.
+    Qed.
+End SubstitutionLemma.
