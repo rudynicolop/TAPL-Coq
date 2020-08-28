@@ -666,6 +666,29 @@ Section Progress.
         discriminate.
     Qed.
 
+    Lemma val_rec_exists :
+        forall (es : fields expr),
+        ~ value (ERec es) <-> Exists (predf (fun e => ~ value e)) es.
+    Proof.
+        intros es. split; intros H.
+        - induction es.
+            + exfalso. apply H.
+                constructor. constructor.
+            + apply Exists_cons. 
+                destruct (value_dec (snd a)).
+                * right. apply IHes. intros V.
+                    inv V. apply H. constructor.
+                    constructor; assumption.
+                * left. unfold predf. assumption.
+        - intros V. apply Exists_Forall_neg in H.
+            + apply H. inv V. assumption.
+            + pose proof 
+                (fun x : field expr => 
+                    value_dec (snd x)) as PFV.
+                intros e. specialize PFV with e.
+                destruct PFV as [VE | VE]; auto.
+    Qed.
+
     Theorem Progress :
         forall (e : expr) (t : type), progress_thm e t.
     Proof.
@@ -689,6 +712,12 @@ Section Progress.
             + exists (EApp e1' e2). constructor. assumption.
         - destruct (value_dec (ERec es)) as [V | V].
             + left. assumption.
-            + right. admit.
+            + right. apply val_rec_exists in V as HEX.
+                apply Exists_exists in HEX.
+                destruct HEX as [[x e] [Hine HEV]].
+                unfold predf in HEV. exists e.
+                (* helper lemma needs to say 
+                    something about a
+                    prefix of the fields *)
     Admitted.
 End Progress.
