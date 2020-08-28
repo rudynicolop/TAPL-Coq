@@ -548,7 +548,9 @@ Section CanonicalForms.
         forall (ts : fields type),
         value v -> checks v (TRec ts) ->
         exists (es : fields expr) (us : fields type), 
-        relfs (fun _ _ => True) es us /\ subtype (TRec us) (TRec ts).
+        v = ERec es /\
+        relfs (check empty) es us /\ 
+        subtype (TRec us) (TRec ts).
 
     Lemma canonical_forms_unit : 
         forall (v : expr), canon_unit v.
@@ -593,26 +595,23 @@ Section CanonicalForms.
         - apply inv_rec in H as [us [HU HSusts]].
             specialize IHHChk with (ts := us).
             apply IHHChk in HV as IH; auto.
-            destruct IH as [es [vs [HR HSvsus]]].
-            exists es. exists vs. split; auto.
+            destruct IH as [es [vs [Hrec [HR HSvsus]]]].
+            exists es. exists vs. split; auto. split; auto.
             apply st_trans with
                 (t := (TRec vs)) (u := (TRec us)) (v := (TRec ts));
             assumption.
-        - inversion HV.
-        - inversion HV.
-        - exists es. exists ts. split.
-            + induction H; subst; constructor.
-                * destruct H as [Hid _]. split; auto.
-                * apply IHForall2. constructor.
-                    inversion HV; subst.
-                    inversion H2; subst. assumption.
-            + constructor.
-        - inversion HV.
+        - inv HV.
+        - inv HV.
+        - exists es. exists ts. 
+            split; try reflexivity.
+            induction HV; subst; constructor;
+            try assumption;
+            try apply st_refl.
+        - inv HV. 
     Qed.
 End CanonicalForms.
 
 Section Progress.
-
     Lemma st_fields_name :
         forall (us ws : fields type),
         subtype (TRec us) (TRec ws) ->
@@ -621,35 +620,57 @@ Section Progress.
         exists (u : type),
         In (x,u) us /\ subtype u w.
     Proof.
-        (* intros us ws HS x w Hinw.
-        remember (TRec us) as ur in HS.
-        remember (TRec ws) as wr in HS.
-        dependent induction HS; subst.
-        - injection Heqwr; intros; 
-            subst. exists w. split.
-            + assumption.
+        intros us ws HS.
+        dependent induction HS; intros x w Hinws.
+        - subst. exists w. 
+            split; auto. constructor.
+        - assert (HSusws : subtype (TRec us) (TRec ws)).
+            + apply st_trans with (u := u); assumption.
+            + pose proof inv_rec u ws HS2 as [vs [Huvs HSvws]]. subst.
+                assert (Hduhu : TRec us = TRec us);
+                assert (Hduhv : TRec vs = TRec vs);
+                assert (Hduhw : TRec ws = TRec ws);
+                try reflexivity.
+                pose proof IHHS2 vs ws Hduhv Hduhw x w as IH2.
+                apply IH2 in Hinws as [w' [Hinvs HSw'w]].
+                pose proof IHHS1 us vs Hduhu Hduhv x w' as IH1.
+                apply IH1 in Hinvs as [u' [Hinus Hsubu'w']].
+                exists u'. split; try assumption.
+                apply st_trans with (u := w');
+                assumption.
+        - exists w. split.
+            + apply in_or_app.
+                left. auto.
             + constructor.
-        - apply inv_rec in HS2 as [us' [HU' HSU']]; subst. 
-            assert (HRus' : TRec us' = TRec us');
-            assert (HRws : TRec ws = TRec ws);
-            assert (HRus : TRec us = TRec us);
-            try reflexivity.
-            inv HS1; inv HSU'.
-            + exists w. split.
-                * assumption.
-                * constructor.
-            + pose proof IHHS2 HRus'  
-                try reflexivity.
-                
-                try reflexivity.
-                pose proof IHHS2 HRus' HRws x w Hinw as IH1.
-                destruct IH1 as [u [Hinu HSU]].
         - admit.
-        - admit.
-        - admit.
-        - admit.
-        - admit. *)
+            (* need to define induction principle 
+                for subtyping relation... *)
+        - exists w. apply Permutation_sym in H. split.
+            + apply Permutation_in with (l := ws);
+                assumption.
+            + constructor.
     Admitted.
+
+    Lemma rec_fields_name :
+        forall (es : fields expr) (ts : fields type),
+        relfs checks es ts ->
+        forall (x : id) (t : type),
+        In (x,t) ts ->
+        exists (e : expr), In (x,e) es.
+    Proof.
+        intros es ts HR. induction HR;
+        intros z t Hints.
+        - inv Hints.
+        - destruct x as (x,e). inv Hints.
+            + exists e. constructor.
+                unfold relf in H.
+                destruct H as [HF _].
+                simpl in *. subst.
+                reflexivity.
+            + apply IHHR in H0 as [e' Hinl].
+                exists e'. apply in_cons.
+                assumption.
+    Qed.
 
     Definition progress_thm (e : expr) (t : type) : Prop :=
         checks e t -> value e \/ exists (e' : expr), step e e'.
@@ -745,26 +766,32 @@ Section Progress.
         - induction H0.
             + left. constructor. constructor.
             + inv H. pose proof IHForall2 H7 as IH2.
-                * destruct (value_dec (ERec l)) as [V | V].
-                    { unfold relf in H0.
-                        destruct H0 as [HFXY YES].
-                        pose proof YES HE as [HVX | [e' HSX]].
-                        - left. constructor. inv V.
-                            constructor; auto.
-                        - right. destruct x as [x e].
-                            simpl in *.
-                            exists (ERec ((x, e') :: l)).
-                            assert (HPV : predfs value []);
-                            try (constructor; constructor).
-                            pose proof step_rec [] l x e e' HPV HSX as HR.
-                            rewrite app_nil_l in HR. rewrite app_nil_l in HR.
-                            assumption. }
-                    { destruct IH2 as [IH2 | IH2]; try contradiction. 
+                destruct H0 as [HFXY YES].
+                pose proof YES HE as [HVX | [e' HSX]].
+                { destruct (value_dec (ERec l)) as [V | V].
+                    - left. constructor. inv V.
+                        constructor; auto.
+                    - destruct IH2 as [IH2 | IH2]; try contradiction. 
                         pose proof val_rec_prefix l V as HEX.
                         destruct HEX as [z [e [qs [rs [HVE [HPV HL]]]]]].
                         right. subst. destruct IH2 as [e' HS]. inv HS.
                         exists (ERec (x :: vs ++ (x0,e'0) :: es)).
                         rewrite app_comm_cons. rewrite app_comm_cons.
                         constructor; auto.
-                        constructor; auto. admit. }
-    Admitted.
+                        constructor; auto. }
+                { right. destruct x as [x e]. simpl in *.
+                    exists (ERec ((x, e') :: l)).
+                    assert (HPV : predfs value []);
+                    try (constructor; constructor).
+                    pose proof step_rec [] l x e e' HPV HSX as HR.
+                    rewrite app_nil_l in HR. rewrite app_nil_l in HR.
+                    assumption. }
+        - right. pose proof IHHC HE as [V | [e' HS]].
+            + pose proof canonical_forms_rec e ts V HC as HCF.
+                destruct HCF as [es [us [HRec [HR Hsub]]]]; subst.
+                pose proof st_fields_name us ts Hsub x t H as [u [Hinus HSut]].
+                pose proof rec_fields_name es us HR x u Hinus as [e' Hines].
+                exists e'. constructor. assumption.
+            + exists (EPrj e' x). constructor. assumption.
+    Qed.
+End Progress.
