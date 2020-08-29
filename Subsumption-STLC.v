@@ -488,6 +488,82 @@ Inductive sub (x : id) (es : expr) : expr -> expr -> Prop :=
         sub x es e e' ->
         sub x es (EPrj e y) (EPrj e' y).
 
+Check sub_ind.
+
+Section SubstitutionInduction.
+    Variable P : id -> expr -> expr -> expr -> Prop.
+
+    Hypothesis HUnit : 
+        forall (x : id) (es : expr), 
+        P x es EUnit EUnit.
+
+    Hypothesis HHit : 
+        forall (x : id) (es : expr),
+        P x es (EVar x) es.
+
+    Hypothesis HMiss : 
+        forall (x : id) (es : expr) (y : id),
+        x <> y -> P x es (EVar y) (EVar y).
+
+    Hypothesis HFunBound : 
+        forall (x : id) (es : expr) (t : type) (e : expr),
+        P x es (EFun x t e) (EFun x t e).
+
+    Hypothesis HFunNotFree : 
+        forall (x : id) (es : expr) (y : string) (t : type) (e e' : expr),
+        x <> y -> ~ IS.In y (fv es) ->
+        sub x es e e' -> P x es e e' -> 
+        P x es (EFun y t e) (EFun y t e').
+
+    Hypothesis HFunFree :
+        forall (x : id) (es : expr) (y z : id)
+        (t : type) (e e' e'' : expr),
+        x <> y -> x <> z ->
+        y <> z -> IS.In y (fv es) ->
+        ~ IS.In z (fv es) -> ~ IS.In z (fv e) ->
+        sub y (EVar z) e e' -> P y (EVar z) e e' ->
+        sub x es e' e'' -> P x es e' e'' -> 
+        P x es (EFun y t e) (EFun z t e'').
+
+    Hypothesis HApp :
+        forall (x : id) (es e1 e1' e2 e2' : expr),
+        sub x es e1 e1' -> P x es e1 e1' ->
+        sub x es e2 e2' -> P x es e2 e2' -> 
+        P x es (EApp e1 e2) (EApp e1' e2').
+
+    Hypothesis HRec : 
+        forall (x : id) (es : expr) (fs fs' : fields expr),
+        relfs (sub x es) fs fs' -> 
+        relfs (P x es) fs fs' ->
+        P x es (ERec fs) (ERec fs').
+
+    Hypothesis HPrj :
+        forall (x : id) (es e e' : expr) (y : id),
+        sub x es e e' -> P x es e e' -> 
+        P x es (EPrj e y) (EPrj e' y).
+
+    Fixpoint IHSubstitute (x : id) (es e e' : expr)
+    {struct e} : sub x es e e' -> P x es e e'.
+    Proof.
+        intros HSub. destruct HSub.
+        - apply HUnit.
+        - apply HHit.
+        - apply HMiss. assumption.
+        - apply HFunBound.
+        - apply HFunNotFree; auto.
+        - apply HFunFree with (e' := e'); auto.
+        - apply HApp; auto.
+        - apply HRec; auto. 
+            induction H; constructor.
+            + destruct H as [Hfst Hall]. 
+                split; auto.
+            + assumption.
+        - apply HPrj; auto.
+        (* No more subgoals *)
+    Admitted.
+End SubstitutionInduction.
+
+
 Axiom sub_exists : forall (x : id) (s e : expr), exists e', sub x s e e'.
 
 (* Dynamic Semantics *)
@@ -1001,7 +1077,7 @@ Section SubstitutionLemma.
         substitution_lemma x esub e e'.
     Proof.
         intros x esub e e' HS.
-        dependent induction HS;
+        dependent induction HS using IHSubstitute;
         intros u v g HCB HC.
         - apply bind_unfree_var in HCB; auto.
             intros Hin. inv Hin.
@@ -1036,8 +1112,39 @@ Section SubstitutionLemma.
             + subst. constructor.
                 rewrite <- rebind_correct in HCB.
                 assumption.
-        - admit. (* uh oh *)
-        - admit. (* death *)
+        - remember (bind x u g) as g' in HCB.
+            remember (EFun y t e) as f in HCB.
+            dependent induction HCB using IHCheck;
+            try (inversion Heqf).
+            + pose proof IHHCB Heqg' Heqf HC as IH.
+                apply check_subsume with (u := u0);
+                assumption.
+            + subst. constructor. clear IHHCB.
+                rewrite bind_diff_comm in HCB;
+                try (apply not_eq_sym; auto).
+                pose proof IHHS u v (bind y t g) HCB as IH.
+                apply IH. apply bind_unfree_var; auto.
+        - remember (bind x u g) as g' in HCB.
+            remember (EFun y t e) as f in HCB.
+            dependent induction HCB using IHCheck;
+            try (inversion Heqf).
+            { pose proof IHHCB Heqg' Heqf HC as IH.
+                apply check_subsume with (u := u0);
+                assumption. }
+            { subst. clear IHHCB. constructor.
+                apply IHHS2 with (u := u).
+                - apply IHHS1 with (u := t).
+                    + pose proof bind_diff_comm 
+                        x z u t g H0 as BDC1.
+                        rewrite BDC1.
+                        pose proof bind_diff_comm
+                        y z t t (bind x u g) H1 as BDC2.
+                        rewrite BDC2. apply bind_unfree_var; auto.
+                    + apply bind_unfree_var.
+                        * intros Hin. simpl in *.
+                            apply IS.singleton_spec in Hin.
+                            contradiction.
+                        * constructor. apply bind_correct. }
         - remember (bind x u g) as g' in HCB.
             remember (EApp e1' e2') as app in HCB.
             dependent induction HCB using IHCheck;
@@ -1054,9 +1161,55 @@ Section SubstitutionLemma.
                 apply check_app with (u := u0).
                 * apply IHHS1 with (u := u); assumption.
                 * apply IHHS2 with (u := u); assumption.
-        - admit. 
-            (* induction principle for 
-                sub is too weak for records *)
+        - remember (bind x u g) as g' in HCB.
+            remember (ERec fs) as r in HCB.
+            dependent induction HCB using IHCheck;
+            try (inversion Heqr).
+            { pose proof IHHCB Heqg' H2 HC as IH.
+                apply check_subsume with (u := u0); auto. }
+            { subst. admit. }
+                (* dependent induction H2.
+                - admit.
+                -
+            
+            induction H0; induction H2; inv H; inv H1;
+                try assert (Hdumb1 : ERec l = ERec l);
+                assert (Hdumb2 : bind x u g = bind x u g);
+                try reflexivity.
+                - constructor. constructor.
+                - pose proof IHForall2 H8 as IH. 
+                    destruct y as [y ey].
+                    destruct x0 as [x0 ex0].
+                    simpl in *. subst.
+                    destruct H6 as [Hfst Hstuff].
+                    simpl in *. subst.
+                    apply check_rec. constructor.
+                    + split; auto. simpl. admit.
+                    + dependent induction IH; auto.
+
+                    apply check_subsume with 
+                        (u := TRec ([] ++ [(fst y,TTop)])).
+                    + apply st_rec_width.
+                    + rewrite app_nil_l.
+                        destruct H0 as [Hfst IH'].
+                        destruct y as [y ey].
+                        destruct x0 as [x0 ex0].
+                        simpl in *. subst.
+                        pose proof IH' u TTop.
+                    pose proof IH' u 
+
+            
+            induction H0; inv H1; inv H;
+                constructor; constructor; inv Heqr;
+                assert (Hdumb1 : ERec l = ERec l);
+                assert (Hdumb2 : bind x u g = bind x u g);
+                try reflexivity.
+                * destruct x0 as [x0 e0]; destruct y as [y ey]. 
+                    destruct y0 as [y0 ey0]. inv H6; inv H9; 
+                    simpl in *; subst; split; auto. simpl in *.
+                    inv H2. clear H15. inv H13.
+                    clear H13. inv H10. 
+                    pose proof H7 Hdumb2. *)
         - remember (bind x u g) as g' in HCB.
             remember (EPrj e y) as prj in HCB.
             dependent induction HCB using IHCheck;
