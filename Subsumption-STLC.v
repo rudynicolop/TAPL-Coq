@@ -1127,7 +1127,30 @@ Section SubstitutionLemma.
             + apply IHHS2 with (u := u); auto.
         - pose proof IHHCB x fs H H0 u g as IH.
             apply check_subsume with (u := u0); auto. 
-        - admit. (* this case is ass... :( *) 
+        - constructor. dependent induction H2.
+            + admit.
+            + inv H0. inv H1.
+            assert (Hexpr : expr = expr);
+            assert (Htype : type = type);
+            try reflexivity.
+            pose proof IHForall2 es l'0 l l' 
+                H11 Hexpr Htype as IH;
+            clear IHForall2.
+            constructor.
+            {
+            destruct y as [y ty];
+            destruct x0 as [x0 ex0];
+            destruct y0 as [y0 ey0].
+            simpl in *. subst.
+            inv H6; inv H9; simpl in *;
+            subst. split; auto.
+            simpl. clear IH. clear H2. clear H.
+            inv H3. clear H13.
+            inv H7. simpl in *.
+            apply H2 with (u := u); auto. }
+            { apply IH; auto; clear IH.
+                - admit.
+                - inv H3. apply H13. }
         - pose proof IHHCB x e y HS  IHHS u g as IH.
             apply check_subsume with (u := u0); auto.
         - clear IHHCB. apply check_prj with (ts := ts); auto.
