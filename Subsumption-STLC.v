@@ -15,6 +15,7 @@ Require Import Coq.Logic.Decidable.
 Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Sorting.Permutation.
 Require Import Coq.Program.Equality.
+Require Import Coq.Logic.JMeq.
     
 Ltac inv H := inversion H; subst.
 
@@ -1074,18 +1075,39 @@ Section SubstitutionLemma.
         check g esub u -> 
         check g e' v.
 
+    (* I need something like this,
+        for the record case in the 
+        substitution proof. *)
+    Lemma check_rec_relfs :
+        forall (g : gamma) (es es' : fields expr) (ts : fields type),
+        check g (ERec es') (TRec ts) ->
+        forall (x : id) (esub : expr),
+        relfs (sub x esub) es es' ->
+        forall (u : type),
+        relfs (check (bind x u g)) es ts ->
+        relfs (check g) es' ts.
+        intros g es es' ts H.
+        dependent induction H; intros x esub Hsub u0 HCB.
+        - apply inv_rec in H as [us [Hu0 HSus]]; subst. 
+            apply IHcheck with (es'0 := es') 
+                (x := x) (u := u0) 
+            (esub := esub); auto. admit.
+        - assumption.
+    Admitted.
+
     Lemma Substitution_Lemma :
         forall (x : id) (esub e e' : expr),
         substitution_lemma x esub e e'.
     Proof.
         intros x esub e e' HS.
-        dependent induction HS using IHSubstitute;
+        induction HS using IHSubstitute;
         intros u v g HCB;
-        dependent induction HCB using IHCheck;
-        intros HC;
+        remember g as g' in HCB; 
+        dependent induction HCB; intros HC;
         try (apply check_subsume with (u := u0); auto;
-            apply IHHCB with (x0 := x) (u1 := u) (g0 := g); 
-            try reflexivity; assumption).
+            apply IHHCB with (x0 := x) (u1 := u) (g' := g); 
+            try reflexivity; assumption);
+        assert (Hgg : g = g); try reflexivity.
         - constructor.
         - rewrite bind_correct in H. injintrosubst H. auto.
         - apply bind_complete in H0 as BC; auto.
@@ -1093,14 +1115,14 @@ Section SubstitutionLemma.
         - constructor. clear IHHCB. 
             rewrite <- rebind_correct in HCB.
             assumption.
-        - pose proof IHHCB g u e t y 
+        - pose proof IHHCB g Hgg u e t y 
             H0 x H HS IHHS as IH.
             apply check_subsume with (u := u0); auto.
         - clear IHHCB. constructor.
             rewrite <- (bind_diff_comm x y u t g H) in HCB.
             apply IHHS in HCB as IH; auto.
             apply bind_unfree_var; auto.
-        - pose proof IHHCB g u H3 e H4 t y 
+        - pose proof IHHCB g Hgg u H3 e H4 t y 
             H1 H2 HS1 IHHS1 x H H0 HS2 IHHS2 as IH.
             apply check_subsume with (u := u0); auto.
         - clear IHHCB. constructor.
@@ -1127,33 +1149,33 @@ Section SubstitutionLemma.
             + apply IHHS2 with (u := u); auto.
         - pose proof IHHCB x fs H H0 u g as IH.
             apply check_subsume with (u := u0); auto. 
-        - constructor. dependent induction H2.
-            + admit.
-            + inv H0. inv H1.
-            assert (Hexpr : expr = expr);
-            assert (Htype : type = type);
-            try reflexivity.
-            pose proof IHForall2 es l'0 l l' 
-                H11 Hexpr Htype as IH;
-            clear IHForall2.
-            constructor.
-            {
-            destruct y as [y ty];
-            destruct x0 as [x0 ex0];
-            destruct y0 as [y0 ey0].
-            simpl in *. subst.
-            inv H6; inv H9; simpl in *;
-            subst. split; auto.
-            simpl. clear IH. clear H2. clear H.
-            inv H3. clear H13.
-            inv H7. simpl in *.
-            apply H2 with (u := u); auto. }
-            { apply IH; auto; clear IH.
-                - admit.
-                - inv H3. apply H13. }
+        - generalize dependent ts.
+            generalize dependent fs'.
+            induction fs;
+            intros fs';
+            destruct fs';
+            intros Hsub Hbig;
+            intros ts;
+            destruct ts; intros;
+            inv Hbig; inv Hsub; inv H1;
+            clear Hbig; clear Hsub; clear H1;
+            constructor; constructor.
+            + destruct f as [f ef];
+                destruct f0 as [f0 ef0];
+                destruct a as [a ea];
+                simpl in *; subst.
+                inv H3; inv H4; inv H6;
+                clear H3; clear H4; clear H6;
+                simpl in *; subst.
+                split; auto.
+                simpl. apply H0 with (u := u); auto.
+            + pose proof IHfs fs' H7 H5 ts H9 as IH.
+                pose proof check_rec_relfs g fs fs' 
+                ts IH x es H7 u
+                as CRR. apply CRR. auto.
         - pose proof IHHCB x e y HS  IHHS u g as IH.
             apply check_subsume with (u := u0); auto.
         - clear IHHCB. apply check_prj with (ts := ts); auto.
             apply IHHS in HCB as IH; auto.
-    Admitted.
+    Qed.
 End SubstitutionLemma.
