@@ -982,6 +982,8 @@ Section InvCheck.
     Qed.
 End InvCheck.
 
+Ltac injintrosubst H := injection H; intros; subst.
+
 Section SubstitutionLemma.
     Lemma bind_unfree_var :
         forall (e : expr) (x : id) (u v : type) (g : gamma),
@@ -1078,147 +1080,57 @@ Section SubstitutionLemma.
     Proof.
         intros x esub e e' HS.
         dependent induction HS using IHSubstitute;
-        intros u v g HCB HC.
-        - apply bind_unfree_var in HCB; auto.
-            intros Hin. inv Hin.
-        - remember (bind x u g) as g' in HCB.
-            remember (EVar x) as x' in HCB.
-            dependent induction HCB using IHCheck;
-            try (inversion Heqx').
-            + pose proof IHHCB Heqg' Heqx' HC as IH.
-                apply check_subsume with (u := u0);
-                assumption.
-            + subst. rewrite bind_correct in H.
-                injection H; intros; subst.
-                assumption.
-        - remember (bind x u g) as g' in HCB.
-            remember (EVar y) as y' in HCB.
-            dependent induction HCB using IHCheck;
-            try (inversion Heqy').
-            + pose proof IHHCB Heqg' H1 HC as IH.
-                apply check_subsume with (u := u0);
-                assumption.
-            + subst. pose proof 
-                bind_complete y x t u g H as IH.
-                apply IH in H0. constructor.
-                assumption.
-        - remember (bind x u g) as g' in HCB.
-            remember (EFun x t e) as f in HCB.
-            dependent induction HCB using IHCheck;
-            try (inversion Heqf).
-            + pose proof IHHCB Heqg' H0 HC as IH.
-                apply check_subsume with (u := u0);
-                assumption.
-            + subst. constructor.
-                rewrite <- rebind_correct in HCB.
-                assumption.
-        - remember (bind x u g) as g' in HCB.
-            remember (EFun y t e) as f in HCB.
-            dependent induction HCB using IHCheck;
-            try (inversion Heqf).
-            + pose proof IHHCB Heqg' Heqf HC as IH.
-                apply check_subsume with (u := u0);
-                assumption.
-            + subst. constructor. clear IHHCB.
-                rewrite bind_diff_comm in HCB;
-                try (apply not_eq_sym; auto).
-                pose proof IHHS u v (bind y t g) HCB as IH.
-                apply IH. apply bind_unfree_var; auto.
-        - remember (bind x u g) as g' in HCB.
-            remember (EFun y t e) as f in HCB.
-            dependent induction HCB using IHCheck;
-            try (inversion Heqf).
-            { pose proof IHHCB Heqg' Heqf HC as IH.
-                apply check_subsume with (u := u0);
-                assumption. }
-            { subst. clear IHHCB. constructor.
-                apply IHHS2 with (u := u).
-                - apply IHHS1 with (u := t).
-                    + pose proof bind_diff_comm 
-                        x z u t g H0 as BDC1.
-                        rewrite BDC1.
-                        pose proof bind_diff_comm
+        intros u v g HCB;
+        dependent induction HCB using IHCheck;
+        intros HC;
+        try (apply check_subsume with (u := u0); auto;
+            apply IHHCB with (x0 := x) (u1 := u) (g0 := g); 
+            try reflexivity; assumption).
+        - constructor.
+        - rewrite bind_correct in H. injintrosubst H. auto.
+        - apply bind_complete in H0 as BC; auto.
+            constructor. auto.
+        - constructor. clear IHHCB. 
+            rewrite <- rebind_correct in HCB.
+            assumption.
+        - pose proof IHHCB g u e t y 
+            H0 x H HS IHHS as IH.
+            apply check_subsume with (u := u0); auto.
+        - clear IHHCB. constructor.
+            rewrite <- (bind_diff_comm x y u t g H) in HCB.
+            apply IHHS in HCB as IH; auto.
+            apply bind_unfree_var; auto.
+        - pose proof IHHCB g u H3 e H4 t y 
+            H1 H2 HS1 IHHS1 x H H0 HS2 IHHS2 as IH.
+            apply check_subsume with (u := u0); auto.
+        - clear IHHCB. constructor.
+            apply IHHS2 with (u := u).
+            { apply IHHS1 with (u := t).
+                - pose proof bind_diff_comm 
+                    x z u t g H0 as BDC1.
+                    rewrite BDC1.
+                    pose proof bind_diff_comm
                         y z t t (bind x u g) H1 as BDC2.
-                        rewrite BDC2. apply bind_unfree_var; auto.
-                    + apply bind_unfree_var.
-                        * intros Hin. simpl in *.
-                            apply IS.singleton_spec in Hin.
-                            contradiction.
-                        * constructor. apply bind_correct. }
-        - remember (bind x u g) as g' in HCB.
-            remember (EApp e1' e2') as app in HCB.
-            dependent induction HCB using IHCheck;
-            try (inversion Heqapp);
-            assert (HRbxug : bind x u g = bind x u g);
-            assert (HRapp : EApp e1 e2 = EApp e1 e2);
-            try reflexivity.
-            + pose proof IHHCB e1 e2 HS1 HS2 
-                IHHS1 IHHS2 HRbxug HRapp 
-                HC app Heqapp as IH.
-                apply check_subsume with (u := u0);
-                assumption.
-            + subst. clear IHHCB1. clear IHHCB2.
-                apply check_app with (u := u0).
-                * apply IHHS1 with (u := u); assumption.
-                * apply IHHS2 with (u := u); assumption.
-        - remember (bind x u g) as g' in HCB.
-            remember (ERec fs) as r in HCB.
-            dependent induction HCB using IHCheck;
-            try (inversion Heqr).
-            { pose proof IHHCB Heqg' H2 HC as IH.
-                apply check_subsume with (u := u0); auto. }
-            { subst. admit. }
-                (* dependent induction H2.
-                - admit.
-                -
-            
-            induction H0; induction H2; inv H; inv H1;
-                try assert (Hdumb1 : ERec l = ERec l);
-                assert (Hdumb2 : bind x u g = bind x u g);
-                try reflexivity.
-                - constructor. constructor.
-                - pose proof IHForall2 H8 as IH. 
-                    destruct y as [y ey].
-                    destruct x0 as [x0 ex0].
-                    simpl in *. subst.
-                    destruct H6 as [Hfst Hstuff].
-                    simpl in *. subst.
-                    apply check_rec. constructor.
-                    + split; auto. simpl. admit.
-                    + dependent induction IH; auto.
-
-                    apply check_subsume with 
-                        (u := TRec ([] ++ [(fst y,TTop)])).
-                    + apply st_rec_width.
-                    + rewrite app_nil_l.
-                        destruct H0 as [Hfst IH'].
-                        destruct y as [y ey].
-                        destruct x0 as [x0 ex0].
-                        simpl in *. subst.
-                        pose proof IH' u TTop.
-                    pose proof IH' u 
-
-            
-            induction H0; inv H1; inv H;
-                constructor; constructor; inv Heqr;
-                assert (Hdumb1 : ERec l = ERec l);
-                assert (Hdumb2 : bind x u g = bind x u g);
-                try reflexivity.
-                * destruct x0 as [x0 e0]; destruct y as [y ey]. 
-                    destruct y0 as [y0 ey0]. inv H6; inv H9; 
-                    simpl in *; subst; split; auto. simpl in *.
-                    inv H2. clear H15. inv H13.
-                    clear H13. inv H10. 
-                    pose proof H7 Hdumb2. *)
-        - remember (bind x u g) as g' in HCB.
-            remember (EPrj e y) as prj in HCB.
-            dependent induction HCB using IHCheck;
-            try (inversion Heqprj).
-            + pose proof IHHCB Heqg' Heqprj HC as IH.
-                apply check_subsume with (u := u0);
-                assumption.
-            + subst. clear IHHCB.
-                apply check_prj with (ts := ts); auto.
-                apply IHHS with (u := u); assumption.
+                    rewrite BDC2. apply bind_unfree_var; auto.
+                - apply bind_unfree_var.
+                    + intros Hin. simpl in *.
+                        apply IS.singleton_spec in Hin.
+                        contradiction.
+                    + constructor. apply bind_correct. }
+            { apply bind_unfree_var; auto. }
+        - pose proof IHHCB x e1 e2 HS1 HS2
+            IHHS1 IHHS2 u g as IH.
+            apply check_subsume with (u := u0); auto.
+        - clear IHHCB1. clear IHHCB2.
+            apply check_app with (u := u0).
+            + apply IHHS1 with (u := u); auto.
+            + apply IHHS2 with (u := u); auto.
+        - pose proof IHHCB x fs H H0 u g as IH.
+            apply check_subsume with (u := u0); auto. 
+        - admit. (* this case is ass... :( *) 
+        - pose proof IHHCB x e y HS  IHHS u g as IH.
+            apply check_subsume with (u := u0); auto.
+        - clear IHHCB. apply check_prj with (ts := ts); auto.
+            apply IHHS in HCB as IH; auto.
     Admitted.
 End SubstitutionLemma.
