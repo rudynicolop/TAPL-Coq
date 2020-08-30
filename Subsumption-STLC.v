@@ -129,6 +129,14 @@ Inductive type : Type :=
     | TFun (t t' : type)
     | TRec (fs : fields type).
 
+Definition fields_type := fields type.
+
+(* Doesn't work because Coq's Scheme Command is stupid :
+    To use Scheme the Types must be mutually defined 
+    with the "with" keyword. *)
+Fail Scheme type_rec' := Induction for type Sort Type
+    with fields_type_rec := Induction for fields_type Sort Type.
+
 (* automatically generated induction principle is weak *)
 Check type_ind.
 Compute type_ind.
@@ -148,16 +156,19 @@ Section TypeInduction.
     Hypothesis HRec : forall (fs : fields type),
         predfs P fs -> P (TRec fs).
 
-    Fixpoint IHType (t : type) : P t.
-    Proof.
-        destruct t.
-        - assumption.
-        - assumption.
-        - apply HFun; apply IHType.
-        - apply HRec. induction fs; constructor.
-            + apply IHType.
-            + assumption.
-    Qed.
+    Fixpoint IHType (t : type) : P t :=
+        match t as ty return P ty with 
+        | TTop => HTop
+        | TUnit => HUnit
+        | TFun t1 t2 => HFun t1 t2 (IHType t1) (IHType t2)
+        | TRec fs =>
+            let fix list_ih (fs' : fields type) : predfs P fs' :=
+                match fs' as fs_ty return predfs P fs_ty with
+                | [] => Forall_nil (predf P)
+                | hf :: tf => Forall_cons hf (IHType (snd hf)) (list_ih tf)
+                end in
+            HRec fs (list_ih fs)
+        end.
 End TypeInduction.
 
 Ltac indtype t := induction t using IHType.
