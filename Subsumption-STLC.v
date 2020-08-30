@@ -16,8 +16,16 @@ Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Sorting.Permutation.
 Require Import Coq.Program.Equality.
 Require Import Coq.Logic.JMeq.
-    
+
+(* Lemma from the List Library : 
+    maybe I should update my Coq version... *)
+Axiom map_eq_cons : forall {A B : Type} (f : A -> B) l l' b,
+    map f l = b :: l' -> 
+    exists a tl, l = a :: tl /\ f a = b /\ map f tl = l'.
+
 Ltac inv H := inversion H; subst.
+
+Ltac injintrosubst H := injection H; intros; subst.
 
 Definition id := string.
 
@@ -42,6 +50,78 @@ Definition relf {U V : Type} (R : U -> V -> Prop) (u : field U) (v : field V) : 
 
 Definition relfs {U V : Type} (R : U -> V -> Prop) : fields U -> fields V -> Prop :=
     Forall2 (relf R).
+
+(* record field names must be unique *)
+Definition nodupfs {U : Type} (us : fields U) : Prop :=
+    NoDup (map fst us).
+
+Lemma relfs_name_share :
+    forall {U V : Type} (R : U -> V -> Prop)
+    (us : fields U) (vs : fields V) (x : id),
+    relfs R us vs ->
+    In x (map fst us) <-> In x (map fst vs).
+Proof.
+    intros U V R us vs x HR. 
+    induction HR; split; intros HI; inv HI;
+    destruct x0 as [x0 ux0]; destruct y as [y vy];
+    destruct H as [Hfst Hr]; simpl in *; subst;
+    try (left; reflexivity);
+    destruct HI as [HYX | HXIN];
+    try (left; assumption);
+    try (right; apply IHHR; assumption).
+Qed.
+
+Lemma relfs_in_fst :
+    forall {U : Type} (us : fields U) (x : id) (u : U),
+    In (x, u) us -> In x (map fst us).
+Proof.
+    intros U us x u H. induction us; inv H;
+    simpl in *.
+    - left. reflexivity.
+    - destruct a as [a au]; simpl in *.
+        destruct H as [H | H].
+        + injintrosubst H. left. reflexivity.
+        + right. auto.
+Qed.
+
+Lemma relfs_nodup_eq :
+    forall {U : Type} (us : fields U) (x : id) (u1 u2 : U),
+    nodupfs us -> 
+    In (x,u1) us -> In (x,u2) us -> u1 = u2.
+Proof.
+    intros U us x u1 u2 ND H1 H2.
+    induction us; inv H1; inv H2; inv ND.
+    - injintrosubst H. reflexivity.
+    - apply IHus; auto. exfalso.
+        apply H4. apply relfs_in_fst in H. assumption.
+    - apply IHus; auto. exfalso.
+        apply H4. apply relfs_in_fst in H. assumption.
+    - apply IHus; auto.
+Qed.
+
+Lemma relfs_app :
+    forall {U V : Type} (R : U -> V -> Prop) 
+    (us1 us2 : fields U) (vs : fields V),
+    relfs R (us1 ++ us2) vs ->
+    exists (vs1 vs2 : fields V),
+    vs = vs1 ++ vs2 /\
+    relfs R us1 vs1 /\ relfs R us2 vs2.
+Proof.
+    intros U V R us1 us2 vs HR.
+    apply Forall2_app_inv_l in HR.
+    destruct HR as [vs1 [vs2 [H1 [H2 Hvs]]]].
+    exists vs1. exists vs2. auto.
+Qed.
+
+Lemma relfs_app_dist :
+    forall {U V : Type} (R : U -> V -> Prop)
+    (us1 us2 : fields U) (vs1 vs2 : fields V),
+    relfs R us1 vs1 -> relfs R us2 vs2 ->
+    relfs R (us1 ++ us2) (vs1 ++ vs2).
+Proof.
+    intros U V R us1 us2 vs1 vs2 HR1 HR2.
+    apply Forall2_app; auto.
+Qed.
 
 Inductive type : Type :=
     | TTop
@@ -280,6 +360,7 @@ Inductive check (g : gamma) : expr -> type -> Prop :=
         check g e2 u ->
         check g (EApp e1 e2) v
     | check_rec : forall (es : fields expr) (ts : fields type),
+        nodupfs es -> nodupfs ts ->
         relfs (check g) es ts ->
         check g (ERec es) (TRec ts)
     | check_prj : forall (e : expr) (x : id) (t : type) (ts : fields type),
@@ -321,6 +402,7 @@ Section CheckInduction.
 
     Hypothesis HRec :
         forall (g : gamma) (es : fields expr) (ts : fields type),
+        nodupfs es -> nodupfs ts ->
         relfs (check g) es ts ->
         relfs (P g) es ts ->
         P g (ERec es) (TRec ts).
@@ -340,14 +422,15 @@ Section CheckInduction.
         - apply HVar. assumption.
         - apply HFun; auto.
         - apply HApp with (u := u); auto.
-        - apply HRec; auto. induction H.
+        - apply HRec; auto. induction H1.
             + constructor.
-            + constructor; auto. 
-                inv H. split; auto.
+            + inv H. inv H0. 
+                constructor; auto. 
+                inv H1. split; auto.
+                apply IHForall2; auto.
         - apply HPrj with (ts := ts); auto.
     (* No more subgoals. *)
     Admitted.
-    
 End CheckInduction.
 
 Definition checks : expr -> type -> Prop := check empty.
@@ -369,13 +452,22 @@ Proof.
         + apply st_rec_width with
             (us := [("x",TUnit)])
             (vs := [("y",TUnit)]).
-        + apply check_rec. constructor.
-            { split; try reflexivity. constructor. }
+        + apply check_rec.
+            { constructor; try constructor;
+                try constructor; 
+                try intros DUMB; inv DUMB;
+                try discriminate. inv H. }
+            { constructor; try constructor;
+                try constructor; 
+                try intros DUMB; inv DUMB;
+                try discriminate. inv H. }
             { constructor.
-                - split.
-                    + reflexivity.
-                    + constructor.
-                - constructor. }
+                - split; try reflexivity. constructor. 
+                - constructor.
+                    + split.
+                        * reflexivity.
+                        * constructor.
+                    + constructor. }
 Qed. 
 
 (* Values *)
@@ -564,7 +656,6 @@ Section SubstitutionInduction.
     Admitted.
 End SubstitutionInduction.
 
-
 Axiom sub_exists : forall (x : id) (s e : expr), exists e', sub x s e e'.
 
 (* Dynamic Semantics *)
@@ -585,6 +676,21 @@ Inductive step : expr -> expr -> Prop :=
         predfs value vs ->
         step e e' ->
         step (ERec (vs ++ (x,e) :: es)) (ERec (vs ++ (x,e') :: es)).
+
+Check step_ind.
+
+(* Section StepInduction.
+    Variable P : expr -> expr -> Prop.
+
+    Hypothesis HRedux :
+        forall (x : id) (t : type) (e es e' : expr),
+        sub x es e e' -> P (EApp (EFun x t e) es) e'.
+
+    Hypothesis HApp :
+        forall e1 e2 e1' : expr,
+        step e1 e1' -> P e1 e1' -> P (EApp e1 e2) (EApp e1' e2)
+
+End StepInduction. *)
 
 (* Inversion on Subsumption. *)
 Section InvSubsumption.
@@ -897,15 +1003,16 @@ Section Progress.
                 pose proof sub_exists x e2 e as [e' HSub].
                 exists e'. subst. constructor. assumption.
             + exists (EApp e1' e2). constructor. assumption.
-        - induction H0.
+        - induction H2.
             + left. constructor. constructor.
-            + inv H. pose proof IHForall2 H7 as IH2.
-                destruct H0 as [HFXY YES].
+            + inv H. inv H1. inv H0. clear H. clear H0. inv H2.
+                pose proof IHForall2 H7 as IH2.
+                destruct H2 as [HFXY YES].
                 pose proof YES HE as [HVX | [e' HSX]].
                 { destruct (value_dec (ERec l)) as [V | V].
                     - left. constructor. inv V.
                         constructor; auto.
-                    - destruct IH2 as [IH2 | IH2]; try contradiction. 
+                    - destruct IH2 as [IH2 | IH2]; try contradiction; auto. 
                         pose proof val_rec_prefix l V as HEX.
                         destruct HEX as [z [e [qs [rs [HVE [HPV HL]]]]]].
                         right. subst. destruct IH2 as [e' HS]. inv HS.
@@ -970,20 +1077,49 @@ Section InvCheck.
             + assumption.
             + apply check_subsume with (u := w);
                 assumption.
-        - induction H; inv Hints.
-            + destruct x0 as [x0 e0]. exists e0.
-                destruct H as [Hfst Hck].
+        - induction H2; inv Hints;
+            inv H; inv H0; clear H; clear H0;
+            inv H1; clear H1.
+            + destruct x0 as [x0 e0]. exists e0. 
+                destruct H5 as [Hfst Hck].
                 simpl in *; subst. split.
                 * left. reflexivity.
                 * assumption.
-            + inv H0. destruct IHForall2; try assumption.
-                destruct H3 as [Hinl Hchk].
-                exists x1. split; try assumption.
+            + pose proof IHForall2 H8 H10 H12 H4 as IH. 
+                destruct IH as [e [HIN HCK]].
+                exists e. split; try assumption.
                 apply in_cons. assumption.
     Qed.
-End InvCheck.
 
-Ltac injintrosubst H := injection H; intros; subst.
+    Lemma inv_chk_rec' :
+        forall (g : gamma) (es : fields expr) (ts : fields type),
+        check g (ERec es) (TRec ts) ->
+        forall (x : id) (t : type),
+        In (x,t) ts ->
+        forall (e : expr),
+        In (x,e) es ->
+        check g e t.
+    Proof.
+        intros g es ts HC x t Hints.
+        intros f Hinfes.
+        dependent induction HC using IHCheck.
+        - apply inv_rec in H as [us [Huus HSusts]].
+            pose proof st_fields_name 
+                us ts HSusts x t Hints as SFN.
+            destruct SFN as [w [Hinus HSwt]].
+            apply check_subsume with (u := w); auto.
+            apply IHHC with (es0 := es) (ts := us) (x := x);
+            auto. 
+        - assert (HC : check g (ERec es) (TRec ts)).
+            + constructor; auto.
+            + pose proof inv_chk_rec g es ts 
+                HC x t Hints as ICR.
+                destruct ICR as [e [Hin Hget]].
+                pose proof relfs_nodup_eq es x e f 
+                    H Hin Hinfes as EF. subst.
+                    assumption.                  
+    Qed.
+End InvCheck.
 
 Section SubstitutionLemma.
     Lemma bind_unfree_var :
@@ -1016,8 +1152,9 @@ Section SubstitutionLemma.
                 apply ISF.union_2. assumption.
             + apply IHHC2. intros H2. apply HN.
                 apply ISF.union_3. assumption.
-        - constructor. induction H0;
-            constructor; inv H; inv H0.
+        - constructor; auto. clear H. clear H0.
+            induction H2;
+            constructor; inv H1; inv H.
             + split; try assumption. apply H3.
                 intros Hxx0. apply HN. simpl.
                 apply ISF.union_3. assumption.
@@ -1052,16 +1189,17 @@ Section SubstitutionLemma.
             + apply IHHC2 with (x0 := x) (v0 := v); 
                 auto. intros H2. apply HN. 
                 apply ISF.union_3. assumption.
-        - constructor. induction H0; 
-            constructor; inv H; inv H0.
+        - constructor; auto. induction H2; 
+            constructor; inv H; inv H0;
+            clear H; clear H0; inv H1; inv H2; inv H5.
             + split; try assumption.
-                apply H3 with (x1 := x) (v0 := v); auto.
+                apply H0 with (x1 := x) (v0 := v); auto.
                 intros Hxx0. apply HN. simpl.
                 apply ISF.union_3. assumption.
             + assert (Hxl : ~ IS.In x (fv (ERec l))).
                 * intros Hxl. apply HN. simpl in *.
                     apply ISF.union_2. assumption.
-                * apply (IHForall2 H7 Hxl).
+                * apply (IHForall2 H7 H9 H11 Hxl).
         - apply check_prj with (ts := ts); auto.
             simpl in *. assert (HR : bind x v g = bind x v g);
             try reflexivity. pose proof IHHC x v g HN HR as IH.
@@ -1086,6 +1224,7 @@ Section SubstitutionLemma.
         forall (u : type),
         relfs (check (bind x u g)) es ts ->
         relfs (check g) es' ts.
+    Proof.
         intros g es es' ts H.
         dependent induction H; intros x esub Hsub u0 HCB.
         - apply inv_rec in H as [us [Hu0 HSus]]; subst. 
@@ -1095,7 +1234,28 @@ Section SubstitutionLemma.
         - assumption.
     Admitted.
 
-    Lemma Substitution_Lemma :
+    Lemma fields_sub_nodups :
+        forall (x : id) (esub : expr) (es es' : fields expr),
+        relfs (sub x esub) es es' ->
+        nodupfs es -> nodupfs es'.
+    Proof.
+        intros x esub es es' HS.
+        induction HS; intros ND.
+        - constructor.
+        - destruct x0 as [x0 ex0].
+            destruct y as [y ey].
+            destruct H as [Hfst Hsub].
+            simpl in *. subst.
+            inv ND.
+            unfold nodupfs in *. simpl in *.
+            constructor; simpl in *; auto.
+            intros Hin. apply H1.
+            pose proof relfs_name_share (sub x esub) as RNS.
+            apply RNS with (x0 := y) in HS. 
+            apply HS. assumption.
+    Qed.
+
+    Lemma SubstitutionLem :
         forall (x : id) (esub e e' : expr),
         substitution_lemma x esub e e'.
     Proof.
@@ -1156,10 +1316,11 @@ Section SubstitutionLemma.
             destruct fs';
             intros Hsub Hbig;
             intros ts;
-            destruct ts; intros;
-            inv Hbig; inv Hsub; inv H1;
-            clear Hbig; clear Hsub; clear H1;
-            constructor; constructor.
+            destruct ts; intros Hnodupfs Hck;
+            inv Hbig; inv Hsub; inv Hck;
+            clear Hbig; clear Hsub; clear Hck;
+            inv Hnodupfs.
+            + constructor; constructor.
             + destruct f as [f ef];
                 destruct f0 as [f0 ef0];
                 destruct a as [a ea];
@@ -1167,15 +1328,82 @@ Section SubstitutionLemma.
                 inv H3; inv H4; inv H6;
                 clear H3; clear H4; clear H6;
                 simpl in *; subst.
-                split; auto.
-                simpl. apply H0 with (u := u); auto.
-            + pose proof IHfs fs' H7 H5 ts H9 as IH.
-                pose proof check_rec_relfs g fs fs' 
-                ts IH x es H7 u
-                as CRR. apply CRR. auto.
+                constructor; auto.
+                { apply fields_sub_nodups
+                    with (x := x) (esub := es) 
+                    (es := ((f0, ea) :: fs)); auto.
+                    constructor; auto.
+                    split; auto. }
+                { constructor.
+                    - split; simpl in *; auto.
+                        apply H0 with (u := u); auto.
+                    - inv H2. pose proof IHfs 
+                        H6 fs' H7 H5 ts H8 as IH.
+                        pose proof check_rec_relfs g fs fs' 
+                            ts as CRR.
+                        apply CRR with (x := x) 
+                            (u := u) (esub := es); auto. }
         - pose proof IHHCB x e y HS  IHHS u g as IH.
             apply check_subsume with (u := u0); auto.
         - clear IHHCB. apply check_prj with (ts := ts); auto.
             apply IHHS in HCB as IH; auto.
     Qed.
 End SubstitutionLemma.
+
+Section Preservation.
+    Definition preservation (e e' : expr) : Prop :=
+        step e e' -> forall (t : type),
+        checks e t -> checks e' t.
+
+    Theorem Preservation :
+        forall (e e' : expr), preservation e e'.
+    Proof.
+        intros e e' HS.
+        dependent induction HS; intros u HC;
+        unfold checks in *;
+        remember empty as o in HC.
+        - dependent induction HC.
+            + apply check_subsume with (u := u); auto.
+                apply IHHC with (x0 := x) (t0 := t)
+                (e0 := e) (es0 := es); auto.
+            + clear IHHC1. clear IHHC2.
+                apply inv_chk_fun in HC1 as [HSut Hev].
+                apply SubstitutionLem in H as SL.
+                apply SL with (u := t); auto.
+                apply check_subsume with (u := u); auto.
+        - dependent induction HC.
+            + apply check_subsume with (u := u); auto.
+                apply IHHC with (e3 := e1) (e4 := e2); auto.
+            + clear IHHC1. clear IHHC2.
+                apply check_app with (u := u); auto.
+        - generalize dependent e.
+            dependent induction HC;
+            intros e Hin.
+            + apply check_subsume with (u := u); auto.
+                apply IHHC with (es0 := es) (x0 := x); auto.
+            + clear IHHC.
+                pose proof inv_chk_rec' empty 
+                    es ts HC x t H e Hin as ICR.
+                assumption.
+        - dependent induction HC.
+            + apply check_subsume with (u := u); auto.
+                apply IHHC with (e0 := e) (x0 := x); auto.
+            + clear IHHC. apply check_prj with (ts := ts); auto.
+        - dependent induction HC.
+            { apply check_subsume with (u := u); auto.
+                apply IHHC with (e0 := e) 
+                    (x0 := x) (es0 := es) (vs0 := vs); auto. }
+            { constructor; auto.
+                - unfold nodupfs in *.
+                    rewrite map_app.
+                    rewrite map_app in H2.
+                    simpl in *. assumption.
+                - apply relfs_app in H1 as RA.
+                    destruct RA as [ts1 [ts2 [Hts [Hts1 Hts2]]]].
+                    subst. inv Hts2.
+                    inv H5. apply IHHS in H4.
+                    apply relfs_app_dist; auto.
+                    constructor; auto.
+                    constructor; auto. }
+    Qed.
+End Preservation.
