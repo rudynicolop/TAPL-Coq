@@ -51,6 +51,17 @@ Definition relf {U V : Type} (R : U -> V -> Prop) (u : field U) (v : field V) : 
 Definition relfs {U V : Type} (R : U -> V -> Prop) : fields U -> fields V -> Prop :=
     Forall2 (relf R).
 
+(* Coq doesn't let me use this but it would be helpful. *)
+Fixpoint fields_pred_ind {U : Type} {P : U -> Prop}
+(Q : forall (u : U), P u)
+(us : fields U) : predfs P us :=
+    match us as us' return (predfs P us') with
+    | [] => Forall_nil (predf P)
+    | h :: t => Forall_cons h
+        (Q (snd h))
+        (fields_pred_ind Q t)
+    end.
+
 Definition relf_pred {U V : Type} 
 {R1 : U -> V -> Prop} {R2 : U -> V -> Prop}
 {u : field U} {v : field V}
@@ -349,18 +360,23 @@ Section ExprInduction.
     Hypothesis HPrj : forall (e : expr) (x : id),
         P e -> P (EPrj e x).
 
-    Fixpoint IHExpr (e : expr) : P e.
-    Proof.
-        destruct e.
-        - assumption.
-        - apply HVar.
-        - apply HFun; apply IHExpr.
-        - apply HApp; apply IHExpr.
-        - apply HRec. induction fs; constructor.
-            + apply IHExpr.
-            + assumption.
-        - apply HPrj. apply IHExpr.
-    Qed.
+    Check Forall_cons.
+
+    Fixpoint IHExpr (e : expr) : P e :=
+        match e as ee return (P ee) with
+        | EUnit => HUnit
+        | EVar x => HVar x
+        | EFun x t e => HFun x t e (IHExpr e)
+        | EApp e1 e2 => HApp e1 e2 (IHExpr e1) (IHExpr e2)
+        | ERec fs =>
+            let fix rec_help (fs' : fields expr) : predfs P fs' :=
+                match fs' as fs'' return (predfs P fs'') with
+                | [] => Forall_nil (predf P)
+                | hf::tf => Forall_cons hf (IHExpr (snd hf)) (rec_help tf)
+                end in
+            HRec fs (rec_help fs)
+        | EPrj e x => HPrj e x (IHExpr e)
+        end.
 End ExprInduction.
 
 Ltac indexpr e := induction e using IHExpr.
