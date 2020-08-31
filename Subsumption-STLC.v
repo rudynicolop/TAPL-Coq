@@ -1283,27 +1283,6 @@ Section SubstitutionLemma.
         check g esub u -> 
         check g e' v.
 
-    (* I need something like this,
-        for the record case in the 
-        substitution proof. *)
-    Lemma check_rec_relfs :
-        forall (g : gamma) (es es' : fields expr) (ts : fields type),
-        check g (ERec es') (TRec ts) ->
-        forall (x : id) (esub : expr),
-        relfs (sub x esub) es es' ->
-        forall (u : type),
-        relfs (check (bind x u g)) es ts ->
-        relfs (check g) es' ts.
-    Proof.
-        intros g es es' ts H.
-        dependent induction H; intros x esub Hsub u0 HCB.
-        - apply inv_rec in H as [us [Hu0 HSus]]; subst. 
-            apply IHcheck with (es'0 := es') 
-                (x := x) (u := u0) 
-            (esub := esub); auto. admit.
-        - assumption.
-    Admitted.
-
     Lemma fields_sub_nodups :
         forall (x : id) (esub : expr) (es es' : fields expr),
         relfs (sub x esub) es es' ->
@@ -1379,40 +1358,28 @@ Section SubstitutionLemma.
             + apply IHHS2 with (u := u); auto.
         - pose proof IHHCB x fs H H0 u g as IH.
             apply check_subsume with (u := u0); auto. 
-        - generalize dependent ts.
-            generalize dependent fs'.
-            induction fs;
-            intros fs';
-            destruct fs';
-            intros Hsub Hbig;
-            intros ts;
-            destruct ts; intros Hnodupfs Hck;
-            inv Hbig; inv Hsub; inv Hck;
-            clear Hbig; clear Hsub; clear Hck;
-            inv Hnodupfs.
-            + constructor; constructor.
-            + destruct f as [f ef];
-                destruct f0 as [f0 ef0];
-                destruct a as [a ea];
-                simpl in *; subst.
-                inv H3; inv H4; inv H6;
-                clear H3; clear H4; clear H6;
-                simpl in *; subst.
-                constructor; auto.
-                { apply fields_sub_nodups
-                    with (x := x) (esub := es) 
-                    (es := ((f0, ea) :: fs)); auto.
-                    constructor; auto.
-                    split; auto. }
-                { constructor.
-                    - split; simpl in *; auto.
-                        apply H0 with (u := u); auto.
-                    - inv H2. pose proof IHfs 
-                        H6 fs' H7 H5 ts H8 as IH.
-                        pose proof check_rec_relfs g fs fs' 
-                            ts as CRR.
-                        apply CRR with (x := x) 
-                            (u := u) (esub := es); auto. }
+        - apply check_rec; auto.
+            + apply fields_sub_nodups in H; auto.
+            + generalize dependent fs'.
+            induction H1; intros fs';
+            intros HSfs; intros Hbig;
+            inv HSfs; constructor; auto;
+            destruct x0 as [x0 ex0];
+            destruct y as [y ey];
+            destruct y0 as [y0 ey0];
+            destruct H5 as [Hfst Hsub];
+            inv HSfs; clear HSfs;
+            inv Hbig; clear Hbig;
+            destruct H8 as [Hfst' Hck];
+            destruct H as [Hyy0 Hcky];
+            simpl in *; subst; clear Hfst'.
+            * split; auto; simpl. 
+                apply Hck with (u := u); auto.
+            * inv H2; clear H2.
+                inv H3; clear H3. clear H4. clear H2.
+                pose proof IHForall2 H5 H8
+                    l'0 H9 H11 as IH; clear IHForall2.
+                apply IH.
         - pose proof IHHCB x e y HS  IHHS u g as IH.
             apply check_subsume with (u := u0); auto.
         - clear IHHCB. apply check_prj with (ts := ts); auto.
