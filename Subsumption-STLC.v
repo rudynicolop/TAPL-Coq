@@ -454,23 +454,33 @@ Section CheckInduction.
         P g e (TRec ts) ->
         P g (EPrj e x) t.
 
-    Fixpoint IHCheck (g : gamma) (e : expr) (t : type) {struct e} : check g e t -> P g e t.
-    Proof.
-        intros HC. destruct HC.
-        - apply HSubsume with (u := u); auto.
-        - apply HUnit.
-        - apply HVar. assumption.
-        - apply HFun; auto.
-        - apply HApp with (u := u); auto.
-        - apply HRec; auto. induction H1.
-            + constructor.
-            + inv H. inv H0. 
-                constructor; auto. 
-                inv H1. split; auto.
-                apply IHForall2; auto.
-        - apply HPrj with (ts := ts); auto.
-    (* No more subgoals. *)
-    Admitted.
+    Fixpoint IHCheck (g : gamma) (e : expr) (t : type) (HC :check g e t) : P g e t :=
+        match HC in check _ e' t' return (P g e' t') with
+        | check_subsume _ e u v HSuv HCeu => 
+            HSubsume g e u v HSuv HCeu (IHCheck g e u HCeu)
+        | check_unit _ => HUnit g
+        | check_var _ x t HB => HVar g x t HB
+        | check_fun _ x u v e HCev =>
+            HFun g x u v e HCev (IHCheck (bind x u g) e v HCev)
+        | check_app _ e1 e2 u v HCe1uv HCe2u =>
+            HApp g e1 e2 u v 
+                HCe1uv (IHCheck g e1 (TFun u v) HCe1uv)
+                HCe2u (IHCheck g e2 u HCe2u)
+        | check_rec _ es ts NDes NDts HRs =>
+            let fix rec_help {es' : fields expr} {ts' : fields type}
+                (HRs' : relfs (check g) es' ts') : Forall2 (relf (P g)) es' ts' :=
+                match HRs' in (Forall2 _ le lt) 
+                    return (Forall2 (relf (P g)) le lt) with
+                | Forall2_nil _ => Forall2_nil (relf (P g))
+                | Forall2_cons e t Het Hests =>
+                    Forall2_cons
+                        e t (relf_pred (IHCheck g) Het) 
+                        (rec_help Hests)
+                end in
+            HRec g es ts NDes NDts HRs (rec_help HRs)
+        | check_prj _ e x t ts Hints HCets =>
+            HPrj g e x t ts Hints HCets (IHCheck g e (TRec ts) HCets)
+        end.
 End CheckInduction.
 
 Definition checks : expr -> type -> Prop := check empty.
@@ -718,19 +728,6 @@ Inductive step : expr -> expr -> Prop :=
         step (ERec (vs ++ (x,e) :: es)) (ERec (vs ++ (x,e') :: es)).
 
 Check step_ind.
-
-(* Section StepInduction.
-    Variable P : expr -> expr -> Prop.
-
-    Hypothesis HRedux :
-        forall (x : id) (t : type) (e es e' : expr),
-        sub x es e e' -> P (EApp (EFun x t e) es) e'.
-
-    Hypothesis HApp :
-        forall e1 e2 e1' : expr,
-        step e1 e1' -> P e1 e1' -> P (EApp e1 e2) (EApp e1' e2)
-
-End StepInduction. *)
 
 (* Inversion on Subsumption. *)
 Section InvSubsumption.
