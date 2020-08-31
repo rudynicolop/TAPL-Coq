@@ -51,6 +51,15 @@ Definition relf {U V : Type} (R : U -> V -> Prop) (u : field U) (v : field V) : 
 Definition relfs {U V : Type} (R : U -> V -> Prop) : fields U -> fields V -> Prop :=
     Forall2 (relf R).
 
+Definition relf_pred {U V : Type} 
+{R1 : U -> V -> Prop} {R2 : U -> V -> Prop}
+{u : field U} {v : field V}
+(Q : forall (u' : U) (v' : V), R1 u' v' -> R2 u' v')
+(H : relf R1 u v) :=
+    match H with
+    | conj Hname HR1 => conj Hname (Q (snd u) (snd v) HR1)
+    end.
+
 (* record field names must be unique *)
 Definition nodupfs {U : Type} (us : fields U) : Prop :=
     NoDup (map fst us).
@@ -197,6 +206,7 @@ Inductive subtype : type -> type -> Prop :=
         subtype (TRec us) (TRec vs).
 
 Check subtype_ind.
+Compute subtype_ind.
 
 Section SubtypeInduction.
     Variable P : type -> type -> Prop.
@@ -224,27 +234,30 @@ Section SubtypeInduction.
     Hypothesis HRecPerm : forall (us vs : fields type),
         perm us vs -> P (TRec us) (TRec vs).
     
-    Fixpoint IHSubtype (t t' : type) {struct t'} : subtype t t' -> P t t'.
-    Proof.
-        intros HC. destruct HC.
-        - apply HRefl.
-        - apply HTrans with (u := u); 
-            try apply IHSubtype; try assumption.
-        - apply HTop.
-        - apply HFun; try apply IHSubtype;
-            try assumption.
-        - apply HRecWidth.
-        - apply HRecDepth; try assumption.
-            induction H; constructor.
-            + destruct H as [HXY ASS]. split.
-                * assumption.
-                * apply IHSubtype. assumption.
-            + assumption.
-        - apply HRecPerm. assumption.
-    (* No more subgoals. *)
-    Admitted.
+    Fixpoint IHSubtype (t t' : type) (HS : subtype t t') {struct HS} : P t t' :=
+        match HS in (subtype w w') return (P w w') with
+        | st_refl t => HRefl t
+        | st_trans t u v Htu Huv =>
+            HTrans t u v Htu (IHSubtype t u Htu) Huv (IHSubtype u v Huv)
+        | st_top t => HTop t
+        | st_fun u u' v v' Hu Hv =>
+            HFun u u' v v' Hu (IHSubtype u' u Hu) Hv (IHSubtype v v' Hv)
+        | st_rec_width us vs => HRecWidth us vs
+        | st_rec_depth us vs HRs =>
+            let fix depth_helper {us' : fields type} {vs' : fields type}
+                (HRs' : relfs subtype us' vs') : Forall2 (relf P) us' vs' :=
+                match HRs' in (Forall2 _ lu lv) 
+                    return (Forall2 (relf P) lu lv) with
+                | Forall2_nil _ => Forall2_nil (relf P)
+                | Forall2_cons u v Huv Husvs =>
+                    Forall2_cons
+                        u v (relf_pred IHSubtype Huv) 
+                        (depth_helper Husvs)
+                end in
+            HRecDepth us vs HRs (depth_helper HRs) 
+        | st_rec_perm us vs HP => HRecPerm us vs HP
+        end.
 End SubtypeInduction.
-
 
 Lemma st_fields_refl :
     forall (fs : fields type), relfs subtype fs fs.
