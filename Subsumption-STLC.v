@@ -686,24 +686,40 @@ Section SubstitutionInduction.
         P x es (EPrj e y) (EPrj e' y).
 
     Fixpoint IHSubstitute (x : id) (es e e' : expr)
-    {struct e} : sub x es e e' -> P x es e e'.
-    Proof.
-        intros HSub. destruct HSub.
-        - apply HUnit.
-        - apply HHit.
-        - apply HMiss. assumption.
-        - apply HFunBound.
-        - apply HFunNotFree; auto.
-        - apply HFunFree with (e' := e'); auto.
-        - apply HApp; auto.
-        - apply HRec; auto. 
-            induction H; constructor.
-            + destruct H as [Hfst Hall]. 
-                split; auto.
-            + assumption.
-        - apply HPrj; auto.
-        (* No more subgoals *)
-    Admitted.
+    (HS : sub x es e e') {struct HS} : P x es e e' :=
+        match HS in sub _ _ pe pe' return P x es pe pe' with
+        | sub_unit _ _ => HUnit x es
+        | sub_hit _ _ => HHit x es
+        | sub_miss _ _ y Hxy => HMiss x es y Hxy
+        | sub_fun_bound _ _ t e => HFunBound x es t e
+        | sub_fun_notfree _ _ y t e e' Hxy Hines HS =>
+            HFunNotFree x es y t e e' 
+                Hxy Hines HS (IHSubstitute x es e e' HS)
+        | sub_fun_free _ _ y z t e e' e'' 
+            Hxy Hxz Hyz Hinyes Hinzes Hinze HSee' HSe'e'' =>
+            HFunFree x es y z t e e' e'' 
+                Hxy Hxz Hyz Hinyes Hinzes Hinze
+                HSee' (IHSubstitute y (EVar z) e e' HSee')
+                HSe'e'' (IHSubstitute x es e' e'' HSe'e'')
+        | sub_app _ _ e1 e1' e2 e2' HS1 HS2 =>
+            HApp x es e1 e1' e2 e2'
+                HS1 (IHSubstitute x es e1 e1' HS1)
+                HS2 (IHSubstitute x es e2 e2' HS2)
+        | sub_rec _ _ fs fs' HRs =>
+            let fix rec_help {fds : fields expr} {fds' : fields expr}
+            (HRs' : relfs (sub x es) fds fds') : Forall2 (relf (P x es)) fds fds' :=
+                match HRs' in (Forall2 _ l l') 
+                    return (Forall2 (relf (P x es)) l l') with
+                | Forall2_nil _ => Forall2_nil (relf (P x es))
+                | Forall2_cons fd fd' HRhead HRtail =>
+                    Forall2_cons
+                        fd fd' (relf_pred (IHSubstitute x es) HRhead) 
+                        (rec_help HRtail)
+                end in
+            HRec x es fs fs' HRs (rec_help HRs)
+        | sub_prj _ _ e e' y HS =>
+            HPrj x es e e' y HS (IHSubstitute x es e e' HS)
+        end.
 End SubstitutionInduction.
 
 Axiom sub_exists : forall (x : id) (s e : expr), exists e', sub x s e e'.
