@@ -284,6 +284,23 @@ Proof.
     intros us vs HS. constructor. assumption.
 Qed.
 
+Example record_subtyping_makes_sense :
+    subtype 
+        (TRec [("x",TUnit);("y",TUnit)]) 
+        (TRec [("y",TTop)]).
+Proof.
+    apply st_trans with (u := TRec [("y",TUnit)]).
+    - apply st_trans with (u := TRec [("y", TUnit); ("x", TUnit)]).
+        + apply st_rec_perm. constructor.
+        + assert (HE : [("y", TUnit); ("x", TUnit)] 
+            = [("y", TUnit)] ++ [("x", TUnit)]);
+            try reflexivity. rewrite HE.
+            apply st_rec_width.
+    - apply st_rec_depth. constructor.
+        + split; auto. apply st_top.
+        + constructor.
+Qed.
+
 Section Gamma.
     Definition gamma := string -> option type.
 
