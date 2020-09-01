@@ -1509,7 +1509,9 @@ Fail Fixpoint rechelp {ss' ts' : fields SS.type}
         (fst s, EUnit) :: (rechelp Hssts)
     end.
 
-(* why Coq, why???? *)
+(* why Coq, why? I cannot define the translation
+    as a function from subtyping derivations 
+    to types... :( *)
 Fail Fixpoint translate_subtype {u v : SS.type} (HS : SS.subtype u v) : expr :=
     let x := EVar "x" in
     let f := EVar "f" in
@@ -1582,12 +1584,20 @@ forall {s t : SS.type}, SS.subtype s t -> expr -> Prop :=
                         (fun (u : field SS.type) => 
                             (fst u, (EPrj (EVar "r") (fst u)))) 
                         us)))
-    (* this definition is currently incorrect... *)
     | ts_rec_depth : forall (ss ts : fields SS.type)
         (HS : relfs SS.subtype ss ts) (es : fields expr),
+        map fst ss = map fst es ->
+        (forall (s : field SS.type) (t : field SS.type),
+        exists (H : SS.subtype (snd s) (snd t)),
+        In (s,t) (combine ss ts) ->
+        exists (e : field expr), translate_subtype H (snd e) /\
+        In (s,e) (combine ss es)) ->
         translate_subtype
             (SS.st_rec_depth ss ts HS)
-            (EFun "r" (TRec (map (map_snd translate_type) ss)) (ERec es))
+            (EFun "r" 
+                (TRec (map (map_snd translate_type) ss)) 
+                (ERec (map (fun e => 
+                    (fst e, EApp (snd e) (EPrj (EVar "r") (fst e)))) es)))
     | ts_rec_perm : forall (ss ts : fields SS.type) (HP : perm ss ts),
         translate_subtype 
             (SS.st_rec_perm ss ts HP)
