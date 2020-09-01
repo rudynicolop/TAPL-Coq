@@ -215,7 +215,6 @@ Proof.
 Qed.
 
 Module SubsumptionSTLC.
-
 Inductive type : Type :=
     | TTop
     | TUnit
@@ -1448,7 +1447,6 @@ Section Preservation.
                     constructor; auto. }
     Qed.
 End Preservation.
-
 End SubsumptionSTLC.
 
 Definition map_pair {A B C D : Type} 
@@ -1466,7 +1464,6 @@ Definition map_snd {A B C : Type} (f : B -> C) : A * B -> A * C :=
     map_pair ID f.
 
 Module Coercion.
-
 Module SS := SubsumptionSTLC.
 
 Inductive type : Type :=
@@ -1580,8 +1577,8 @@ Fail Fixpoint translate_subtype {u v : SS.type} (HS : SS.subtype u v) : expr :=
     end.
 
 (* Coq is making me define this as a relation instead of a function... *)
-Inductive translate_subtype : 
-forall {s t : SS.type}, SS.subtype s t -> expr -> Prop :=
+Inductive translate_subtype : forall {s t : SS.type}, 
+SS.subtype s t -> expr -> Prop :=
     | ts_refl : forall (t : SS.type),
         translate_subtype (SS.st_refl t)
             (EFun "x" (translate_type t) (EVar "x"))
@@ -1731,4 +1728,94 @@ Proof.
         + admit.
             (* I don't feel like doing this... *)
 Admitted.
+
+Definition translate_gamma (g : @gamma SS.type) (x : id) :=
+    match g x with
+    | None => None
+    | Some t => Some (translate_type t)
+    end.
+
+Lemma translate_gamma_bind :
+    forall (g : gamma) (x : id) (t : SS.type),
+    translate_gamma (bind x t g) = 
+        bind x (translate_type t) (translate_gamma g).
+Proof.
+    intros g x t. apply functional_extensionality.
+    intros y. unfold translate_gamma.
+    destruct (IdDec.eq_dec x y).
+    - subst. rewrite bind_correct.
+        rewrite bind_correct. reflexivity.
+    - unfold bind.
+        apply eqb_neq in n. rewrite n. reflexivity.
+Qed.
+
+Inductive translate_expr {g : @gamma SS.type} :
+forall {e : SS.expr} {t : SS.type},
+SS.check g e t -> expr -> Prop :=
+    | te_unit : 
+        forall (H : SS.check g SS.EUnit SS.TUnit),
+        translate_expr H EUnit
+    | te_var : forall (x : id) (t : SS.type) 
+        (H : SS.check g (SS.EVar x) t),
+        g x = Some t ->
+        translate_expr H (EVar x)
+    | te_fun : forall (x : id) (t1 t2 : SS.type) 
+        (e : SS.expr) (e' : expr)
+        (D2 : SS.check (bind x t1 g) e t2)
+        (H : SS.check g (SS.EFun x t1 e) (SS.TFun t1 t2)),
+        @translate_expr (bind x t1 g) e t2 D2 e' ->
+        translate_expr H (EFun x (translate_type t1) e')
+    | te_app : forall (e1 e2 : SS.expr) 
+        (t11 t12 : SS.type) (e1' e2' : expr)
+        (D1 : SS.check g e1 (SS.TFun t11 t12))
+        (D2 : SS.check g e2 t11)
+        (H : SS.check g (SS.EApp e1 e2) t12),
+        translate_expr D1 e1' ->
+        translate_expr D2 e2' ->
+        translate_expr H (EApp e1' e2')
+    (* Skipping translation for records...for now! *)
+    | te_prj : forall (e : SS.expr) (x : id) 
+        (t : SS.type) (ts : fields SS.type) (e' : expr)
+        (D1 : SS.check g e (SS.TRec ts))
+        (H : SS.check g (SS.EPrj e x) t),
+        In (x,t) ts ->
+        translate_expr D1 e' ->
+        translate_expr H (EPrj e' x)
+    | te_subsume : forall (e : SS.expr) (s t : SS.type) (d' c' : expr)
+        (D : SS.check g e s) (C : SS.subtype s t)
+        (H : SS.check g e t),
+        translate_subtype C c' ->
+        translate_expr D d' ->
+        translate_expr H (EApp c' d').
+
+Theorem translate_expr_correct :
+    forall {g : @gamma SS.type} {e : SS.expr} {t : SS.type}
+    (D : SS.check g e t) (e' : expr),
+    translate_expr D e' -> 
+    check (translate_gamma g) e' (translate_type t).
+Proof.
+    intros g e t D e' TE. 
+        dependent induction TE.
+    - constructor.
+    - constructor. unfold translate_gamma.
+        rewrite H0. reflexivity.
+    - constructor. fold translate_type.
+        rewrite <- translate_gamma_bind.
+        assumption.
+    - simpl in *. remember (translate_type t11) as t11' in *.
+        remember (translate_type t12) as t12' in *.
+        apply check_app with (t := t11'); assumption.
+    - simpl in *.
+        remember (map (map_snd translate_type) ts) as ts' in *.
+        apply check_prj with (ts := ts'); auto. subst.
+        assert (dumb : (x, translate_type t)
+            = (map_snd translate_type) (x,t));
+        try reflexivity.
+        rewrite dumb. apply in_map. assumption.
+    - remember (translate_type s) as s' in *.
+        remember (translate_type t) as t' in *.
+        apply check_app with (t := s'); auto. subst. 
+        apply translate_subtype_correct with (C0 := C).
+        assumption.
+Qed.
 End Coercion.
