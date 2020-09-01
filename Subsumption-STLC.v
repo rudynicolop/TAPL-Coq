@@ -1482,6 +1482,41 @@ Inductive expr : Type :=
     | ERec (es : fields expr)
     | EPrj (e : expr) (x : id).
 
+(* free variables *)
+Fixpoint fv (e : expr) : IS.t :=
+    match e with
+    | EUnit => IS.empty
+    | EVar x => IS.singleton x
+    | EFun x _ e => IS.remove x (fv e)
+    | EApp e1 e2 => IS.union (fv e1) (fv e2)
+    | ERec (es) => 
+        fold_right 
+            (fun (e : field expr) acc => 
+                IS.union acc (fv (snd e)))
+            IS.empty es
+    | EPrj e _ => fv e
+    end.
+
+Inductive check (g : @gamma type) : expr -> type -> Prop :=
+    | check_unit : check g EUnit TUnit
+    | check_var : forall (x : id) (t : type),
+        g x = Some t ->
+        check g (EVar x) t
+    | check_fun : forall (x : id) (t t' : type) (e : expr),
+        check (bind x t g) e t' ->
+        check g (EFun x t e) (TFun t t')
+    | check_app : forall (e1 e2 : expr) (t t' : type),
+        check g e1 (TFun t t') ->
+        check g e2 t ->
+        check g (EApp e1 e2) t'
+    | check_rec : forall (es : fields expr) (ts : fields type),
+        relfs (check g) es ts ->
+        check g (ERec es) (TRec ts)
+    | check_prj : forall (e : expr) (x : id) (t : type) (ts : fields type),
+        In (x,t) ts ->
+        check g e (TRec ts) ->
+        check g (EPrj e x) t.
+
 Fixpoint translate_type (t : SS.type) : type :=
     match t with
     | SS.TTop | SS.TUnit => TUnit
@@ -1551,13 +1586,13 @@ forall {s t : SS.type}, SS.subtype s t -> expr -> Prop :=
         translate_subtype (SS.st_refl t)
             (EFun "x" (translate_type t) (EVar "x"))
     | ts_trans : forall (s u t : SS.type) (e1 e2 : expr)
-        (HSsu : SS.subtype s u) (HSut : SS.subtype u t),
-        translate_subtype HSsu e1 ->
-        translate_subtype HSut e2 ->
+        (C1 : SS.subtype s u) (C2 : SS.subtype u t),
+        translate_subtype C1 e1 ->
+        translate_subtype C2 e2 ->
         translate_subtype
-            (SS.st_trans s u t HSsu HSut)
+            (SS.st_trans s u t C1 C2)
             (EFun "x" (translate_type s) 
-                (EApp e1 (EApp e2 (EVar "x"))))
+                (EApp e2 (EApp e1 (EVar "x"))))
     | ts_top : forall (t : SS.type),
         translate_subtype (SS.st_top t)
             (EFun "x" (translate_type t) EUnit)
@@ -1604,4 +1639,96 @@ forall {s t : SS.type}, SS.subtype s t -> expr -> Prop :=
                         (fun (lbl : field SS.type) => 
                             (fst lbl, (EPrj (EVar "r") (fst lbl)))) 
                         ss))).
+
+Lemma translate_subtype_correct :
+    forall {s t : SS.type} (C : SS.subtype s t) (e : expr),
+    translate_subtype C e ->
+    forall (g : gamma),
+    check g e (TFun (translate_type s) (translate_type t)).
+Proof.
+    intros s t C e TST. dependent induction TST; intros g.
+    - constructor. constructor. reflexivity.
+    - remember (translate_type s) as s' in *.
+        remember (translate_type u) as u' in *.
+        remember (translate_type t) as t' in *.
+        constructor.
+        apply check_app with (t := u').
+        + apply IHTST2.
+        + apply check_app with (t := s').
+            * apply IHTST1.
+            * constructor. reflexivity.
+    - constructor. constructor.
+    - simpl. remember (translate_type s1) as s1' in *.
+        remember (translate_type s2) as s2' in *.
+        remember (translate_type t1) as t1' in *.
+        remember (translate_type t2) as t2' in *. 
+        constructor. constructor.
+        apply check_app with (t := s2').
+        + apply IHTST2.
+        + apply check_app with (t := s1');
+            try (constructor; reflexivity).
+            apply check_app with (t := t1');
+            try (constructor; reflexivity).
+            apply IHTST1.
+    - constructor. simpl. constructor.
+        induction us; constructor.
+        + destruct a as [a1 a2]; split; simpl;
+            try reflexivity.
+            apply check_prj with 
+                (ts := ((ID a1, translate_type a2)
+                    :: map (map_snd translate_type) (us ++ vs))).
+            * constructor. reflexivity.
+            * constructor. reflexivity.
+        + simpl. admit.
+            (* Requires a helper lemma for how adding 
+                field to a record type bound to a variable
+                in the context doesn't change
+                typing projections. *)
+    - constructor. constructor. admit.
+        (* requires a stronger induction 
+            hypothesis for translate_subtype. *)
+    - constructor. constructor.
+        fold translate_type.
+        dependent induction HP.
+        + constructor.
+        + destruct x as [x1 x2].
+            constructor.
+            * split; try reflexivity. simpl.
+                apply check_prj with 
+                    (ts := ((ID x1, translate_type x2) 
+                        :: map (map_snd translate_type) l));
+                constructor; reflexivity.
+            * simpl. admit.
+            (* Requires a helper lemma for how adding 
+                field to a record type bound to a variable
+                in the context doesn't change
+                typing projections. *)
+        + destruct x as [x1 x2].
+            destruct y as [y1 y2].
+            constructor; simpl.
+            { split.
+                - admit.
+                    (* This case baffles me... *)
+                - simpl. apply check_prj with
+                    (ts := ((ID y1, translate_type y2)
+                    :: (ID x1, translate_type x2) 
+                        :: map (map_snd translate_type) l)).
+                    + constructor. admit.
+                        (* I don't understand 
+                            what is going on... *) 
+                    + constructor. reflexivity. }
+            { constructor.
+                - split; simpl.
+                    + admit.
+                        (* Why Coq, why? *)
+                    + apply check_prj with
+                        (ts := (ID y1, translate_type y2)
+                            :: (ID x1, translate_type x2) 
+                            :: map (map_snd translate_type) l).
+                        * admit.
+                            (* I don't get it... *)
+                        * constructor. reflexivity. }
+        + admit.
+            (* I don't feel like doing this... *)
+Admitted.
 End Coercion.
