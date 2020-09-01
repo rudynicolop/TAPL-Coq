@@ -29,6 +29,77 @@ Ltac injintrosubst H := injection H; intros; subst.
 
 Definition id := string.
 
+Section Gamma.
+    Context {T : Type}.
+
+    Definition gamma := string -> option T.
+
+    Definition empty : gamma := fun x => None.
+
+    Definition bind (x : string) (t : T) (g : gamma) : gamma :=
+        fun y => if String.eqb x y then Some t else g y.
+
+    Lemma bind_correct : 
+        forall (x : id) (t : T) (g : gamma),
+        bind x t g x = Some t.
+    Proof.
+        intros. unfold bind. destruct ((x =? x)%string) eqn:eq.
+        - reflexivity.
+        - apply eqb_neq in eq. contradiction.
+    Qed. 
+
+    Lemma bind_complete :
+        forall (x x' : id) (t t' : T) (g : gamma),
+        x' <> x -> (g x = Some t <-> bind x' t' g x = Some t). 
+    Proof.
+        intros. unfold bind. apply eqb_neq in H. 
+        rewrite H. split; intros; apply H0.
+    Qed.
+
+    Lemma rebind_correct : 
+        forall (x : id) (t t' : T) (g : gamma),
+        bind x t g = bind x t (bind x t' g).
+    Proof.
+        intros. apply functional_extensionality. intros y.
+        unfold bind. destruct ((x =? y)%string); reflexivity.
+    Qed.
+
+    Lemma bind_diff_comm : 
+        forall (x y : id) (u v : T) (g : gamma),
+        x <> y ->
+        bind x u (bind y v g) = bind y v (bind x u g).
+    Proof.
+        intros. apply functional_extensionality. intros z.
+        unfold bind. destruct ((x =? z)%string) eqn:eq.
+            - apply eqb_eq in eq; subst.
+                destruct ((y =? z)%string) eqn:eeq.
+                + apply eqb_eq in eeq; subst. contradiction.
+                + reflexivity.
+            - apply eqb_neq in eq. destruct ((y =? z)%string) eqn:eeq; reflexivity.
+    Qed.
+End Gamma.
+
+Module IdDec <: SE.DecidableType.
+    Import SE.
+    Require Import RelationClasses.
+    Definition t := id.
+    Definition eq (x1 x2 : t) := x1 = x2.
+    Declare Instance eq_equiv : Equivalence eq.
+    Theorem eq_dec : forall (x1 x2 : t),
+        {x1 = x2} + {x1 <> x2}.
+    Proof. intros. apply string_dec. Qed.
+    Theorem eq_refl : forall (x : t), x = x.
+    Proof. intros. reflexivity. Qed.
+    Theorem eq_sym : forall (x y : t), x = y -> y = x.
+    Proof. unfold eq. intros; subst; reflexivity. Qed.
+    Theorem eq_trans : forall (x y z : t), x = y -> y = z -> x = z.
+    Proof. intros; subst. reflexivity. Qed.
+End IdDec.
+
+(* variable sets *)
+Module IS := WS.Make(IdDec).
+Module ISF := MSF.WFactsOn(IdDec)(IS).
+
 Definition field (t : Type) : Type := id * t.
 
 Definition fields (t : Type) : Type := list (field t).
@@ -303,54 +374,6 @@ Proof.
         + constructor.
 Qed.
 
-Section Gamma.
-    Definition gamma := string -> option type.
-
-    Definition empty : gamma := fun x => None.
-
-    Definition bind (x : string) (t : type) (g : gamma) : gamma :=
-        fun y => if String.eqb x y then Some t else g y.
-
-    Lemma bind_correct : 
-        forall (x : id) (t : type) (g : gamma),
-        bind x t g x = Some t.
-    Proof.
-        intros. unfold bind. destruct ((x =? x)%string) eqn:eq.
-        - reflexivity.
-        - apply eqb_neq in eq. contradiction.
-    Qed. 
-
-    Lemma bind_complete :
-        forall (x x' : id) (t t' : type) (g : gamma),
-        x' <> x -> (g x = Some t <-> bind x' t' g x = Some t). 
-    Proof.
-        intros. unfold bind. apply eqb_neq in H. 
-        rewrite H. split; intros; apply H0.
-    Qed.
-
-    Lemma rebind_correct : 
-        forall (x : id) (t t' : type) (g : gamma),
-        bind x t g = bind x t (bind x t' g).
-    Proof.
-        intros. apply functional_extensionality. intros y.
-        unfold bind. destruct ((x =? y)%string); reflexivity.
-    Qed.
-
-    Lemma bind_diff_comm : 
-        forall (x y : id) (u v : type) (g : gamma),
-        x <> y ->
-        bind x u (bind y v g) = bind y v (bind x u g).
-    Proof.
-        intros. apply functional_extensionality. intros z.
-        unfold bind. destruct ((x =? z)%string) eqn:eq.
-            - apply eqb_eq in eq; subst.
-                destruct ((y =? z)%string) eqn:eeq.
-                + apply eqb_eq in eeq; subst. contradiction.
-                + reflexivity.
-            - apply eqb_neq in eq. destruct ((y =? z)%string) eqn:eeq; reflexivity.
-    Qed.
-End Gamma.
-
 Inductive expr : Type :=
     | EUnit
     | EVar (x : id)
@@ -431,7 +454,7 @@ Inductive check (g : gamma) : expr -> type -> Prop :=
 Check check_ind.
 
 Section CheckInduction.
-    Variable P : gamma -> expr -> type -> Prop.
+    Variable P : @gamma type -> expr -> type -> Prop.
 
     Hypothesis HSubsume : 
         forall (g : gamma) (e : expr) (u v : type),
@@ -578,27 +601,6 @@ Section ValueDec.
         - right. intros HF. inv HF.
     Qed.
 End ValueDec.
-
-Module IdDec <: SE.DecidableType.
-    Import SE.
-    Require Import RelationClasses.
-    Definition t := id.
-    Definition eq (x1 x2 : t) := x1 = x2.
-    Declare Instance eq_equiv : Equivalence eq.
-    Theorem eq_dec : forall (x1 x2 : t),
-        {x1 = x2} + {x1 <> x2}.
-    Proof. intros. apply string_dec. Qed.
-    Theorem eq_refl : forall (x : t), x = x.
-    Proof. intros. reflexivity. Qed.
-    Theorem eq_sym : forall (x y : t), x = y -> y = x.
-    Proof. unfold eq. intros; subst; reflexivity. Qed.
-    Theorem eq_trans : forall (x y z : t), x = y -> y = z -> x = z.
-    Proof. intros; subst. reflexivity. Qed.
-End IdDec.
-
-(* variable sets *)
-Module IS := WS.Make(IdDec).
-Module ISF := MSF.WFactsOn(IdDec)(IS).
 
 (* free variables *)
 Fixpoint fv (e : expr) : IS.t :=
@@ -1060,7 +1062,7 @@ Section Progress.
         unfold progress_thm. intros e t HC.
         unfold checks in *. remember empty as o in HC.
         dependent induction HC using IHCheck; subst;
-        assert (HE : empty = empty);
+        assert (HE : @empty type = @empty type);
         try reflexivity.
         - destruct IHHC as [V | [e' HS]].
             + reflexivity.
@@ -1462,12 +1464,6 @@ Definition map_fst {A B C : Type} (f : A -> C) : A * B -> C * B :=
 
 Definition map_snd {A B C : Type} (f : B -> C) : A * B -> A * C := 
     map_pair ID f.
-
-(* Not generally true but used
-    to define inductive types *)
-Axiom forall2_list : forall
-{A B C : Type} {P : A -> B -> Prop} {a : list A}  {b : list B}
-(H : Forall2 P a b) (Q : A -> C -> Prop) (c : list C), Forall2 Q a c.
 
 Module Coercion.
 
