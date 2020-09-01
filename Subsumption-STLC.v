@@ -143,6 +143,8 @@ Proof.
     apply Forall2_app; auto.
 Qed.
 
+Module SubsumptionSTLC.
+
 Inductive type : Type :=
     | TTop
     | TUnit
@@ -1444,3 +1446,156 @@ Section Preservation.
                     constructor; auto. }
     Qed.
 End Preservation.
+
+End SubsumptionSTLC.
+
+Definition map_pair {A B C D : Type} 
+(f : A -> C) (g : B -> D) (p : A * B) : C * D := 
+    match p with
+    | (a,b) => (f a, g b)
+    end.
+
+Definition ID {X : Type} (x : X) := x.
+
+Definition map_fst {A B C : Type} (f : A -> C) : A * B -> C * B := 
+    map_pair f ID.
+
+Definition map_snd {A B C : Type} (f : B -> C) : A * B -> A * C := 
+    map_pair ID f.
+
+(* Not generally true but used
+    to define inductive types *)
+Axiom forall2_list : forall
+{A B C : Type} {P : A -> B -> Prop} {a : list A}  {b : list B}
+(H : Forall2 P a b) (Q : A -> C -> Prop) (c : list C), Forall2 Q a c.
+
+Module Coercion.
+
+Module SS := SubsumptionSTLC.
+
+Inductive type : Type :=
+    | TUnit
+    | TFun (t t' : type)
+    | TRec (ts : fields type).
+
+Inductive expr : Type :=
+    | EUnit
+    | EVar (x : id)
+    | EFun (x : id) (t : type) (e : expr)
+    | EApp (e1 e2 : expr)
+    | ERec (es : fields expr)
+    | EPrj (e : expr) (x : id).
+
+Fixpoint translate_type (t : SS.type) : type :=
+    match t with
+    | SS.TTop | SS.TUnit => TUnit
+    | SS.TFun t t' => 
+        TFun (translate_type t) (translate_type t')
+    | SS.TRec ts =>
+        TRec (map (map_snd translate_type) ts)
+    end.
+
+(* Why Coq:
+    Incorrect elimination of "HS'" in the inductive type "Forall2":
+    the return type has sort "Type" while it should be "Prop".
+    Elimination of an inductive object of sort Prop
+    is not allowed on a predicate in sort Type
+    because proofs can be eliminated only to build proofs. *)
+Fail Fixpoint rechelp {ss' ts' : fields SS.type} 
+(HS' : relfs SS.subtype ss' ts') : fields expr :=
+    match HS' with
+    | Forall2_nil _ => []
+    | Forall2_cons s _ (conj _ Hst) Hssts =>
+        (fst s, EUnit) :: (rechelp Hssts)
+    end.
+
+(* why Coq, why???? *)
+Fail Fixpoint translate_subtype {u v : SS.type} (HS : SS.subtype u v) : expr :=
+    let x := EVar "x" in
+    let f := EVar "f" in
+    let r := EVar "r" in
+    match HS with
+    | SS.st_refl t => EFun "x" (translate_type t) x
+    | SS.st_trans s _ _ HSsu HSut => 
+        EFun "x" (translate_type s) 
+            (EApp (translate_subtype HSsu)
+                (EApp (translate_subtype HSut) x))
+    | SS.st_top t => EFun "x" (translate_type t) EUnit
+    | SS.st_fun s1 s2 t1 _ C1 C2 =>
+        EFun "f" (translate_type (SS.TFun s1 s2 ))
+            (EFun "x" (translate_type t1) 
+                (EApp (translate_subtype C2) 
+                    (EApp f
+                        (EApp (translate_subtype C1) x))))
+    | SS.st_rec_width us vs =>
+        EFun "r" 
+            (TRec (map (map_snd translate_type) (us ++ vs)))
+            (ERec 
+                (map 
+                    (fun (u : field SS.type) => 
+                        (fst u, (EPrj r (fst u)))) 
+                    us))
+    | SS.st_rec_depth ss _ HS =>
+        let fix rechelp {ss' ts' : fields SS.type} 
+            (HS' : relfs SS.subtype ss' ts') : fields expr :=
+            match HS' with
+            | Forall2_nil _ => []
+            | Forall2_cons s _ (conj _ Hst) Hssts =>
+                (fst s, EApp (translate_subtype Hst) (EPrj r (fst s))) :: (rechelp Hssts)
+            end in
+        EFun "r" (TRec (map (map_snd translate_type) ss)) (ERec (rechelp HS))
+    end.
+
+(* Coq is making me define this as a relation instead of a function... *)
+Inductive translate_subtype : 
+forall {s t : SS.type}, SS.subtype s t -> expr -> Prop :=
+    | ts_refl : forall (t : SS.type),
+        translate_subtype (SS.st_refl t)
+            (EFun "x" (translate_type t) (EVar "x"))
+    | ts_trans : forall (s u t : SS.type) (e1 e2 : expr)
+        (HSsu : SS.subtype s u) (HSut : SS.subtype u t),
+        translate_subtype HSsu e1 ->
+        translate_subtype HSut e2 ->
+        translate_subtype
+            (SS.st_trans s u t HSsu HSut)
+            (EFun "x" (translate_type s) 
+                (EApp e1 (EApp e2 (EVar "x"))))
+    | ts_top : forall (t : SS.type),
+        translate_subtype (SS.st_top t)
+            (EFun "x" (translate_type t) EUnit)
+    | ts_fun : forall (s1 t1 s2 t2 : SS.type) (e1 e2: expr)
+        (C1 : SS.subtype t1 s1) (C2 : SS.subtype s2 t2),
+        translate_subtype C1 e1 ->
+        translate_subtype C2 e2 ->
+        translate_subtype 
+            (SS.st_fun s1 t1 s2 t2 C1 C2)
+            (EFun "f" (translate_type (SS.TFun s1 s2 ))
+                ((EFun "x") (translate_type t1)
+                    (EApp e2 (EApp (EVar "f") (EApp e1 (EVar "x"))))))
+    | ts_rec_width : forall (us vs : fields SS.type),
+        translate_subtype
+            (SS.st_rec_width us vs)
+            (EFun "r" 
+                (TRec (map (map_snd translate_type) (us ++ vs)))
+                (ERec 
+                    (map 
+                        (fun (u : field SS.type) => 
+                            (fst u, (EPrj (EVar "r") (fst u)))) 
+                        us)))
+    (* this definition is currently incorrect... *)
+    | ts_rec_depth : forall (ss ts : fields SS.type)
+        (HS : relfs SS.subtype ss ts) (es : fields expr),
+        translate_subtype
+            (SS.st_rec_depth ss ts HS)
+            (EFun "r" (TRec (map (map_snd translate_type) ss)) (ERec es))
+    | ts_rec_perm : forall (ss ts : fields SS.type) (HP : perm ss ts),
+        translate_subtype 
+            (SS.st_rec_perm ss ts HP)
+            (EFun "r" 
+                (TRec (map (map_snd translate_type) ss))
+                (ERec 
+                    (map 
+                        (fun (lbl : field SS.type) => 
+                            (fst lbl, (EPrj (EVar "r") (fst lbl)))) 
+                        ss))).
+End Coercion.
