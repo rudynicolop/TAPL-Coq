@@ -1818,4 +1818,20 @@ Proof.
         apply translate_subtype_correct with (C0 := C).
         assumption.
 Qed.
+
+(* Below definition is incorrect :
+    e1' and e2' should evaluate to
+    the same value but they may not be equal *)
+Theorem Coherence :
+    forall {g : @gamma SS.type} {e : SS.expr} {t : SS.type}
+    (D1 D2 : SS.check g e t) (e1' e2' : expr),
+    translate_expr D1 e1' ->
+    translate_expr D2 e2' -> e1' = e2'.
+Proof.
+    intros g e t D1 D2 e1' e2' TE1.
+    induction TE1; intros TE2.
+    - apply translate_expr_correct in TE2 as TEC2.
+        simpl in *. inv TEC2; auto.
+        + admit.
+Admitted.
 End Coercion.
