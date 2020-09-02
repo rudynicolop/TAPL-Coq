@@ -1970,38 +1970,35 @@ Lemma Transitive :
     forall (s u t : type),
     subtype s u -> subtype u t -> subtype s t.
 Proof.
-    intros s u t Hsu.
-    generalize dependent t.
-    dependent induction Hsu using IHSubtype;
-    intros v Huv.
-    - inv Huv; constructor.
-    - inv Huv; constructor.
-    - inv Huv; constructor;
-        apply IHHsu2 in H3; auto.
-        assert (HSs1s1 : subtype s1 s1);
-        try apply Reflexive.
-        apply IHHsu1 in HSs1s1. admit.
-        (* Induction hypothesis for 
-            is not string enough. *)
-    - inv Huv; constructor.
-        intros t Hints0.
-        apply H2 in Hints0 as [s [Hints HSst]]; clear H2.
-        apply H0 in Hints as H0'; clear H0.
-        destruct H0' as [s0 [Hins0ss HRs0s]].
-        apply H in Hints as H'; clear H.
-        destruct H' as [u [Hinss HRst]].
-        destruct HRs0s as [Hfsts0s HSs0s].
-        destruct HRst as [Hfstus HSus].
-        destruct HSst as [Hfstst HSst].
-        destruct u as [u ut].
+    intros s u.
+    generalize dependent s.
+    induction u using IHType;
+    intros s t Hsu Hut.
+    - inv Hut. constructor.
+    - inv Hsu. assumption.
+    - inv Hsu. inv Hut; constructor.
+        + apply IHu1; auto.
+        + apply IHu2; auto.
+    - inv Hsu. inv Hut; constructor;
+        intros t Hintts.
+        apply H1 in Hintts 
+            as [s [Hinsss HRst]]; clear H1.
+        apply H2 in Hinsss as H2'.
+        destruct H2' as [u [Hinuss HRus]].
+        exists u. split; auto.
+        pose proof Forall_forall 
+        (predf (fun u : type =>
+            forall s t : type, subtype s u -> 
+            subtype u t -> subtype s t)) fs as [F1 _].
+        apply F1 with (x := s) in H; auto; clear F1.
+        unfold predf in H.
         destruct s as [s st].
-        destruct s0 as [s0 s0t].
+        destruct u as [u ut].
         destruct t as [t tt].
-        simpl in *. subst.
-        apply HSs0s in HSst as HSs0ttt; clear HSs0s.
-        exists (t,s0t). split; auto.
-        split; auto.
-Admitted. 
+        destruct HRus as [HFus HSus].
+        destruct HRst as [HFst HSst]. 
+        simpl in *. subst. split; auto.
+Qed.
 
 Lemma deconstruct_rec_subtype :
     forall (ss ts : fields type),
