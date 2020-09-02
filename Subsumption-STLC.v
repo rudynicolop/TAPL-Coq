@@ -296,6 +296,58 @@ Module SubsumptionSTLC.
         End TypeInduction.
 
         Ltac indtype t := induction t using IHType.
+
+        Module TypeDec <: SE.DecidableType.
+            Import SE.
+            Require Import RelationClasses.
+            Definition t := type.
+            Definition eq (t1 t2 : t) := t1 = t2.
+            Declare Instance eq_equiv : Equivalence eq.
+            Fixpoint eq_dec (t1 t2 : t) :
+                {t1 = t2} + {t1 <> t2}.
+            Proof.
+                destruct t1; destruct t2;
+                try (left; reflexivity);
+                try (right; intros HF; discriminate).
+                - specialize eq_dec with 
+                    (t1 := t1_1) (t2 := t2_1) as H1.
+                    specialize eq_dec with 
+                        (t1 := t1_2) (t2 := t2_2) as H2.
+                    destruct H1 as [H1 | H1];
+                    destruct H2 as [H2 | H2]; subst;
+                    try (right; intros HF; apply H1;
+                        inv HF; reflexivity);
+                    try (right; intros HF; apply H2;
+                        inv HF; reflexivity).
+                    left. reflexivity.
+                - generalize dependent fs0.
+                    induction fs; intros gs;
+                    destruct gs.
+                    + left. reflexivity.
+                    + right. intros HF. inv HF.
+                    + right. intros HF. inv HF.
+                    + destruct (IdDec.eq_dec (fst a) (fst f))
+                        as [Hfst | Hfst];
+                        destruct (eq_dec (snd a) (snd f)) 
+                            as [HAF | HAF];
+                        destruct (IHfs gs) as [IH | IH];
+                        try (right; intros HF; inv HF;
+                            apply IH; reflexivity);
+                        try (right; intros HF; inv HF;
+                            apply HAF; reflexivity);
+                        try (right; intros HF; inv HF;
+                            apply Hfst; reflexivity).
+                        left. inv IH. destruct a.
+                        destruct f. simpl in *.
+                        subst. reflexivity.
+            Qed.
+            Theorem eq_refl : forall (u : t), u = u.
+            Proof. intros. reflexivity. Qed.
+            Theorem eq_sym : forall (u v : t), u = v -> v = u.
+            Proof. unfold eq. intros; subst; reflexivity. Qed.
+            Theorem eq_trans : forall (s u v : t), s = u -> u = v -> s = v.
+            Proof. intros; subst. reflexivity. Qed.
+        End TypeDec.
     End SSType.
     Export SSType.
 
@@ -422,6 +474,46 @@ Module SubsumptionSTLC.
             + split; auto. apply st_top.
             + constructor.
     Qed.
+
+    Lemma alt_rec_subtyping :
+        forall (ss ts : fields type),
+        (forall t, In t ts ->
+        exists s, In s ss /\ relf subtype s t) ->
+        subtype (TRec ss) (TRec ts).
+    Proof.
+        induction ss; intros ts H.
+        - destruct ts.
+            + constructor.
+            + assert (Hin : In f (f :: ts));
+                try apply in_eq.
+                apply H in Hin as [s [Hine _]].
+                inv Hine.
+        - apply st_trans with (u := TRec (ss ++ [a])).
+            { apply st_rec_perm.
+                assert (Hass : a :: ss = [a] ++ ss);
+                try reflexivity.
+                rewrite Hass. 
+                apply Permutation_app_comm. }
+            { apply st_trans with (u := TRec ss).
+                - apply st_rec_width.
+                - apply IHss; clear IHss. intros t Hintts.
+                    apply H in Hintts 
+                        as [s [Hinsass HRst]]; clear H.
+                    destruct s as [s st];
+                    destruct a as [a aty].
+                    destruct (IdDec.eq_dec s a);
+                    destruct (TypeDec.eq_dec st aty); subst.
+                    + admit. (* this case sucks *)
+                    + inv Hinsass.
+                        * inv H. contradiction.
+                        * exists (a,st). split; auto.
+                    + inv Hinsass.
+                        * inv H. contradiction.
+                        * exists (s,aty). split; auto.
+                    + inv Hinsass.
+                        * inv H. contradiction.
+                        * exists (s,st). split; auto.
+    Admitted.
 
     Module SSExpr.
         Inductive expr : Type :=
@@ -2000,36 +2092,6 @@ Proof.
         simpl in *. subst. split; auto.
 Qed.
 
-Lemma deconstruct_rec_subtype :
-    forall (ss ts : fields type),
-    subtype (TRec ss) (TRec ts) ->
-    exists us vs, 
-    perm ss vs /\ relfs subtype vs (us ++ ts).
-Proof.
-    intros ss ts HS.
-    induction ss.
-    { destruct ts.
-        - exists []. exists []. simpl. split;
-            constructor; constructor.
-        - inv HS. assert (In f (f :: ts));
-            try apply in_eq.
-            apply H1 in H as [s [Hine HSst]].
-            inv Hine. }
-    { assert (Hssts : subtype (TRec ss) (TRec ts)). 
-        - clear IHss. destruct ts.
-            + constructor. intros t Hine. inv Hine.
-            + inv HS. admit.
-                (* Decidable type equality
-                    may be useful here. *)
-        - apply IHss in Hssts as [us [vs [HP HR]]].
-            exists (a :: us). exists (a :: vs). split.
-            + apply perm_skip. assumption.
-            + rewrite <- app_comm_cons.
-                constructor.
-                * split; auto. apply Reflexive.
-                * assumption.
-Admitted.
-
 Theorem Subtyping_Complete :
     forall (s t : type),
     SS.subtype s t -> subtype s t.
@@ -2060,19 +2122,11 @@ Theorem Subtyping_Sound :
     subtype s t -> SS.subtype s t.
 Proof.
     intros s t HS.
-    dependent induction HS.
+    dependent induction HS using IHSubtype.
     - constructor.
     - constructor.
     - constructor; auto.
     - apply st_rec in H as HR.
-        apply deconstruct_rec_subtype in HR.
-        destruct HR as [us [vs [HP HRvsusts]]].
-        apply SS.st_trans with (u := TRec (us ++ ts)).
-        + apply SS.st_trans with (u := TRec vs).
-            * apply SS.st_rec_perm. assumption.
-            * apply SS.st_rec_depth. admit.
-            (* Need stronger 
-                Induction Hypothesis *)
-        + apply SS.st_app_flip.
-Admitted.
+        apply SS.alt_rec_subtyping; auto.
+Qed.
 End AlgorithmicSubtyping.
