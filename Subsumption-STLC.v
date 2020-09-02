@@ -475,46 +475,6 @@ Module SubsumptionSTLC.
             + constructor.
     Qed.
 
-    Lemma alt_rec_subtyping :
-        forall (ss ts : fields type),
-        (forall t, In t ts ->
-        exists s, In s ss /\ relf subtype s t) ->
-        subtype (TRec ss) (TRec ts).
-    Proof.
-        induction ss; intros ts H.
-        - destruct ts.
-            + constructor.
-            + assert (Hin : In f (f :: ts));
-                try apply in_eq.
-                apply H in Hin as [s [Hine _]].
-                inv Hine.
-        - apply st_trans with (u := TRec (ss ++ [a])).
-            { apply st_rec_perm.
-                assert (Hass : a :: ss = [a] ++ ss);
-                try reflexivity.
-                rewrite Hass. 
-                apply Permutation_app_comm. }
-            { apply st_trans with (u := TRec ss).
-                - apply st_rec_width.
-                - apply IHss; clear IHss. intros t Hintts.
-                    apply H in Hintts 
-                        as [s [Hinsass HRst]]; clear H.
-                    destruct s as [s st];
-                    destruct a as [a aty].
-                    destruct (IdDec.eq_dec s a);
-                    destruct (TypeDec.eq_dec st aty); subst.
-                    + admit. (* this case sucks *)
-                    + inv Hinsass.
-                        * inv H. contradiction.
-                        * exists (a,st). split; auto.
-                    + inv Hinsass.
-                        * inv H. contradiction.
-                        * exists (s,aty). split; auto.
-                    + inv Hinsass.
-                        * inv H. contradiction.
-                        * exists (s,st). split; auto.
-    Admitted.
-
     Module SSExpr.
         Inductive expr : Type :=
             | EUnit
@@ -920,7 +880,34 @@ Module SubsumptionSTLC.
         Proof.
             intros t HS. dependent induction HS; auto.
         Qed.
-                
+
+        Lemma inv_empty_rec_subtype :
+            forall (t : type),
+            subtype (TRec []) t ->
+            t = TTop \/ t = (TRec []).
+        Proof.
+            intros t HS;
+            dependent induction HS using IHSubtype;
+            try (left; reflexivity);
+            try (right; reflexivity).
+            - assert (HRe : TRec [] = TRec []);
+                try reflexivity.
+                apply IHHS1 in HRe as IH1.
+                destruct IH1 as [IH1 | IH1]; subst.
+                + apply inv_top in HS2. subst.
+                    left. reflexivity.
+                + apply IHHS2 in HRe as IH2.
+                    destruct IH2 as [IH2 | IH2]; subst.
+                    * left. reflexivity.
+                    * right. reflexivity.
+            - apply app_eq_nil in x as [Hus Hvs].
+                subst. right. reflexivity.
+            - inv H0. right. reflexivity.
+            - apply Permutation_nil in H.
+                subst. right. reflexivity.
+        Qed.
+
+
         Lemma inv_unit :
             forall (t : type),
             subtype t TUnit -> t = TUnit.
@@ -985,6 +972,93 @@ Module SubsumptionSTLC.
             - exists us. split; auto.
                 apply st_rec_perm. assumption.
         Qed.
+
+        Lemma cons_rec_subtype :
+            forall (ss ts : fields type),
+            subtype (TRec ss) (TRec ts) ->
+            forall (u : field type),
+            subtype (TRec (u :: ss)) (TRec (u :: ts)).
+        Proof.
+            induction ss; destruct ts; intros HSssts u.
+            - constructor.
+            - inv HSssts.
+                + apply inv_empty_rec_subtype in H 
+                    as [H | H]; subst.
+                    * apply inv_top in H0. discriminate.
+                    * apply inv_empty_rec_subtype in H0 as [H0 | H0];
+                        try discriminate.
+                + discriminate.
+                + inv H1.
+                + apply Permutation_nil in H1. discriminate.
+            - assert (Huass : u :: a :: ss = [u] ++ (a :: ss));
+                try reflexivity.
+                rewrite Huass. constructor.
+            - inv HSssts.
+                + constructor.
+                + apply inv_rec in H0.
+                    destruct H0 as [v [Huus HSusfts]].
+                    subst.
+        Admitted.
+
+        Lemma alt_rec_subtyping :
+            forall (ss ts : fields type),
+            (forall t, In t ts ->
+            exists s, In s ss /\ relf subtype s t) ->
+            subtype (TRec ss) (TRec ts).
+        Proof.
+            induction ss; intros ts H; destruct ts.
+            - constructor.
+            - assert (Hin : In f (f :: ts)); try apply in_eq.
+                apply H in Hin as [s [Hine _]]. inv Hine.
+            - assert (Hasse : a :: ss = [] ++ (a :: ss));
+                try reflexivity. rewrite Hasse.
+                apply st_rec_width.
+            - destruct a as [a ta]. destruct f as [f tf]. 
+                destruct (IdDec.eq_dec a f);
+                destruct (TypeDec.eq_dec ta tf); subst.
+                + apply cons_rec_subtype. apply IHss; clear IHss.
+                    intros t Hintts.
+                    assert (Hinfts : In t ((f,tf)::ts));
+                        try apply in_cons; auto.
+                    apply H in Hinfts as HE; clear H.
+                    destruct HE as [s [Hinsss Hst]].
+                    destruct s as [s tys].
+                    destruct t as [t tyt].
+                    destruct Hst as [Hst Htyst].
+                    simpl in Hst. subst.
+                    simpl in Htyst.
+                    destruct (IdDec.eq_dec t f);
+                    destruct (TypeDec.eq_dec tyt tf);
+                    subst; admit.
+        Admitted.
+
+                (* +
+            apply st_trans with (u := TRec (ss ++ [a])).
+                { apply st_rec_perm.
+                    assert (Hass : a :: ss = [a] ++ ss);
+                    try reflexivity.
+                    rewrite Hass. 
+                    apply Permutation_app_comm. }
+                { apply st_trans with (u := TRec ss).
+                    - apply st_rec_width.
+                    - apply IHss; clear IHss. intros t Hintts.
+                        apply H in Hintts 
+                            as [s [Hinsass HRst]]; clear H.
+                        destruct s as [s st];
+                        destruct a as [a aty].
+                        destruct (IdDec.eq_dec s a);
+                        destruct (TypeDec.eq_dec st aty); subst.
+                        + admit. (* this case sucks *)
+                        + inv Hinsass.
+                            * inv H. contradiction.
+                            * exists (a,st). split; auto.
+                        + inv Hinsass.
+                            * inv H. contradiction.
+                            * exists (s,aty). split; auto.
+                        + inv Hinsass.
+                            * inv H. contradiction.
+                            * exists (s,st). split; auto.
+        Admitted. *)
     End InvSubsumption.
 
     Section CanonicalForms.
