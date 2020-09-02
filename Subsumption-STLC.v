@@ -16,8 +16,6 @@ Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Sorting.Permutation.
 Require Import Coq.Program.Equality.
 Require Import Coq.Logic.JMeq.
-Require Coq.Logic.ClassicalFacts.
-Module CF := Coq.Logic.ClassicalFacts.
 
 (* Lemma from the List Library : 
     maybe I should update my Coq version... *)
@@ -397,6 +395,15 @@ Module SubsumptionSTLC.
         relfs subtype us vs -> subtype (TRec us) (TRec vs).
     Proof.
         intros us vs HS. constructor. assumption.
+    Qed.
+
+    Lemma st_app_flip : forall (us vs : fields type),
+        subtype (TRec (vs ++ us)) (TRec us).
+    Proof.
+        intros us vs. 
+        apply st_trans with (u := TRec (us ++ vs)).
+        - apply st_rec_perm. apply Permutation_app_comm.
+        - apply st_rec_width.
     Qed.
 
     Example record_subtyping_makes_sense :
@@ -1901,6 +1908,41 @@ Inductive subtype : type -> type -> Prop :=
         In s ss /\ relf subtype s t) ->
         subtype (TRec ss) (TRec ts).
 
+Check subtype_ind.
+
+Section SubtypeInduction.
+    Variable P : type -> type -> Prop.
+
+    Hypothesis HTop : forall t, P t TTop.
+
+    Hypothesis HUnit : P TUnit TUnit.
+
+    Hypothesis HFun : forall s1 s2 t1 t2,
+        subtype t1 s1 -> P t1 s1 ->
+        subtype s2 t2 -> P s2 t2 ->
+        P (TFun s1 s2) (TFun t1 t2).
+
+    Hypothesis HRec : forall (ss ts : fields type),
+        (forall t : field type, In t ts -> 
+            exists s : field type, In s ss /\ relf subtype s t) ->
+        (forall t : field type, In t ts -> 
+            exists s : field type, In s ss /\ relf P s t) ->
+        P (TRec ss) (TRec ts).
+
+    Fixpoint IHSubtype (s t : type) (HS : subtype s t) : P s t.
+    Proof.
+        destruct HS.
+        - apply HTop.
+        - apply HUnit.
+        - apply HFun; auto.
+        - apply HRec; auto. intros t Hintts.
+            apply H in Hintts as [s [Hinss HRst]].
+            exists s. split; auto.
+            destruct HRst as [Hfst HSst].
+            split; auto.
+    Qed.
+End SubtypeInduction.
+
 Lemma Reflexive :
     forall (t : type),
     subtype t t.
@@ -1930,26 +1972,66 @@ Lemma Transitive :
 Proof.
     intros s u t Hsu.
     generalize dependent t.
-    dependent induction Hsu;
-    intros t Hut.
-    - inv Hut; constructor.
-    - inv Hut; constructor.
-    - inv Hut; constructor;
+    dependent induction Hsu using IHSubtype;
+    intros v Huv.
+    - inv Huv; constructor.
+    - inv Huv; constructor.
+    - inv Huv; constructor;
         apply IHHsu2 in H3; auto.
-        admit.
+        assert (HSs1s1 : subtype s1 s1);
+        try apply Reflexive.
+        apply IHHsu1 in HSs1s1. admit.
         (* Induction hypothesis for 
-            s1 is backwards. *)
-    - inv Hut; constructor.
+            is not string enough. *)
+    - inv Huv; constructor.
         intros t Hints0.
-        apply H1 in Hints0 as 
-        [s [Hints HSst]].
-        apply H in Hints as
-        [u [Hinss HRst]].
-        exists u. split; auto.
-        admit.
-        (* Induction hypothesis
-            is not strong enough. *)
+        apply H2 in Hints0 as [s [Hints HSst]]; clear H2.
+        apply H0 in Hints as H0'; clear H0.
+        destruct H0' as [s0 [Hins0ss HRs0s]].
+        apply H in Hints as H'; clear H.
+        destruct H' as [u [Hinss HRst]].
+        destruct HRs0s as [Hfsts0s HSs0s].
+        destruct HRst as [Hfstus HSus].
+        destruct HSst as [Hfstst HSst].
+        destruct u as [u ut].
+        destruct s as [s st].
+        destruct s0 as [s0 s0t].
+        destruct t as [t tt].
+        simpl in *. subst.
+        apply HSs0s in HSst as HSs0ttt; clear HSs0s.
+        exists (t,s0t). split; auto.
+        split; auto.
 Admitted. 
+
+Lemma deconstruct_rec_subtype :
+    forall (ss ts : fields type),
+    subtype (TRec ss) (TRec ts) ->
+    exists us vs, 
+    perm ss vs /\ relfs subtype vs (us ++ ts).
+Proof.
+    intros ss ts HS.
+    induction ss.
+    { destruct ts.
+        - exists []. exists []. simpl. split;
+            constructor; constructor.
+        - inv HS. assert (In f (f :: ts));
+            try apply in_eq.
+            apply H1 in H as [s [Hine HSst]].
+            inv Hine. }
+    { assert (Hssts : subtype (TRec ss) (TRec ts)). 
+        - clear IHss. destruct ts.
+            + constructor. intros t Hine. inv Hine.
+            + inv HS. admit.
+                (* Decidable type equality
+                    may be useful here. *)
+        - apply IHss in Hssts as [us [vs [HP HR]]].
+            exists (a :: us). exists (a :: vs). split.
+            + apply perm_skip. assumption.
+            + rewrite <- app_comm_cons.
+                constructor.
+                * split; auto. apply Reflexive.
+                * assumption.
+Admitted.
 
 Theorem Subtyping_Complete :
     forall (s t : type),
@@ -1976,10 +2058,6 @@ Proof.
         + split; auto. apply Reflexive.
 Qed.
 
-(* needed for case analysis in
-    subtyping soundness proof. *)
-(* Axiom LEM : CF.excluded_middle. *)
-
 Theorem Subtyping_Sound :
     forall (s t : type),
     subtype s t -> SS.subtype s t.
@@ -1989,32 +2067,15 @@ Proof.
     - constructor.
     - constructor.
     - constructor; auto.
-    - assert (HE : exists vs us, 
-        relfs subtype us ts /\
-        perm ss (us ++ vs)).
-        { clear H. 
-            generalize dependent ss.
-             induction ts;
-             intros ss.
-            - exists ss. exists []. simpl. split.
-                + apply st_fields_refl.
-                + apply Permutation_refl.
-            - specialize IHts with (ss := ss). 
-                destruct IHts as [vs [us [HR]]].
-                exists vs. exists (a :: us).
-                split.
-                + constructor.
-                    * split; auto. apply Reflexive.
-                    * assumption.
-                + admit.
-                    (* this is hard *) }
-        { destruct HE as [vs [us [HRusts HPssusvs]]].
-            apply SS.st_trans with (u := TRec us).
-            - apply SS.st_trans with (u := TRec (us ++ vs)).
-                + apply SS.st_rec_perm. assumption.
-                + apply SS.st_rec_width.
-            - apply SS.st_rec_depth. admit.
-                (* Require stronger induction
-                    hypothesis maybe... *) }
+    - apply st_rec in H as HR.
+        apply deconstruct_rec_subtype in HR.
+        destruct HR as [us [vs [HP HRvsusts]]].
+        apply SS.st_trans with (u := TRec (us ++ ts)).
+        + apply SS.st_trans with (u := TRec vs).
+            * apply SS.st_rec_perm. assumption.
+            * apply SS.st_rec_depth. admit.
+            (* Need stronger 
+                Induction Hypothesis *)
+        + apply SS.st_app_flip.
 Admitted.
 End AlgorithmicSubtyping.
