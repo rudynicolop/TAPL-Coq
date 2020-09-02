@@ -16,6 +16,8 @@ Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Sorting.Permutation.
 Require Import Coq.Program.Equality.
 Require Import Coq.Logic.JMeq.
+Require Coq.Logic.ClassicalFacts.
+Module CF := Coq.Logic.ClassicalFacts.
 
 (* Lemma from the List Library : 
     maybe I should update my Coq version... *)
@@ -322,9 +324,6 @@ Module SubsumptionSTLC.
             perm us vs ->
             subtype (TRec us) (TRec vs).
 
-    Check subtype_ind.
-    Compute subtype_ind.
-
     Section SubtypeInduction.
         Variable P : type -> type -> Prop.
 
@@ -375,6 +374,16 @@ Module SubsumptionSTLC.
             | st_rec_perm us vs HP => HRecPerm us vs HP
             end.
     End SubtypeInduction.
+
+    Lemma subtype_inv_trans :
+        forall (s t : type),
+        subtype s t ->
+        exists (u : type),
+        subtype s u /\ subtype u t.
+    Proof.
+        intros s t HS. exists s.
+        split; auto. constructor.
+    Qed.
 
     Lemma st_fields_refl :
         forall (fs : fields type), relfs subtype fs fs.
@@ -1906,6 +1915,15 @@ Proof.
     split; auto.
 Qed.
 
+Lemma st_fields_refl :
+    forall (fs : fields type),
+    relfs subtype fs fs.
+Proof.
+    intros fs. induction fs; constructor.
+    - split; auto. apply Reflexive.
+    - assumption.
+Qed.
+
 Lemma Transitive :
     forall (s u t : type),
     subtype s u -> subtype u t -> subtype s t.
@@ -1933,7 +1951,7 @@ Proof.
             is not strong enough. *)
 Admitted. 
 
-Theorem Complete :
+Theorem Subtyping_Complete :
     forall (s t : type),
     SS.subtype s t -> subtype s t.
 Proof.
@@ -1957,4 +1975,46 @@ Proof.
             apply Permutation_sym; auto.
         + split; auto. apply Reflexive.
 Qed.
+
+(* needed for case analysis in
+    subtyping soundness proof. *)
+(* Axiom LEM : CF.excluded_middle. *)
+
+Theorem Subtyping_Sound :
+    forall (s t : type),
+    subtype s t -> SS.subtype s t.
+Proof.
+    intros s t HS.
+    dependent induction HS.
+    - constructor.
+    - constructor.
+    - constructor; auto.
+    - assert (HE : exists vs us, 
+        relfs subtype us ts /\
+        perm ss (us ++ vs)).
+        { clear H. 
+            generalize dependent ss.
+             induction ts;
+             intros ss.
+            - exists ss. exists []. simpl. split.
+                + apply st_fields_refl.
+                + apply Permutation_refl.
+            - specialize IHts with (ss := ss). 
+                destruct IHts as [vs [us [HR]]].
+                exists vs. exists (a :: us).
+                split.
+                + constructor.
+                    * split; auto. apply Reflexive.
+                    * assumption.
+                + admit.
+                    (* this is hard *) }
+        { destruct HE as [vs [us [HRusts HPssusvs]]].
+            apply SS.st_trans with (u := TRec us).
+            - apply SS.st_trans with (u := TRec (us ++ vs)).
+                + apply SS.st_rec_perm. assumption.
+                + apply SS.st_rec_width.
+            - apply SS.st_rec_depth. admit.
+                (* Require stronger induction
+                    hypothesis maybe... *) }
+Admitted.
 End AlgorithmicSubtyping.
