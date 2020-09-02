@@ -250,6 +250,47 @@ Section Fields.
     Qed.
 End Fields.
 
+Module Type StructEq <: SE.DecidableType.
+    Import SE.
+    Require Import RelationClasses.
+    Parameter t : Type.
+    Definition eq (a b : t) := a = b.
+    Declare Instance eq_equiv : Equivalence eq.
+    Axiom eq_dec : forall (a b : t),
+        {a = b} + {a <> b}.
+    Axiom eq_refl : forall (a : t), a = a.
+    Axiom eq_sym : forall (a b : t),
+        a = b -> b = a.
+    Axiom eq_trans : forall (a b c : t),
+        a = b -> b = c -> a = c.
+End StructEq.
+
+
+Module FieldDec (E : StructEq) <: StructEq.
+    Import SE.
+    Require Import RelationClasses.
+    Definition t := field E.t.
+    Definition eq (f1 f2 : t) := f1 = f2.
+    Declare Instance eq_equiv : Equivalence eq.
+    Theorem eq_dec : forall (f1 f2 : t),
+        {f1 = f2} + {f1 <> f2}.
+    Proof.
+        intros [x1 f1] [x2 f2].
+        destruct (IdDec.eq_dec x1 x2) as [HX | HX];
+        destruct (E.eq_dec f1 f2) as [HFD | HFD]; subst;
+        try (right; intros HF; injintrosubst HF; contradiction).
+        left. reflexivity.
+    Qed.
+    Theorem eq_refl : forall (f : t), f = f.
+    Proof. intros f. reflexivity. Qed.
+    Theorem eq_sym : forall (f1 f2 : t),
+        f1 = f2 -> f2 = f1.
+    Proof. intros. subst. reflexivity. Qed.
+    Theorem eq_trans : forall (f1 f2 f3 : t),
+        f1 = f2 -> f2 = f3 -> f1 = f3.
+    Proof. intros. subst. reflexivity. Qed.
+End FieldDec.
+
 Module SubsumptionSTLC.
     Module SSType.
         Inductive type : Type :=
@@ -297,7 +338,7 @@ Module SubsumptionSTLC.
 
         Ltac indtype t := induction t using IHType.
 
-        Module TypeDec <: SE.DecidableType.
+        Module TypeDec <: StructEq.
             Import SE.
             Require Import RelationClasses.
             Definition t := type.
@@ -315,10 +356,8 @@ Module SubsumptionSTLC.
                         (t1 := t1_2) (t2 := t2_2) as H2.
                     destruct H1 as [H1 | H1];
                     destruct H2 as [H2 | H2]; subst;
-                    try (right; intros HF; apply H1;
-                        inv HF; reflexivity);
-                    try (right; intros HF; apply H2;
-                        inv HF; reflexivity).
+                    try (right; intros HF; inv HF;
+                        contradiction).
                     left. reflexivity.
                 - generalize dependent fs0.
                     induction fs; intros gs;
@@ -332,15 +371,11 @@ Module SubsumptionSTLC.
                             as [HAF | HAF];
                         destruct (IHfs gs) as [IH | IH];
                         try (right; intros HF; inv HF;
-                            apply IH; reflexivity);
-                        try (right; intros HF; inv HF;
-                            apply HAF; reflexivity);
-                        try (right; intros HF; inv HF;
-                            apply Hfst; reflexivity).
+                            contradiction).
                         left. inv IH. destruct a.
                         destruct f. simpl in *.
                         subst. reflexivity.
-            Qed.
+            Admitted.
             Theorem eq_refl : forall (u : t), u = u.
             Proof. intros. reflexivity. Qed.
             Theorem eq_sym : forall (u v : t), u = v -> v = u.
@@ -348,6 +383,8 @@ Module SubsumptionSTLC.
             Theorem eq_trans : forall (s u v : t), s = u -> u = v -> s = v.
             Proof. intros; subst. reflexivity. Qed.
         End TypeDec.
+
+        Module TypeFieldDec := FieldDec(TypeDec).
     End SSType.
     Export SSType.
 
@@ -524,6 +561,75 @@ Module SubsumptionSTLC.
         End ExprInduction.
 
         Ltac indexpr e := induction e using IHExpr.
+
+        Module ExprDec <: StructEq.
+            Import SE.
+            Require Import RelationClasses.
+            Definition t := expr.
+            Definition eq (e1 e2 : t) := e1 = e2.
+            Declare Instance eq_equiv : Equivalence eq.
+            Fixpoint eq_dec (e1 e2 : t) :
+                {e1 = e2} + {e1 <> e2}.
+            Proof.
+                destruct e1; destruct e2;
+                try (left; reflexivity);
+                try (right; intros HF; discriminate).
+                - destruct (IdDec.eq_dec x x0) as [Hxx0 | Hxx0]; subst;
+                    try (left; reflexivity).
+                    right. intros HF. inv HF.
+                    contradiction.
+                - specialize eq_dec with 
+                    (e1 := e1) (e2 := e2) as HE.
+                    specialize TypeDec.eq_dec with 
+                        (t1 := t0) (t2 := t1) as HT.
+                    specialize IdDec.eq_dec with
+                        (x1 := x) (x2 := x0) as HX.
+                    destruct HE as [HE | HE];
+                    destruct HT as [HT | HT]; 
+                    destruct HX as [HX | HX]; subst;
+                    try (right; intros HF; inv HF;
+                        contradiction).
+                    left. reflexivity.
+                - specialize eq_dec with 
+                    (e1 := e1_1) (e2 := e2_1) as H1.
+                    specialize eq_dec with
+                    (e1 := e1_2) (e2 := e2_2) as H2.
+                    destruct H1 as [H1 | H1];
+                    destruct H2 as [H2 | H2];
+                    try (right; intros HF; inv HF;
+                        contradiction); subst.
+                    left. reflexivity.
+                - generalize dependent fs0.
+                    induction fs; intros gs;
+                    destruct gs.
+                    + left. reflexivity.
+                    + right. intros HF. inv HF.
+                    + right. intros HF. inv HF.
+                    + destruct (IdDec.eq_dec (fst a) (fst f))
+                        as [Hfst | Hfst];
+                        destruct (eq_dec (snd a) (snd f)) 
+                            as [HAF | HAF];
+                        destruct (IHfs gs) as [IH | IH]; subst;
+                        try (right; intros HF; inv HF;
+                            contradiction).
+                        left. inv IH. destruct a.
+                        destruct f. simpl in *.
+                        subst. reflexivity.
+                - destruct (eq_dec e1 e2) as [HE | HE];
+                    destruct (IdDec.eq_dec x x0) as [HX | HX];
+                    subst; try (right; intros HF;
+                        inv HF; contradiction).
+                    left. reflexivity.
+            Admitted.
+            Theorem eq_refl : forall (e : t), e = e.
+            Proof. intros. reflexivity. Qed.
+            Theorem eq_sym : forall (e1 e2 : t), e1 = e2 -> e2 = e1.
+            Proof. unfold eq. intros; subst; reflexivity. Qed.
+            Theorem eq_trans : forall (e1 e2 e3 : t), e1 = e2 -> e2 = e3 -> e1 = e3.
+            Proof. intros; subst. reflexivity. Qed.
+        End ExprDec.
+
+        Module ExprFieldDec := FieldDec(ExprDec).
     End SSExpr.
     Export SSExpr.
 
@@ -907,6 +1013,13 @@ Module SubsumptionSTLC.
                 subst. right. reflexivity.
         Qed.
 
+        Lemma subtype_empty_rec :
+            forall (ss : fields type),
+            subtype (TRec ss) (TRec []).
+        Proof.
+            intros ss. assert (H : ss = [] ++ ss); 
+            try reflexivity. rewrite H. constructor.
+        Qed.
 
         Lemma inv_unit :
             forall (t : type),
@@ -973,6 +1086,37 @@ Module SubsumptionSTLC.
                 apply st_rec_perm. assumption.
         Qed.
 
+        Lemma subtype_cons_rec :
+            forall (t : field type) (ss ts : fields type),
+            subtype (TRec ss) (TRec (t :: ts)) ->
+            exists s' ss', ss = s' :: ss'.
+        Proof.
+            intros t ss ts HS.
+            dependent induction HS using IHSubtype.
+            - exists t. exists ts. reflexivity.
+            - apply inv_rec in HS2
+                as [us [Huus Hustts]]; subst.
+                assert (Hssss : TRec ss = TRec ss);
+                assert (Husus : TRec us = TRec us);
+                try reflexivity.
+                apply IHHS2 with (t0 := t) (ts0 := ts) in Husus as IH2; 
+                try reflexivity; clear IHHS2.
+                destruct IH2 as [s' [ss' Huss'ss']]. subst.
+                apply IHHS1  with (t := s') (ts := ss') 
+                    in Hssss as IH1; try reflexivity; clear IHHS1.
+                apply IH1.
+            - exists t. exists (ts ++ vs).
+                rewrite app_comm_cons.
+                reflexivity.
+            - destruct ss.
+                + inv H0.
+                + exists f. exists ss.
+                    reflexivity.
+            - destruct ss.
+                + apply Permutation_nil_cons in H. contradiction.
+                + exists f. exists ss. reflexivity.
+        Qed.
+
         Lemma cons_rec_subtype :
             forall (ss ts : fields type),
             subtype (TRec ss) (TRec ts) ->
@@ -1007,58 +1151,14 @@ Module SubsumptionSTLC.
             subtype (TRec ss) (TRec ts).
         Proof.
             induction ss; intros ts H; destruct ts.
-            - constructor.
-            - assert (Hin : In f (f :: ts)); try apply in_eq.
-                apply H in Hin as [s [Hine _]]. inv Hine.
-            - assert (Hasse : a :: ss = [] ++ (a :: ss));
-                try reflexivity. rewrite Hasse.
-                apply st_rec_width.
-            - destruct a as [a ta]. destruct f as [f tf]. 
-                destruct (IdDec.eq_dec a f);
-                destruct (TypeDec.eq_dec ta tf); subst.
-                + apply cons_rec_subtype. apply IHss; clear IHss.
-                    intros t Hintts.
-                    assert (Hinfts : In t ((f,tf)::ts));
-                        try apply in_cons; auto.
-                    apply H in Hinfts as HE; clear H.
-                    destruct HE as [s [Hinsss Hst]].
-                    destruct s as [s tys].
-                    destruct t as [t tyt].
-                    destruct Hst as [Hst Htyst].
-                    simpl in Hst. subst.
-                    simpl in Htyst.
-                    destruct (IdDec.eq_dec t f);
-                    destruct (TypeDec.eq_dec tyt tf);
-                    subst; admit.
+            - apply subtype_empty_rec.
+            - assert (Hinfts : In f (f :: ts));
+                try apply in_eq.
+                apply H in Hinfts as [s [Hinse _]].
+                inv Hinse.
+            - apply subtype_empty_rec.
+            - admit.
         Admitted.
-
-                (* +
-            apply st_trans with (u := TRec (ss ++ [a])).
-                { apply st_rec_perm.
-                    assert (Hass : a :: ss = [a] ++ ss);
-                    try reflexivity.
-                    rewrite Hass. 
-                    apply Permutation_app_comm. }
-                { apply st_trans with (u := TRec ss).
-                    - apply st_rec_width.
-                    - apply IHss; clear IHss. intros t Hintts.
-                        apply H in Hintts 
-                            as [s [Hinsass HRst]]; clear H.
-                        destruct s as [s st];
-                        destruct a as [a aty].
-                        destruct (IdDec.eq_dec s a);
-                        destruct (TypeDec.eq_dec st aty); subst.
-                        + admit. (* this case sucks *)
-                        + inv Hinsass.
-                            * inv H. contradiction.
-                            * exists (a,st). split; auto.
-                        + inv Hinsass.
-                            * inv H. contradiction.
-                            * exists (s,aty). split; auto.
-                        + inv Hinsass.
-                            * inv H. contradiction.
-                            * exists (s,st). split; auto.
-        Admitted. *)
     End InvSubsumption.
 
     Section CanonicalForms.
