@@ -21,29 +21,45 @@ Ltac inv H := inversion H; subst.
 
 Ltac injintrosubst H := injection H; intros; subst.
 
-(* Lemma from the List Library : 
-    maybe I should update my Coq version... *)
-Axiom map_eq_cons : forall {A B : Type} (f : A -> B) l l' b,
-    map f l = b :: l' -> 
-    exists a tl, l = a :: tl /\ f a = b /\ map f tl = l'.
+Section Miscellaneous.
+    (* Lemma from the List Library : 
+        maybe I should update my Coq version... *)
+    Axiom map_eq_cons : forall {A B : Type} (f : A -> B) l l' b,
+        map f l = b :: l' -> 
+        exists a tl, l = a :: tl /\ f a = b /\ map f tl = l'.
 
-Lemma in_exists_cons : 
-    forall {U : Type} (u : U) (us : list U),
-    In u us ->
-    exists (u' : U) (us' : list U),
-    us = u' :: us'.
-Proof.
-    intros U u us Hinuus. destruct us.
-    - inv Hinuus.
-    - exists u0. exists us. reflexivity.
-Qed.
+    Lemma in_exists_cons : 
+        forall {U : Type} (u : U) (us : list U),
+        In u us ->
+        exists (u' : U) (us' : list U),
+        us = u' :: us'.
+    Proof.
+        intros U u us Hinuus. destruct us.
+        - inv Hinuus.
+        - exists u0. exists us. reflexivity.
+    Qed.
 
-Lemma in_cons_exists_elem :
-    forall {U : Type} (u : U) (us : list U),
-    exists (u' : U), In u' (u :: us).
-Proof.
-    intros U u us. exists u. apply in_eq.
-Qed.
+    Lemma in_cons_exists_elem :
+        forall {U : Type} (u : U) (us : list U),
+        exists (u' : U), In u' (u :: us).
+    Proof.
+        intros U u us. exists u. apply in_eq.
+    Qed.
+
+    Definition map_pair {A B C D : Type} 
+    (f : A -> C) (g : B -> D) (p : A * B) : C * D := 
+        match p with
+        | (a,b) => (f a, g b)
+        end.
+
+    Definition ID {X : Type} (x : X) := x.
+
+    Definition map_fst {A B C : Type} (f : A -> C) : A * B -> C * B := 
+        map_pair f ID.
+
+    Definition map_snd {A B C : Type} (f : B -> C) : A * B -> A * C := 
+        map_pair ID f.  
+End Miscellaneous.
 
 Definition id := string.
 
@@ -559,8 +575,6 @@ Module SubsumptionSTLC.
             Hypothesis HPrj : forall (e : expr) (x : id),
                 P e -> P (EPrj e x).
 
-            Check Forall_cons.
-
             Fixpoint IHExpr (e : expr) : P e :=
                 match e as ee return (P ee) with
                 | EUnit => HUnit
@@ -677,9 +691,6 @@ Module SubsumptionSTLC.
             In (x,t) ts ->
             check g e (TRec ts) ->
             check g (EPrj e x) t.
-
-    (* Insufficient for records. *)
-    Check check_ind.
 
     Section CheckInduction.
         Variable P : @gamma type -> expr -> type -> Prop.
@@ -1204,16 +1215,7 @@ Module SubsumptionSTLC.
                     apply st_fields_refl.
         Qed.
 
-        Lemma cons_subtype_rec_remove :
-            forall (s t : field type) (ss ts : fields type),
-            relf subtype s t ->
-            subtype (TRec (s :: ss)) (TRec ts) <->
-            subtype (TRec (s :: ss)) (TRec (t :: ts)).
-        Proof.
-        Abort.
-
-
-        Lemma rec_subtype_depth_trans :
+        Lemma rec_subtype_depth_trans_1 :
             forall (ss ts : fields type),
             subtype (TRec ss) (TRec ts) <->
             exists us, relfs subtype us ts /\
@@ -1227,37 +1229,30 @@ Module SubsumptionSTLC.
                 apply st_rec_depth. assumption.
         Qed.
 
-        Lemma rec_subtype_perm_width :
+        (* I think this is true, but
+            I give up on proving it... :( *)
+        Lemma rec_subtype_equiv :
             forall (ss ts : fields type),
-            subtype (TRec ss) (TRec ts)
-            <-> exists (us vs : fields type),
-            perm ss (us ++ vs) /\
-            relfs subtype us ts.
+            (forall t, In t ts ->
+            exists s, In s ss /\ relf subtype s t) ->
+            exists (us vs : fields type),
+            perm ss (us ++ vs) /\ relfs subtype us ts.
         Proof.
-            intros ss ts. split.
-            - intros H. dependent induction H using IHSubtype.
-                + exists ts. exists []. 
-                    rewrite app_nil_r. split.
-                    * apply Permutation_refl.
-                    * apply st_fields_refl.
-                + apply inv_rec in H0 as [us [Huus HSusts]].
-                    subst.
-                    assert (HEus : TRec us = TRec us);
-                    assert (HEss : TRec ss = TRec ss);
-                    assert (HEts : TRec ts = TRec ts);
-                    try reflexivity.
-                    apply IHsubtype2 with (ts0 := ts)
-                        in HEus as IH1; auto; clear IHsubtype2.
-                    destruct IH1 as [us' [vs' [HPus' HRus']]].
-                    apply IHsubtype1 with (ts := us)
-                        in HEss as IH2; auto; clear IHsubtype1.
-                    destruct IH2 as [us'' [vs'' [HPss HRus]]].
-                    apply st_rec_depth in HRus as HA.
-                    apply st_rec_perm in HPus' as HB.
-                    assert (HS1 : subtype (TRec us'') 
-                        (TRec (us' ++ vs')));
-                    try (apply st_trans with (u := TRec us); auto).
-        Abort.
+            intros ss ts. generalize dependent ss.
+            induction ts; intros ss H.
+            - exists []. exists ss.
+                simpl. split.
+                + apply Permutation_refl.
+                + apply st_fields_refl.
+            - assert (Hinaats : In a (a :: ts));
+                try apply in_eq.
+                apply H in Hinaats as [s [Hinsss HRsa]]; clear H.
+                destruct ss.
+                + inv Hinsss.
+                + destruct (TypeFieldDec.eq_dec s f); subst.
+                    * admit.
+                    * inv Hinsss; try contradiction.
+        Admitted.
 
         Lemma alt_rec_subtyping :
             forall (ss ts : fields type),
@@ -1265,18 +1260,17 @@ Module SubsumptionSTLC.
             exists s, In s ss /\ relf subtype s t) ->
             subtype (TRec ss) (TRec ts).
         Proof. 
-            intros ss ts.
-            generalize dependent ss.
-            induction ts; destruct ss; intros H;
-            try apply subtype_empty_rec.
-            - admit.
-            - assert 
-                (HH : forall t : field type,
-                    In t ts -> exists s : field type, 
-                    In s ss /\ relf subtype s t).
-                + admit.
-                + apply IHts in HH.                
-        Admitted.
+            intros ss ts H.
+            assert (HUV : exists (us vs : fields type),
+            perm ss (us ++ vs) /\ relfs subtype us ts).
+            - apply rec_subtype_equiv. assumption. 
+            - destruct HUV as [us [vs [HRusts HPss]]].
+                apply st_trans with (u := TRec (us ++ vs)).
+                try (apply st_rec_perm; assumption).
+                apply st_trans with (u := TRec us);
+                try apply st_rec_width.
+                apply st_rec_depth. assumption.
+        Qed.
     End InvSubsumption.
 
     Section CanonicalForms.
@@ -1888,20 +1882,6 @@ Module SubsumptionSTLC.
     End Preservation.
 End SubsumptionSTLC.
 
-Definition map_pair {A B C D : Type} 
-(f : A -> C) (g : B -> D) (p : A * B) : C * D := 
-    match p with
-    | (a,b) => (f a, g b)
-    end.
-
-Definition ID {X : Type} (x : X) := x.
-
-Definition map_fst {A B C : Type} (f : A -> C) : A * B -> C * B := 
-    map_pair f ID.
-
-Definition map_snd {A B C : Type} (f : B -> C) : A * B -> A * C := 
-    map_pair ID f.
-
 Module Coercion.
     Module SS := SubsumptionSTLC.
     Module SST := SS.SSType.
@@ -2292,8 +2272,6 @@ Inductive subtype : type -> type -> Prop :=
         In s ss /\ relf subtype s t) ->
         subtype (TRec ss) (TRec ts).
 
-Check subtype_ind.
-
 Section SubtypeInduction.
     Variable P : type -> type -> Prop.
 
@@ -2409,6 +2387,12 @@ Proof.
         + split; auto. apply Reflexive.
 Qed.
 
+(* NOTE: This proofs relies upon
+    an unproven assumption
+    about recording subtyping
+    in the declarative definition.
+    See rec_subtype_equiv.
+    *)
 Theorem Subtyping_Sound :
     forall (s t : type),
     subtype s t -> SS.subtype s t.
