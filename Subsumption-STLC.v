@@ -427,12 +427,7 @@ Module SubsumptionSTLC.
             | TTop | TUnit => 1
             | TFun t1 t2 => S ((type_nat t1) + (type_nat t2))
             | TRec ts =>
-                let fix help (ts' : fields type) : nat :=
-                    match ts' with
-                    | [] => 0
-                    | t'::ts' => (type_nat (snd t')) + (help ts')
-                    end in
-                S (help ts)
+                S (fold_right (fun t' n => type_nat (snd t') + n) 0 ts)
             end.
 
         Lemma type_nat_pos :
@@ -446,15 +441,11 @@ Module SubsumptionSTLC.
             - simpl. exists (type_nat t1 + type_nat t2).
                 reflexivity.
             - simpl. exists 
-                ((fix help (ts' : fields type) : nat :=
-                    match ts' with
-                    | [] => 0
-                    | t' :: ts'0 =>
-                        type_nat (snd t') + help ts'0
-                    end) fs).
+                (fold_right
+                    (fun (t' : id * type) (n0 : nat) =>
+                    type_nat (snd t') + n0) 0 fs).
                 reflexivity.
         Qed.
-
     End SSType.
     Export SSType.
 
@@ -2450,11 +2441,6 @@ Ltac oblige :=
     try (intros hs ts ht tt [HF1 HF2]; discriminate);
     try (intros w [HF1 HF2]; discriminate).
 
-(* Cannot guess decreasing
-    argument of fix...uggghhh
-    Pierce suggests that we prove
-    that the sum of the sizes of the arguments
-    of each recursive call strictly decreases *)
 Program Fixpoint is_subtype (s t : type) 
 {measure ((type_nat s) + (type_nat t))} : bool :=
     match s, t with
@@ -2484,15 +2470,10 @@ Proof. simpl. omega. Qed.
 Next Obligation.
 Proof. 
     simpl. remember
-        (fix help (ts' : fields type) : nat :=
-            match ts' with
-            | [] => 0
-            | t' :: ts'0 =>
-                type_nat (snd t') + help ts'0
-            end) as help in *.
-    rewrite Nat.add_succ_r.
-    rewrite Nat.add_succ_r.
-    apply lt_n_S. apply lt_n_S.
+        (fold_right
+            (fun (t' : id * type) (n : nat) =>
+                type_nat (snd t') + n) 0 tailt)
+        as help in *.
     pose proof type_nat_pos (snd heads)
         as [ns Hns]. rewrite Hns.
     pose proof type_nat_pos (snd headt)
@@ -2501,12 +2482,10 @@ Qed.
 Next Obligation.
 Proof. 
     simpl. remember
-        (fix help (ts' : fields type) : nat :=
-            match ts' with
-            | [] => 0
-            | t' :: ts'0 =>
-                type_nat (snd t') + help ts'0
-            end) as help in *.
+        (fold_right
+            (fun (t' : id * type) (n : nat) =>
+                type_nat (snd t') + n) 0 tailt)
+        as help in *.
     pose proof type_nat_pos (snd heads)
         as [ns Hns]. rewrite Hns.
     pose proof type_nat_pos (snd headt)
@@ -2515,12 +2494,10 @@ Qed.
 Next Obligation.
 Proof.
     simpl. remember
-        (fix help (ts' : fields type) : nat :=
-            match ts' with
-            | [] => 0
-            | t' :: ts'0 =>
-                type_nat (snd t') + help ts'0
-            end) as help in *.
+        (fold_right
+            (fun (t' : id * type) (n : nat) =>
+                type_nat (snd t') + n) 0 tailt)
+        as help in *.
     pose proof type_nat_pos (snd heads)
         as [ns Hns]. rewrite Hns.
     pose proof type_nat_pos (snd headt)
