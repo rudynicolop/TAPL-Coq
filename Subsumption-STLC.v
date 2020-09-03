@@ -17,15 +17,33 @@ Require Import Coq.Sorting.Permutation.
 Require Import Coq.Program.Equality.
 Require Import Coq.Logic.JMeq.
 
+Ltac inv H := inversion H; subst.
+
+Ltac injintrosubst H := injection H; intros; subst.
+
 (* Lemma from the List Library : 
     maybe I should update my Coq version... *)
 Axiom map_eq_cons : forall {A B : Type} (f : A -> B) l l' b,
     map f l = b :: l' -> 
     exists a tl, l = a :: tl /\ f a = b /\ map f tl = l'.
 
-Ltac inv H := inversion H; subst.
+Lemma in_exists_cons : 
+    forall {U : Type} (u : U) (us : list U),
+    In u us ->
+    exists (u' : U) (us' : list U),
+    us = u' :: us'.
+Proof.
+    intros U u us Hinuus. destruct us.
+    - inv Hinuus.
+    - exists u0. exists us. reflexivity.
+Qed.
 
-Ltac injintrosubst H := injection H; intros; subst.
+Lemma in_cons_exists_elem :
+    forall {U : Type} (u : U) (us : list U),
+    exists (u' : U), In u' (u :: us).
+Proof.
+    intros U u us. exists u. apply in_eq.
+Qed.
 
 Definition id := string.
 
@@ -1117,47 +1135,147 @@ Module SubsumptionSTLC.
                 + exists f. exists ss. reflexivity.
         Qed.
 
-        Lemma cons_rec_subtype :
+        Lemma cons_rec_same :
             forall (ss ts : fields type),
             subtype (TRec ss) (TRec ts) ->
             forall (u : field type),
             subtype (TRec (u :: ss)) (TRec (u :: ts)).
         Proof.
-            induction ss; destruct ts; intros HSssts u.
+            intros ss ts HS.
+            dependent induction HS
+                using IHSubtype; intros v.
             - constructor.
-            - inv HSssts.
-                + apply inv_empty_rec_subtype in H 
-                    as [H | H]; subst.
-                    * apply inv_top in H0. discriminate.
-                    * apply inv_empty_rec_subtype in H0 as [H0 | H0];
-                        try discriminate.
-                + discriminate.
-                + inv H1.
-                + apply Permutation_nil in H1. discriminate.
-            - assert (Huass : u :: a :: ss = [u] ++ (a :: ss));
+            - apply inv_rec in HS2.
+                destruct HS2 as [us [Huus HSusts]]. subst. 
+                assert (HEus : TRec us = TRec us);
+                assert (HEss : TRec ss = TRec ss);
+                assert (HEts : TRec ts = TRec ts);
                 try reflexivity.
-                rewrite Huass. constructor.
-            - inv HSssts.
-                + constructor.
-                + apply inv_rec in H0.
-                    destruct H0 as [v [Huus HSusfts]].
+                apply IHHS1 with (ts := us) (u := v) 
+                    in HEss as IH2; auto.
+                apply IHHS2 with (ts0 := ts) (u := v)
+                    in HEus as IH1; auto.
+                    apply st_trans with (u := TRec (v :: us)); auto.
+            - rewrite app_comm_cons.
+                apply st_rec_width.
+            - constructor. induction H0.
+                + apply st_fields_refl.
+                + constructor; auto.
+                    split; auto.
+                    constructor.
+            - apply st_rec_perm.
+                apply perm_skip; auto.
+        Qed.
+
+        Lemma cons_subtype_rec :
+            forall (ss ts : fields type),
+            subtype (TRec ss) (TRec ts) ->
+            forall (s t : field type),
+            relf subtype s t ->
+            subtype (TRec (s :: ss)) (TRec (t :: ts)).
+        Proof.
+            intros ss ts HS.
+            dependent induction HS using IHSubtype;
+            intros s t HRst.
+            - apply st_rec_depth.
+                constructor; auto.
+                apply st_fields_refl.
+            - apply inv_rec in HS2.
+                destruct HS2 as [us [Huus HSusts]]. subst. 
+                assert (HEus : TRec us = TRec us);
+                assert (HEss : TRec ss = TRec ss);
+                assert (HEts : TRec ts = TRec ts);
+                try reflexivity.
+                apply IHHS1 with (ts := us) (s := s) (t := s) 
+                    in HEss as IH1; auto; clear IHHS1.
+                apply IHHS2 with (ts0 := ts) (s := s) (t := t)
+                    in HEus as IH2; auto; clear IHHS2.
+                apply st_trans with (u := TRec (s :: us)); auto.
+                constructor; auto. constructor.
+            - rewrite app_comm_cons.
+                apply st_trans with (u := (TRec (s :: ts)));
+                constructor. constructor; auto.
+                apply st_fields_refl.
+            - apply st_rec_depth. constructor; auto.
+            - apply st_trans with (u := TRec (s :: ts)).
+                + apply cons_rec_same.
+                    apply st_rec_perm. assumption.
+                + constructor. constructor; auto.
+                    apply st_fields_refl.
+        Qed.
+
+        Lemma cons_subtype_rec_remove :
+            forall (s t : field type) (ss ts : fields type),
+            relf subtype s t ->
+            subtype (TRec (s :: ss)) (TRec ts) <->
+            subtype (TRec (s :: ss)) (TRec (t :: ts)).
+        Proof.
+        Abort.
+
+
+        Lemma rec_subtype_depth_trans :
+            forall (ss ts : fields type),
+            subtype (TRec ss) (TRec ts) <->
+            exists us, relfs subtype us ts /\
+            subtype (TRec ss) (TRec us).
+        Proof.
+            intros ss ts. split.
+            - intros H. exists ts. split; auto.
+                apply st_fields_refl.
+            - intros [us [HRusts HSssus]].
+                apply st_trans with (u := TRec us); auto.
+                apply st_rec_depth. assumption.
+        Qed.
+
+        Lemma rec_subtype_perm_width :
+            forall (ss ts : fields type),
+            subtype (TRec ss) (TRec ts)
+            <-> exists (us vs : fields type),
+            perm ss (us ++ vs) /\
+            relfs subtype us ts.
+        Proof.
+            intros ss ts. split.
+            - intros H. dependent induction H using IHSubtype.
+                + exists ts. exists []. 
+                    rewrite app_nil_r. split.
+                    * apply Permutation_refl.
+                    * apply st_fields_refl.
+                + apply inv_rec in H0 as [us [Huus HSusts]].
                     subst.
-        Admitted.
+                    assert (HEus : TRec us = TRec us);
+                    assert (HEss : TRec ss = TRec ss);
+                    assert (HEts : TRec ts = TRec ts);
+                    try reflexivity.
+                    apply IHsubtype2 with (ts0 := ts)
+                        in HEus as IH1; auto; clear IHsubtype2.
+                    destruct IH1 as [us' [vs' [HPus' HRus']]].
+                    apply IHsubtype1 with (ts := us)
+                        in HEss as IH2; auto; clear IHsubtype1.
+                    destruct IH2 as [us'' [vs'' [HPss HRus]]].
+                    apply st_rec_depth in HRus as HA.
+                    apply st_rec_perm in HPus' as HB.
+                    assert (HS1 : subtype (TRec us'') 
+                        (TRec (us' ++ vs')));
+                    try (apply st_trans with (u := TRec us); auto).
+        Abort.
 
         Lemma alt_rec_subtyping :
             forall (ss ts : fields type),
             (forall t, In t ts ->
             exists s, In s ss /\ relf subtype s t) ->
             subtype (TRec ss) (TRec ts).
-        Proof.
-            induction ss; intros ts H; destruct ts.
-            - apply subtype_empty_rec.
-            - assert (Hinfts : In f (f :: ts));
-                try apply in_eq.
-                apply H in Hinfts as [s [Hinse _]].
-                inv Hinse.
-            - apply subtype_empty_rec.
+        Proof. 
+            intros ss ts.
+            generalize dependent ss.
+            induction ts; destruct ss; intros H;
+            try apply subtype_empty_rec.
             - admit.
+            - assert 
+                (HH : forall t : field type,
+                    In t ts -> exists s : field type, 
+                    In s ss /\ relf subtype s t).
+                + admit.
+                + apply IHts in HH.                
         Admitted.
     End InvSubsumption.
 
