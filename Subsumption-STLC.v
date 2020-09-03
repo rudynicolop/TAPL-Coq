@@ -2280,258 +2280,258 @@ Module Coercion.
 End Coercion.
 
 Module AlgorithmicSubtyping.
-Module SS := SubsumptionSTLC.
-Import SS.SSType.
-Import SS.SSExpr.
-Import SS.Step.
+    Module SS := SubsumptionSTLC.
+    Import SS.SSType.
+    Import SS.SSExpr.
+    Import SS.Step.
 
-Inductive subtype : type -> type -> Prop :=
-    | st_top : forall (s : type), subtype s TTop
-    | st_unit : subtype TUnit TUnit
-    | st_fun : forall (s1 s2 t1 t2 : type),
-        subtype t1 s1 ->
-        subtype s2 t2 ->
-        subtype (TFun s1 s2) (TFun t1 t2)
-    | st_rec : forall (ss ts : fields type),
-        (forall (t : field type),
-        In t ts -> 
-        exists (s : field type),
-        In s ss /\ relf subtype s t) ->
-        subtype (TRec ss) (TRec ts).
+    Inductive subtype : type -> type -> Prop :=
+        | st_top : forall (s : type), subtype s TTop
+        | st_unit : subtype TUnit TUnit
+        | st_fun : forall (s1 s2 t1 t2 : type),
+            subtype t1 s1 ->
+            subtype s2 t2 ->
+            subtype (TFun s1 s2) (TFun t1 t2)
+        | st_rec : forall (ss ts : fields type),
+            (forall (t : field type),
+            In t ts -> 
+            exists (s : field type),
+            In s ss /\ relf subtype s t) ->
+            subtype (TRec ss) (TRec ts).
 
-Section SubtypeInduction.
-    Variable P : type -> type -> Prop.
+    Section SubtypeInduction.
+        Variable P : type -> type -> Prop.
 
-    Hypothesis HTop : forall t, P t TTop.
+        Hypothesis HTop : forall t, P t TTop.
 
-    Hypothesis HUnit : P TUnit TUnit.
+        Hypothesis HUnit : P TUnit TUnit.
 
-    Hypothesis HFun : forall s1 s2 t1 t2,
-        subtype t1 s1 -> P t1 s1 ->
-        subtype s2 t2 -> P s2 t2 ->
-        P (TFun s1 s2) (TFun t1 t2).
+        Hypothesis HFun : forall s1 s2 t1 t2,
+            subtype t1 s1 -> P t1 s1 ->
+            subtype s2 t2 -> P s2 t2 ->
+            P (TFun s1 s2) (TFun t1 t2).
 
-    Hypothesis HRec : forall (ss ts : fields type),
-        (forall t : field type, In t ts -> 
-            exists s : field type, In s ss /\ relf subtype s t) ->
-        (forall t : field type, In t ts -> 
-            exists s : field type, In s ss /\ relf P s t) ->
-        P (TRec ss) (TRec ts).
+        Hypothesis HRec : forall (ss ts : fields type),
+            (forall t : field type, In t ts -> 
+                exists s : field type, In s ss /\ relf subtype s t) ->
+            (forall t : field type, In t ts -> 
+                exists s : field type, In s ss /\ relf P s t) ->
+            P (TRec ss) (TRec ts).
 
-    Fixpoint IHSubtype (s t : type) (HS : subtype s t) : P s t.
+        Fixpoint IHSubtype (s t : type) (HS : subtype s t) : P s t.
+        Proof.
+            destruct HS.
+            - apply HTop.
+            - apply HUnit.
+            - apply HFun; auto.
+            - apply HRec; auto. intros t Hintts.
+                apply H in Hintts as [s [Hinss HRst]].
+                exists s. split; auto.
+                destruct HRst as [Hfst HSst].
+                split; auto.
+        Qed.
+    End SubtypeInduction.
+
+    Lemma Reflexive :
+        forall (t : type),
+        subtype t t.
     Proof.
-        destruct HS.
-        - apply HTop.
-        - apply HUnit.
-        - apply HFun; auto.
-        - apply HRec; auto. intros t Hintts.
-            apply H in Hintts as [s [Hinss HRst]].
-            exists s. split; auto.
-            destruct HRst as [Hfst HSst].
-            split; auto.
-    Qed.
-End SubtypeInduction.
-
-Lemma Reflexive :
-    forall (t : type),
-    subtype t t.
-Proof.
-    intros t. induction t using IHType;
-    constructor; auto.
-    intros t Hin. exists t. split; auto.
-    pose proof Forall_forall 
-        (predf (fun t => subtype t t)) fs as FF.
-    unfold predfs in H. destruct FF as [F1 _].
-    apply F1 with (x := t) in H; auto.
-    split; auto.
-Qed.
-
-Lemma st_fields_refl :
-    forall (fs : fields type),
-    relfs subtype fs fs.
-Proof.
-    intros fs. induction fs; constructor.
-    - split; auto. apply Reflexive.
-    - assumption.
-Qed.
-
-Lemma Transitive :
-    forall (s u t : type),
-    subtype s u -> subtype u t -> subtype s t.
-Proof.
-    intros s u.
-    generalize dependent s.
-    induction u using IHType;
-    intros s t Hsu Hut.
-    - inv Hut. constructor.
-    - inv Hsu. assumption.
-    - inv Hsu. inv Hut; constructor.
-        + apply IHu1; auto.
-        + apply IHu2; auto.
-    - inv Hsu. inv Hut; constructor;
-        intros t Hintts.
-        apply H1 in Hintts 
-            as [s [Hinsss HRst]]; clear H1.
-        apply H2 in Hinsss as H2'.
-        destruct H2' as [u [Hinuss HRus]].
-        exists u. split; auto.
+        intros t. induction t using IHType;
+        constructor; auto.
+        intros t Hin. exists t. split; auto.
         pose proof Forall_forall 
-        (predf (fun u : type =>
-            forall s t : type, subtype s u -> 
-            subtype u t -> subtype s t)) fs as [F1 _].
-        apply F1 with (x := s) in H; auto; clear F1.
-        unfold predf in H.
-        destruct s as [s st].
-        destruct u as [u ut].
-        destruct t as [t tt].
-        destruct HRus as [HFus HSus].
-        destruct HRst as [HFst HSst]. 
-        simpl in *. subst. split; auto.
-Qed.
+            (predf (fun t => subtype t t)) fs as FF.
+        unfold predfs in H. destruct FF as [F1 _].
+        apply F1 with (x := t) in H; auto.
+        split; auto.
+    Qed.
 
-Theorem Subtyping_Complete :
-    forall (s t : type),
-    SS.subtype s t -> subtype s t.
-Proof.
-    intros s t HS.
-    dependent induction HS using SS.IHSubtype.
-    - apply Reflexive.
-    - apply Transitive with (u := u); auto.
-    - constructor.
-    - constructor; auto.
-    - constructor. intros t Hintus.
-        exists t. split.
-        + apply in_or_app. left.
-            assumption.
-        + split; auto.
-            apply Reflexive.
-    - constructor. intros t Hinvs.
-        apply relfs_in_exists_r with (vs0 := vs); auto.
-    - constructor. intros t Hinvs.
-        exists t. split.
-        + apply Permutation_in with (l := vs); auto.
-            apply Permutation_sym; auto.
-        + split; auto. apply Reflexive.
-Qed.
+    Lemma st_fields_refl :
+        forall (fs : fields type),
+        relfs subtype fs fs.
+    Proof.
+        intros fs. induction fs; constructor.
+        - split; auto. apply Reflexive.
+        - assumption.
+    Qed.
 
-(* NOTE: This proofs relies upon
-    an unproven assumption
-    about recording subtyping
-    in the declarative definition.
-    See rec_subtype_equiv.
-    *)
-Theorem Subtyping_Sound :
-    forall (s t : type),
-    subtype s t -> SS.subtype s t.
-Proof.
-    intros s t HS.
-    dependent induction HS using IHSubtype.
-    - constructor.
-    - constructor.
-    - constructor; auto.
-    - apply st_rec in H as HR.
-        apply SS.alt_rec_subtyping; auto.
-Qed.
+    Lemma Transitive :
+        forall (s u t : type),
+        subtype s u -> subtype u t -> subtype s t.
+    Proof.
+        intros s u.
+        generalize dependent s.
+        induction u using IHType;
+        intros s t Hsu Hut.
+        - inv Hut. constructor.
+        - inv Hsu. assumption.
+        - inv Hsu. inv Hut; constructor.
+            + apply IHu1; auto.
+            + apply IHu2; auto.
+        - inv Hsu. inv Hut; constructor;
+            intros t Hintts.
+            apply H1 in Hintts 
+                as [s [Hinsss HRst]]; clear H1.
+            apply H2 in Hinsss as H2'.
+            destruct H2' as [u [Hinuss HRus]].
+            exists u. split; auto.
+            pose proof Forall_forall 
+            (predf (fun u : type =>
+                forall s t : type, subtype s u -> 
+                subtype u t -> subtype s t)) fs as [F1 _].
+            apply F1 with (x := s) in H; auto; clear F1.
+            unfold predf in H.
+            destruct s as [s st].
+            destruct u as [u ut].
+            destruct t as [t tt].
+            destruct HRus as [HFus HSus].
+            destruct HRst as [HFst HSst]. 
+            simpl in *. subst. split; auto.
+    Qed.
 
-Ltac oblige :=
-    repeat split;
-    try (intros [HF1 HF2]; discriminate);
-    try (intros s1 s2 t1 t2 [HF1 HF2]; discriminate);
-    try (intros ss [HF1 HF2]; discriminate);
-    try (intros hs ts ht tt [HF1 HF2]; discriminate);
-    try (intros w [HF1 HF2]; discriminate).
+    Theorem Subtyping_Complete :
+        forall (s t : type),
+        SS.subtype s t -> subtype s t.
+    Proof.
+        intros s t HS.
+        dependent induction HS using SS.IHSubtype.
+        - apply Reflexive.
+        - apply Transitive with (u := u); auto.
+        - constructor.
+        - constructor; auto.
+        - constructor. intros t Hintus.
+            exists t. split.
+            + apply in_or_app. left.
+                assumption.
+            + split; auto.
+                apply Reflexive.
+        - constructor. intros t Hinvs.
+            apply relfs_in_exists_r with (vs0 := vs); auto.
+        - constructor. intros t Hinvs.
+            exists t. split.
+            + apply Permutation_in with (l := vs); auto.
+                apply Permutation_sym; auto.
+            + split; auto. apply Reflexive.
+    Qed.
 
-Program Fixpoint is_subtype (s t : type) 
-{measure ((type_nat s) + (type_nat t))} : bool :=
-    match s, t with
-    | _, TTop 
-    | TUnit, TUnit => true
-    | TFun s1 s2, TFun t1 t2 =>
-        is_subtype t1 s1 && is_subtype s2 t2
-    | TRec ss, TRec [] => true
-    | TRec (heads::tails), TRec (headt::tailt) =>
-        if (fst heads =? fst headt)%string
-            then if is_subtype (snd heads) (snd headt)
-                then is_subtype (TRec tails) (TRec tailt)
-                else false
-            else if is_subtype (TRec tails) (TRec [headt])
-                then is_subtype (TRec (heads::tails)) (TRec tailt)
-                else false
-    | _, _ => false
-    end.
-(* Solve Obligations of is_subtype with oblige. *)
-(* Solve Obligations with omega. *)
-Next Obligation.
-Proof. simpl. omega. Qed.
-Next Obligation.
-Proof. simpl. omega. Qed.
-Next Obligation.
-Proof. simpl. omega. Qed.
-Next Obligation.
-Proof. 
-    simpl. remember
-        (fold_right
-            (fun (t' : id * type) (n : nat) =>
-                type_nat (snd t') + n) 0 tailt)
-        as help in *.
-    pose proof type_nat_pos (snd heads)
-        as [ns Hns]. rewrite Hns.
-    pose proof type_nat_pos (snd headt)
-        as [nt Hnt]. rewrite Hnt. omega.
-Qed.
-Next Obligation.
-Proof. 
-    simpl. remember
-        (fold_right
-            (fun (t' : id * type) (n : nat) =>
-                type_nat (snd t') + n) 0 tailt)
-        as help in *.
-    pose proof type_nat_pos (snd heads)
-        as [ns Hns]. rewrite Hns.
-    pose proof type_nat_pos (snd headt)
-        as [nt Hnt]. rewrite Hnt. omega.
-Qed.
-Next Obligation.
-Proof.
-    simpl. remember
-        (fold_right
-            (fun (t' : id * type) (n : nat) =>
-                type_nat (snd t') + n) 0 tailt)
-        as help in *.
-    pose proof type_nat_pos (snd heads)
-        as [ns Hns]. rewrite Hns.
-    pose proof type_nat_pos (snd headt)
-        as [nt Hnt]. rewrite Hnt. omega.
-Qed.
-Solve All Obligations with oblige.
+    (* NOTE: This proofs relies upon
+        an unproven assumption
+        about recording subtyping
+        in the declarative definition.
+        See rec_subtype_equiv.
+        *)
+    Theorem Subtyping_Sound :
+        forall (s t : type),
+        subtype s t -> SS.subtype s t.
+    Proof.
+        intros s t HS.
+        dependent induction HS using IHSubtype.
+        - constructor.
+        - constructor.
+        - constructor; auto.
+        - apply st_rec in H as HR.
+            apply SS.alt_rec_subtyping; auto.
+    Qed.
 
-(* Per usual, the record case is unwieldy. *)
-Fixpoint SubtypeDec (s t : type) :
-    {subtype s t} + {~ subtype s t}.
-Proof.
-    destruct s; destruct t;
-    try (left; apply st_top);
-    try (right; intros HF; inv HF; contradiction).
-    - left. constructor.
-    - destruct (SubtypeDec t1 s1) as [H1 | H1];
-        destruct (SubtypeDec s2 t2) as [H2 | H2];
+    Ltac oblige :=
+        repeat split;
+        try (intros [HF1 HF2]; discriminate);
+        try (intros s1 s2 t1 t2 [HF1 HF2]; discriminate);
+        try (intros ss [HF1 HF2]; discriminate);
+        try (intros hs ts ht tt [HF1 HF2]; discriminate);
+        try (intros w [HF1 HF2]; discriminate).
+
+    Program Fixpoint is_subtype (s t : type) 
+    {measure ((type_nat s) + (type_nat t))} : bool :=
+        match s, t with
+        | _, TTop 
+        | TUnit, TUnit => true
+        | TFun s1 s2, TFun t1 t2 =>
+            is_subtype t1 s1 && is_subtype s2 t2
+        | TRec ss, TRec [] => true
+        | TRec (heads::tails), TRec (headt::tailt) =>
+            if (fst heads =? fst headt)%string
+                then if is_subtype (snd heads) (snd headt)
+                    then is_subtype (TRec tails) (TRec tailt)
+                    else false
+                else if is_subtype (TRec tails) (TRec [headt])
+                    then is_subtype (TRec (heads::tails)) (TRec tailt)
+                    else false
+        | _, _ => false
+        end.
+    (* Solve Obligations of is_subtype with oblige. *)
+    (* Solve Obligations with omega. *)
+    Next Obligation.
+    Proof. simpl. omega. Qed.
+    Next Obligation.
+    Proof. simpl. omega. Qed.
+    Next Obligation.
+    Proof. simpl. omega. Qed.
+    Next Obligation.
+    Proof. 
+        simpl. remember
+            (fold_right
+                (fun (t' : id * type) (n : nat) =>
+                    type_nat (snd t') + n) 0 tailt)
+            as help in *.
+        pose proof type_nat_pos (snd heads)
+            as [ns Hns]. rewrite Hns.
+        pose proof type_nat_pos (snd headt)
+            as [nt Hnt]. rewrite Hnt. omega.
+    Qed.
+    Next Obligation.
+    Proof. 
+        simpl. remember
+            (fold_right
+                (fun (t' : id * type) (n : nat) =>
+                    type_nat (snd t') + n) 0 tailt)
+            as help in *.
+        pose proof type_nat_pos (snd heads)
+            as [ns Hns]. rewrite Hns.
+        pose proof type_nat_pos (snd headt)
+            as [nt Hnt]. rewrite Hnt. omega.
+    Qed.
+    Next Obligation.
+    Proof.
+        simpl. remember
+            (fold_right
+                (fun (t' : id * type) (n : nat) =>
+                    type_nat (snd t') + n) 0 tailt)
+            as help in *.
+        pose proof type_nat_pos (snd heads)
+            as [ns Hns]. rewrite Hns.
+        pose proof type_nat_pos (snd headt)
+            as [nt Hnt]. rewrite Hnt. omega.
+    Qed.
+    Solve All Obligations with oblige.
+
+    (* Per usual, the record case is unwieldy. *)
+    Fixpoint SubtypeDec (s t : type) :
+        {subtype s t} + {~ subtype s t}.
+    Proof.
+        destruct s; destruct t;
+        try (left; apply st_top);
         try (right; intros HF; inv HF; contradiction).
-        left. constructor; auto.
-    - generalize dependent fs0.
-        induction fs; intros gs; destruct gs.
-        + left. constructor. intros t H. inv H.
-        + right. intros HF. inv HF.
-            assert (Hinfgs : In f (f :: gs));
-            try apply in_eq.
-            apply H1 in Hinfgs as [s [Hinse _]].
-            inv Hinse.
-        + left. constructor. intros t H. inv H.
-        + destruct a as [xa ta];
-            destruct f as [xf tf]. 
-            destruct (IHfs gs) as [IH | IH];
-            destruct (IdDec.eq_dec xa xf) as [HX | HX];
-            destruct (SubtypeDec ta tf) as [HS | HS]; subst.
-            * left. constructor. intros t Hin.
-                admit.
-Admitted.
+        - left. constructor.
+        - destruct (SubtypeDec t1 s1) as [H1 | H1];
+            destruct (SubtypeDec s2 t2) as [H2 | H2];
+            try (right; intros HF; inv HF; contradiction).
+            left. constructor; auto.
+        - generalize dependent fs0.
+            induction fs; intros gs; destruct gs.
+            + left. constructor. intros t H. inv H.
+            + right. intros HF. inv HF.
+                assert (Hinfgs : In f (f :: gs));
+                try apply in_eq.
+                apply H1 in Hinfgs as [s [Hinse _]].
+                inv Hinse.
+            + left. constructor. intros t H. inv H.
+            + destruct a as [xa ta];
+                destruct f as [xf tf]. 
+                destruct (IHfs gs) as [IH | IH];
+                destruct (IdDec.eq_dec xa xf) as [HX | HX];
+                destruct (SubtypeDec ta tf) as [HS | HS]; subst.
+                * left. constructor. intros t Hin.
+                    admit.
+    Admitted.
 End AlgorithmicSubtyping.
