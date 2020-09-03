@@ -16,6 +16,8 @@ Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Sorting.Permutation.
 Require Import Coq.Program.Equality.
 Require Import Coq.Logic.JMeq.
+Require Import Coq.Program.Wf.
+Require Import Coq.omega.Omega.
 
 Ltac inv H := inversion H; subst.
 
@@ -419,6 +421,40 @@ Module SubsumptionSTLC.
         End TypeDec.
 
         Module TypeFieldDec := FieldDec(TypeDec).
+
+        Fixpoint type_nat (t : type) : nat :=
+            match t with
+            | TTop | TUnit => 1
+            | TFun t1 t2 => S ((type_nat t1) + (type_nat t2))
+            | TRec ts =>
+                let fix help (ts' : fields type) : nat :=
+                    match ts' with
+                    | [] => 0
+                    | t'::ts' => (type_nat (snd t')) + (help ts')
+                    end in
+                S (help ts)
+            end.
+
+        Lemma type_nat_pos :
+            forall (t : type),
+            exists (n : nat),
+            type_nat t = S n.
+        Proof.
+            intros t. destruct t.
+            - exists 0. reflexivity.
+            - exists 0. reflexivity.
+            - simpl. exists (type_nat t1 + type_nat t2).
+                reflexivity.
+            - simpl. exists 
+                ((fix help (ts' : fields type) : nat :=
+                    match ts' with
+                    | [] => 0
+                    | t' :: ts'0 =>
+                        type_nat (snd t') + help ts'0
+                    end) fs).
+                reflexivity.
+        Qed.
+
     End SSType.
     Export SSType.
 
@@ -2405,4 +2441,143 @@ Proof.
     - apply st_rec in H as HR.
         apply SS.alt_rec_subtyping; auto.
 Qed.
+
+Ltac oblige :=
+    repeat split;
+    try (intros [HF1 HF2]; discriminate);
+    try (intros s1 s2 t1 t2 [HF1 HF2]; discriminate);
+    try (intros ss [HF1 HF2]; discriminate);
+    try (intros hs ts ht tt [HF1 HF2]; discriminate);
+    try (intros w [HF1 HF2]; discriminate).
+
+(* Cannot guess decreasing
+    argument of fix...uggghhh
+    Pierce suggests that we prove
+    that the sum of the sizes of the arguments
+    of each recursive call strictly decreases *)
+Program Fixpoint is_subtype (s t : type) 
+{measure ((type_nat s) + (type_nat t))} : bool :=
+    match s, t with
+    | _, TTop 
+    | TUnit, TUnit => true
+    | TFun s1 s2, TFun t1 t2 =>
+        is_subtype t1 s1 && is_subtype s2 t2
+    | TRec ss, TRec [] => true
+    | TRec (heads::tails), TRec (headt::tailt) =>
+        if (fst heads =? fst headt)%string
+            then if is_subtype (snd heads) (snd headt)
+                then is_subtype (TRec tails) (TRec tailt)
+                else false
+            else if is_subtype (TRec tails) (TRec [headt])
+                then is_subtype (TRec (heads::tails)) (TRec tailt)
+                else false
+    | _, _ => false
+    end.
+(* Solve Obligations of is_subtype with oblige. *)
+(* Solve Obligations with omega. *)
+Next Obligation.
+Proof. simpl. omega. Qed.
+Next Obligation.
+Proof. simpl. omega. Qed.
+Next Obligation.
+Proof. simpl. omega. Qed.
+Next Obligation.
+Proof. 
+    simpl. remember
+        (fix help (ts' : fields type) : nat :=
+            match ts' with
+            | [] => 0
+            | t' :: ts'0 =>
+                type_nat (snd t') + help ts'0
+            end) as help in *.
+    rewrite Nat.add_succ_r.
+    rewrite Nat.add_succ_r.
+    apply lt_n_S. apply lt_n_S.
+    pose proof type_nat_pos (snd heads)
+        as [ns Hns]. rewrite Hns.
+    pose proof type_nat_pos (snd headt)
+        as [nt Hnt]. rewrite Hnt. omega.
+Qed.
+Next Obligation.
+Proof. 
+    simpl. remember
+        (fix help (ts' : fields type) : nat :=
+            match ts' with
+            | [] => 0
+            | t' :: ts'0 =>
+                type_nat (snd t') + help ts'0
+            end) as help in *.
+    pose proof type_nat_pos (snd heads)
+        as [ns Hns]. rewrite Hns.
+    pose proof type_nat_pos (snd headt)
+        as [nt Hnt]. rewrite Hnt. omega.
+Qed.
+Next Obligation.
+Proof.
+    simpl. remember
+        (fix help (ts' : fields type) : nat :=
+            match ts' with
+            | [] => 0
+            | t' :: ts'0 =>
+                type_nat (snd t') + help ts'0
+            end) as help in *.
+    pose proof type_nat_pos (snd heads)
+        as [ns Hns]. rewrite Hns.
+    pose proof type_nat_pos (snd headt)
+        as [nt Hnt]. rewrite Hnt. omega.
+Qed.
+Next Obligation. 
+Proof. oblige. Qed.
+Next Obligation.
+Proof. oblige. Qed.
+Next Obligation.
+Proof. oblige. Qed.
+Next Obligation.
+Proof. oblige. Qed.
+Next Obligation.
+Proof. oblige. Qed.
+Next Obligation. 
+Proof. oblige. Qed.
+Next Obligation.
+Proof. oblige. Qed.
+Next Obligation.
+Proof. oblige. Qed.
+Next Obligation.
+Proof. oblige. Qed.
+Next Obligation.
+Proof. oblige. Qed.
+Next Obligation.
+Proof. oblige. Qed.
+Next Obligation.
+Proof. oblige. Qed.
+
+(* Per usual, the record case is unwieldy. *)
+Fixpoint SubtypeDec (s t : type) :
+    {subtype s t} + {~ subtype s t}.
+Proof.
+    destruct s; destruct t;
+    try (left; apply st_top);
+    try (right; intros HF; inv HF; contradiction).
+    - left. constructor.
+    - destruct (SubtypeDec t1 s1) as [H1 | H1];
+        destruct (SubtypeDec s2 t2) as [H2 | H2];
+        try (right; intros HF; inv HF; contradiction).
+        left. constructor; auto.
+    - generalize dependent fs0.
+        induction fs; intros gs; destruct gs.
+        + left. constructor. intros t H. inv H.
+        + right. intros HF. inv HF.
+            assert (Hinfgs : In f (f :: gs));
+            try apply in_eq.
+            apply H1 in Hinfgs as [s [Hinse _]].
+            inv Hinse.
+        + left. constructor. intros t H. inv H.
+        + destruct a as [xa ta];
+            destruct f as [xf tf]. 
+            destruct (IHfs gs) as [IH | IH];
+            destruct (IdDec.eq_dec xa xf) as [HX | HX];
+            destruct (SubtypeDec ta tf) as [HS | HS]; subst.
+            * left. constructor. intros t Hin.
+                admit.
+Admitted.
 End AlgorithmicSubtyping.
