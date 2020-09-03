@@ -2292,58 +2292,31 @@ Inductive subtype : type -> type -> Prop :=
         subtype t1 s1 ->
         subtype s2 t2 ->
         subtype (TFun s1 s2) (TFun t1 t2)
-    | st_rec : forall (ss ts : fields type),
-        (forall (t : field type),
-        In t ts -> 
-        exists (s : field type),
-        In s ss /\ relf subtype s t) ->
-        subtype (TRec ss) (TRec ts).
-
-Section SubtypeInduction.
-    Variable P : type -> type -> Prop.
-
-    Hypothesis HTop : forall t, P t TTop.
-
-    Hypothesis HUnit : P TUnit TUnit.
-
-    Hypothesis HFun : forall s1 s2 t1 t2,
-        subtype t1 s1 -> P t1 s1 ->
-        subtype s2 t2 -> P s2 t2 ->
-        P (TFun s1 s2) (TFun t1 t2).
-
-    Hypothesis HRec : forall (ss ts : fields type),
-        (forall t : field type, In t ts -> 
-            exists s : field type, In s ss /\ relf subtype s t) ->
-        (forall t : field type, In t ts -> 
-            exists s : field type, In s ss /\ relf P s t) ->
-        P (TRec ss) (TRec ts).
-
-    Fixpoint IHSubtype (s t : type) (HS : subtype s t) : P s t.
-    Proof.
-        destruct HS.
-        - apply HTop.
-        - apply HUnit.
-        - apply HFun; auto.
-        - apply HRec; auto. intros t Hintts.
-            apply H in Hintts as [s [Hinss HRst]].
-            exists s. split; auto.
-            destruct HRst as [Hfst HSst].
-            split; auto.
-    Qed.
-End SubtypeInduction.
+    | st_rec_nil : forall (ss : fields type),
+        subtype (TRec ss) (TRec [])
+    | st_rec_cons_hit : 
+        forall (hs ht : field type) (ss ts : fields type),
+        relf subtype hs ht -> 
+        subtype (TRec ss) (TRec ts) ->
+        subtype (TRec (hs::ss)) (TRec (ht::ts))
+    | st_rec_cons_miss :
+        forall (hs ht : field type) (ss ts : fields type),
+        fst hs <> fst ht ->
+        subtype (TRec ss) (TRec [ht]) ->
+        subtype (TRec (hs::ss)) (TRec ts) ->
+        subtype (TRec (hs::ss)) (TRec (ht::ts)).
 
 Lemma Reflexive :
     forall (t : type),
     subtype t t.
 Proof.
     intros t. induction t using IHType;
-    constructor; auto.
-    intros t Hin. exists t. split; auto.
-    pose proof Forall_forall 
-        (predf (fun t => subtype t t)) fs as FF.
-    unfold predfs in H. destruct FF as [F1 _].
-    apply F1 with (x := t) in H; auto.
-    split; auto.
+    try constructor; auto.
+    induction fs.
+    - constructor.
+    - inv H. apply st_rec_cons_hit.
+        + unfold predf in H2. split; auto.
+        + auto.
 Qed.
 
 Lemma st_fields_refl :
@@ -2368,26 +2341,32 @@ Proof.
     - inv Hsu. inv Hut; constructor.
         + apply IHu1; auto.
         + apply IHu2; auto.
-    - inv Hsu. inv Hut; constructor;
-        intros t Hintts.
-        apply H1 in Hintts 
-            as [s [Hinsss HRst]]; clear H1.
-        apply H2 in Hinsss as H2'.
-        destruct H2' as [u [Hinuss HRus]].
-        exists u. split; auto.
-        pose proof Forall_forall 
-        (predf (fun u : type =>
-            forall s t : type, subtype s u -> 
-            subtype u t -> subtype s t)) fs as [F1 _].
-        apply F1 with (x := s) in H; auto; clear F1.
-        unfold predf in H.
-        destruct s as [s st].
-        destruct u as [u ut].
-        destruct t as [t tt].
-        destruct HRus as [HFus HSus].
-        destruct HRst as [HFst HSst]. 
-        simpl in *. subst. split; auto.
-Qed.
+    - generalize dependent t.
+        generalize dependent s.
+        induction H; 
+        intros s Hsu t Hut;
+        inv Hsu; inv Hut;
+        try apply st_top;
+        try apply st_rec_nil.
+        + apply st_rec_cons_hit; auto.
+            unfold predf in H. destruct hs. 
+            destruct x. destruct ht.
+            destruct H3. destruct H4.
+            simpl in *. subst. split; auto.
+        + destruct hs as [xhs ths].
+            destruct x as [xx tx].
+            destruct ht as [xht tht]. 
+            destruct H4 as [HXhsx HShsx].
+            simpl in *. subst.
+            specialize IHForall with
+                (s := TRec ss) (t := TRec [(xht, tht)])
+                as IH1.
+            apply st_rec_cons_miss; auto. admit.
+            (* Problem is that I cannot specialize the middle
+                type as I want to because I have 
+                inducted upon the middle type
+                because of the function case *)
+Admitted.
 
 Theorem Subtyping_Complete :
     forall (s t : type),
@@ -2399,39 +2378,47 @@ Proof.
     - apply Transitive with (u := u); auto.
     - constructor.
     - constructor; auto.
-    - constructor. intros t Hintus.
-        exists t. split.
-        + apply in_or_app. left.
-            assumption.
-        + split; auto.
-            apply Reflexive.
-    - constructor. intros t Hinvs.
-        apply relfs_in_exists_r with (vs0 := vs); auto.
-    - constructor. intros t Hinvs.
-        exists t. split.
-        + apply Permutation_in with (l := vs); auto.
-            apply Permutation_sym; auto.
-        + split; auto. apply Reflexive.
-Qed.
+    - induction us; simpl; constructor; auto.
+        split; auto. apply Reflexive.
+    - induction H0; constructor; inv H; auto.
+    - induction H.
+        + constructor.
+        + apply st_rec_cons_hit; auto.
+            split; auto. apply Reflexive.
+        + destruct x as [x xt]. destruct y as [y yt]. 
+            destruct (IdDec.eq_dec x y); subst;
+            destruct (TypeDec.eq_dec xt yt); subst.
+            * repeat constructor; apply Reflexive.
+            * admit. (* duplicate names...ugghh *)
+            * apply st_rec_cons_miss; auto;
+                apply st_rec_cons_hit;
+                try (split; auto; apply Reflexive);
+                try apply st_rec_nil.
+                admit. (* no induction hypothesis... *)
+            * apply st_rec_cons_miss; auto;
+                apply st_rec_cons_hit;
+                try constructor; auto;
+                try apply Reflexive.
+                admit. (* maybe need a helper lemma... *)
+Admitted.
 
-(* NOTE: This proofs relies upon
-    an unproven assumption
-    about recording subtyping
-    in the declarative definition.
-    See rec_subtype_equiv.
-    *)
 Theorem Subtyping_Sound :
     forall (s t : type),
     subtype s t -> SS.subtype s t.
 Proof.
     intros s t HS.
-    dependent induction HS using IHSubtype.
+    dependent induction HS.
     - constructor.
     - constructor.
     - constructor; auto.
-    - apply st_rec in H as HR.
-        apply SS.alt_rec_subtyping; auto.
-Qed.
+    - apply SS.subtype_empty_rec.
+    - admit.
+        (* Induction hypothesis too weak:
+        needs to say something about the head *)
+    - inv IHHS1; inv IHHS2; admit.
+        (* maybe I need to enforce 
+            the absence of duplicates...*)
+Admitted.
 
 Ltac oblige :=
     repeat split;
@@ -2532,29 +2519,5 @@ Proof. oblige. Qed.
 Fixpoint SubtypeDec (s t : type) :
     {subtype s t} + {~ subtype s t}.
 Proof.
-    destruct s; destruct t;
-    try (left; apply st_top);
-    try (right; intros HF; inv HF; contradiction).
-    - left. constructor.
-    - destruct (SubtypeDec t1 s1) as [H1 | H1];
-        destruct (SubtypeDec s2 t2) as [H2 | H2];
-        try (right; intros HF; inv HF; contradiction).
-        left. constructor; auto.
-    - generalize dependent fs0.
-        induction fs; intros gs; destruct gs.
-        + left. constructor. intros t H. inv H.
-        + right. intros HF. inv HF.
-            assert (Hinfgs : In f (f :: gs));
-            try apply in_eq.
-            apply H1 in Hinfgs as [s [Hinse _]].
-            inv Hinse.
-        + left. constructor. intros t H. inv H.
-        + destruct a as [xa ta];
-            destruct f as [xf tf]. 
-            destruct (IHfs gs) as [IH | IH];
-            destruct (IdDec.eq_dec xa xf) as [HX | HX];
-            destruct (SubtypeDec ta tf) as [HS | HS]; subst.
-            * left. constructor. intros t Hin.
-                admit.
 Admitted.
 End AlgorithmicSubtyping.
