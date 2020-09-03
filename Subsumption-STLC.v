@@ -2503,30 +2503,7 @@ Proof.
     pose proof type_nat_pos (snd headt)
         as [nt Hnt]. rewrite Hnt. omega.
 Qed.
-Next Obligation. 
-Proof. oblige. Qed.
-Next Obligation.
-Proof. oblige. Qed.
-Next Obligation.
-Proof. oblige. Qed.
-Next Obligation.
-Proof. oblige. Qed.
-Next Obligation.
-Proof. oblige. Qed.
-Next Obligation. 
-Proof. oblige. Qed.
-Next Obligation.
-Proof. oblige. Qed.
-Next Obligation.
-Proof. oblige. Qed.
-Next Obligation.
-Proof. oblige. Qed.
-Next Obligation.
-Proof. oblige. Qed.
-Next Obligation.
-Proof. oblige. Qed.
-Next Obligation.
-Proof. oblige. Qed.
+Solve All Obligations with oblige.
 
 (* Per usual, the record case is unwieldy. *)
 Fixpoint SubtypeDec (s t : type) :

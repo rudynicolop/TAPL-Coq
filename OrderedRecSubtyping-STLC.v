@@ -27,6 +27,8 @@ Module SE := Coq.Structures.Equalities.
 Require Import Coq.Logic.Decidable.
 Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Program.Equality.
+Require Import Coq.Program.Wf.
+Require Import Coq.omega.Omega.
 
 Ltac inv H := inversion H; subst.
 
@@ -753,5 +755,48 @@ Module Algorithmic.
             - apply SS.cons_subtype_rec; auto.
                 split; auto. 
         Qed.
+
+        Ltac oblige :=
+            repeat split;
+            try (intros [HF1 HF2]; discriminate);
+            try (intros s1 s2 t1 t2 [HF1 HF2]; discriminate);
+            try (intros ss [HF1 HF2]; discriminate);
+            try (intros hs ts ht tt [HF1 HF2]; discriminate);
+            try (intros w [HF1 HF2]; discriminate).
+
+        Program Fixpoint is_subtype (s t : type) 
+        {measure ((type_nat s) + (type_nat t))} : bool :=
+            match s, t with
+            | _, TTop 
+            | TUnit, TUnit => true
+            | TFun s1 s2, TFun t1 t2 =>
+                is_subtype t1 s1 && is_subtype s2 t2
+            | TRec ss, TRec [] => true
+            | TRec (heads::tails), TRec (headt::tailt) =>
+                if (fst heads =? fst headt)%string
+                    then is_subtype (snd heads) (snd headt)
+                        && is_subtype (TRec tails) (TRec tailt)
+                    else false             
+            | _, _ => false
+            end.
+        Next Obligation.
+        Proof. simpl. omega. Qed.
+        Next Obligation.
+        Proof. simpl. omega. Qed.
+        Next Obligation.
+        Proof. simpl. omega. Qed.
+        Next Obligation.
+        Proof. 
+            simpl. remember
+                (fold_right
+                    (fun (t' : id * type) (n : nat) =>
+                        type_nat (snd t') + n) 0 tailt)
+                as help in *.
+            pose proof type_nat_pos (snd heads)
+                as [ns Hns]. rewrite Hns.
+            pose proof type_nat_pos (snd headt)
+                as [nt Hnt]. rewrite Hnt. omega.
+        Qed.
+        Solve All Obligations with oblige.
     End Subtype.
 End Algorithmic.
