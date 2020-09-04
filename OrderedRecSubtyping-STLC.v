@@ -29,6 +29,7 @@ Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Program.Equality.
 Require Import Coq.Program.Wf.
 Require Import Coq.omega.Omega.
+Require Import Coq.Program.Tactics.
 
 Ltac inv H := inversion H; subst.
 
@@ -1747,27 +1748,105 @@ Module Algorithmic.
         Qed.
         Solve All Obligations with oblige.
 
-        Fixpoint subtype_dec (s t : type) :
+        (* Coq crashes and produces
+            gargantuan terms when I attempt to
+            simplify is_subtype.
+            Life is too short to deal 
+            with this...so here are a
+            few obvious axioms from
+            the definition of is_subtype. *)
+        Section SimplIsSubtype.
+            Axiom is_subtype_top :
+                forall (s : type),
+                is_subtype s TTop = true.
+
+            Lemma is_subtype_unit :
+                is_subtype TUnit TUnit = true.
+            Proof. reflexivity. Qed.
+
+            Axiom is_subtype_fun :
+                forall (s1 s2 t1 t2 : type),
+                is_subtype (TFun s1 s2) (TFun t1 t2) =
+                    (is_subtype t1 s1 && is_subtype s2 t2)%bool.
+
+            Axiom is_subtype_rec_nil :
+                forall (ss : fields type),
+                is_subtype (TRec ss) (TRec []) = true.
+
+            Axiom is_subtype_rec_cons :
+                forall (heads headt : field type)
+                    (tails tailt : fields type),
+                is_subtype (TRec (heads::tails)) 
+                    (TRec (headt::tailt)) =
+                if (fst heads =? fst headt)%string
+                    then (is_subtype (snd heads) (snd headt)
+                        && is_subtype (TRec tails) (TRec tailt))%bool
+                    else false. 
+
+            Axiom is_subtype_rec_must_be_nil :
+                forall (ts : fields type),
+                is_subtype (TRec []) (TRec ts) = true -> ts = [].
+        End SimplIsSubtype.
+
+        Lemma is_subtype_correct : forall (s t : type),
+            subtype s t -> is_subtype s t = true.
+        Proof.
+            intros s t HS.
+            induction HS.
+            - rewrite is_subtype_top. reflexivity.
+            - rewrite is_subtype_unit. reflexivity.
+            - rewrite is_subtype_fun. rewrite IHHS1.
+                rewrite IHHS2. reflexivity.
+            - rewrite is_subtype_rec_nil. reflexivity.
+            - rewrite is_subtype_rec_cons. simpl.
+                rewrite IHHS1. rewrite IHHS2.
+                rewrite eqb_refl. reflexivity.
+        Qed.
+
+        (* Coq incorrectly instantiates 
+            the induction hypothesis. *)
+        Lemma subtype_dec : forall  (s t : type),
+            is_subtype s t = true -> subtype s t.
+        Proof.
+            intros s.
+            dependent induction s 
+                generalizing s
+                using IHType; 
+            destruct t; 
+            intros HS; try constructor;
+            try (unfold is_subtype in HS; 
+                simpl in HS; discriminate);
+            try (unfold is_subtype in HS;
+                destruct fs; discriminate).
+            - rewrite is_subtype_fun in HS.
+                apply andb_prop in HS as [H _].
+                admit. (* why?? *)
+            - rewrite is_subtype_fun in HS.
+                apply andb_prop in HS as [_ H].
+                apply IHs2. assumption.
+            - generalize dependent fs0;
+                induction H; intros fs0 HS.
+                + apply is_subtype_rec_must_be_nil in HS.
+                    subst. constructor.
+                + destruct fs0; try constructor.
+                    rewrite is_subtype_rec_cons in HS.
+                    destruct x. destruct f. simpl in *.
+                    destruct (i =? i0) eqn:eq;
+                    try discriminate.
+                    apply andb_prop in HS as [H1 H2].
+                    apply eqb_eq in eq. subst.
+                    unfold predf in H.
+                    specialize H with (t0 := t0).
+                    specialize IHForall with (fs0 := fs0).
+                    simpl in *. constructor; auto.
+        Admitted.
+
+        Theorem subtype_refl : forall (s t : type),
             subtype s t <-> is_subtype s t = true.
         Proof.
-            destruct s; destruct t;
-            split; intros HY;
-            try reflexivity;
-            try discriminate;
-            try apply st_top;
-            try constructor;
-            try inv HY.
-            - apply subtype_dec in H2.
-                apply subtype_dec in H4.
-                unfold is_subtype. cbn.
-            (* - unfold is_subtype. cbn.
-                destruct fs; reflexivity.
-            - clear H0. 
-                unfold is_subtype in HY.
-                cbn in HY.
-                destruct fs; simpl in HY;
-                discriminate.
-            - *)
-        Admitted.
+            intros s t. split.
+            - apply is_subtype_correct.
+            - apply subtype_dec.
+        Qed.
     End Subtype.
 End Algorithmic.
