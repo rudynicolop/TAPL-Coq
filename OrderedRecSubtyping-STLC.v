@@ -242,6 +242,33 @@ Section Fields.
             exists v. split; auto.
             apply in_cons; auto.
     Qed.
+
+    Lemma fst_eq_relation :
+        forall {U V : Type} (R : U -> V -> Prop)
+        (us : fields U) (vs : fields V),
+        relfs R us vs ->
+        map fst us = map fst vs.
+    Proof.
+        intros U V R us vs H.
+        induction H; auto.
+        destruct x. destruct y.
+        inv H. simpl in *. subst.
+        rewrite IHForall2.
+        reflexivity.
+    Qed.
+
+    Lemma nodups_relation :
+        forall {U V : Type} (R : U -> V -> Prop)
+        (us : fields U) (vs : fields V),
+        relfs R us vs ->
+        nodupfs us <-> nodupfs vs.
+    Proof.
+        intros U V R us vs H. 
+        apply fst_eq_relation in H.
+        unfold nodupfs in *.
+        rewrite H. split; auto.
+    Qed.
+        
 End Fields.
 
 Module Declarative.
@@ -1954,7 +1981,64 @@ Module Algorithmic.
                 apply JS.check_subsume with (u := t); auto.
                 apply Sound. assumption.
             - apply JS.check_prj with (ts := ts); auto.
-        Qed.    
+        Qed.
+
+        (* Minimal Typing *)
+        Theorem Completenss :
+            forall (g : gamma) (e : expr) (t : type),
+            JS.check g e t ->
+            exists (s : type), subtype s t /\ check g e s.
+        Proof.
+            intros g e t H.
+            induction H using JS.IHCheck.
+            - destruct IHcheck as [s [HSsu HCes]].
+                exists s. split; auto.
+                apply Complete in H.
+                apply Transitive with (u := u); auto.
+            - exists TUnit. split; constructor.
+            - exists t. split.
+                + apply Reflexive.
+                + constructor. assumption.
+            - destruct IHcheck as [s [HS HC]].
+                exists (TFun u s). split;
+                    constructor; auto.
+                    apply Reflexive.
+            - destruct IHcheck1 as [s1 [HS1 HC1]].
+                destruct IHcheck2 as [s2 [HS2 HSC2]].
+                inv HS1. exists s3. split; auto.
+                apply check_app with 
+                    (t := s2) (u := s0); auto.
+                    apply Transitive with (u := u); auto.
+            - induction H2.
+                + exists (TRec []). split; 
+                    constructor; auto.
+                    constructor.
+                + inv H. inv H0.
+                    destruct x as [x ex].
+                    destruct y as [y ty].
+                    destruct H2 as [Hfst HC].
+                    simpl in *. subst. inv H1.
+                    pose proof IHForall2 H7 H9 H12 as IH; clear IHForall2.
+                    destruct HC as [s [HSsty HCexs]].
+                    destruct IH as [s' [HSs'l' HCls']].
+                    inv HCls'. exists (TRec ((y,s)::ts)).
+                    split; constructor; auto.
+                    * pose proof nodups_relation 
+                        (check g) ((y,ex)::l) as NR.
+                        apply NR; auto.
+                        constructor; auto.
+                        constructor; auto.
+                    * constructor; auto.
+                        split; auto.
+            - destruct IHcheck as [s [HS HC]].
+                inv HS. inv H. apply Sound in HS.
+                apply JS.st_fields_name with
+                    (x := x) (w := t) in HS; auto.
+                    destruct HS as [u [Hin HSut]].
+                    apply Complete in HSut.
+                    exists u. split; auto.
+                    apply check_prj with
+                        (ts := (x0, hs) :: ss); auto.
+        Qed.
     End TypeCheck.
-    
 End Algorithmic.
