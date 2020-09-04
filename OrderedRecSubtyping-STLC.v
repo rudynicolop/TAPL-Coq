@@ -1610,6 +1610,7 @@ Module Algorithmic.
     Import D.Types.
     Import D.Expr.
     Module SS := D.Subtype.
+    Module JS := D.Checks.
 
     Module Subtype.
         Inductive subtype : type -> type -> Prop :=
@@ -1691,7 +1692,7 @@ Module Algorithmic.
                 constructor; auto.
         Qed.
 
-        Theorem Subtyping_Sound :
+        Theorem Sound :
             forall (s t : type),
             subtype s t -> SS.subtype s t.
         Proof.
@@ -1849,4 +1850,111 @@ Module Algorithmic.
             - apply subtype_dec.
         Qed.
     End Subtype.
+    Export Subtype.
+    
+    Module TypeCheck.
+        Inductive check (g : gamma) : expr -> type -> Prop :=
+            | check_unit :
+                check g EUnit TUnit
+            | check_var : forall (x : id) (t : type),
+                g x = Some t ->
+                check g (EVar x) t
+            | check_fun : forall (x : id) (u v : type) (e : expr),
+                check (bind x u g) e v ->
+                check g (EFun x u e) (TFun u v)
+            | check_app : forall (e1 e2 : expr) (t u v : type),
+                subtype t u ->
+                check g e1 (TFun u v) ->
+                check g e2 t ->
+                check g (EApp e1 e2) v
+            | check_rec : forall (es : fields expr) (ts : fields type),
+                nodupfs es -> nodupfs ts ->
+                relfs (check g) es ts ->
+                check g (ERec es) (TRec ts)
+            | check_prj : forall (e : expr) (x : id) (t : type) (ts : fields type),
+                In (x,t) ts ->
+                check g e (TRec ts) ->
+                check g (EPrj e x) t.
+
+        Section CheckInduction.
+            Variable P : @gamma type -> expr -> type -> Prop.
+
+            Hypothesis HUnit : 
+                forall (g : gamma), P g EUnit TUnit.
+
+            Hypothesis HVar :
+                forall (g : gamma) (x : id) (t : type),
+                g x = Some t -> 
+                P g (EVar x) t.
+
+            Hypothesis HFun :
+                forall (g : gamma) (x : id) (u v : type) (e : expr),
+                check (bind x u g) e v ->
+                P (bind x u g) e v ->
+                P g (EFun x u e) (TFun u v).
+
+            Hypothesis HApp :
+                forall (g : gamma) (e1 e2 : expr) (t u v : type),
+                subtype t u ->
+                check g e1 (TFun u v) ->
+                P g e1 (TFun u v) ->
+                check g e2 t ->
+                P g e2 t ->
+                P g (EApp e1 e2) v.
+
+            Hypothesis HRec :
+                forall (g : gamma) (es : fields expr) (ts : fields type),
+                nodupfs es -> nodupfs ts ->
+                relfs (check g) es ts ->
+                relfs (P g) es ts ->
+                P g (ERec es) (TRec ts).
+
+            Hypothesis HPrj :
+                forall (g : gamma) (e : expr) (x : id) (t : type) (ts : fields type),
+                In (x,t) ts ->
+                check g e (TRec ts) ->
+                P g e (TRec ts) ->
+                P g (EPrj e x) t.
+
+            Fixpoint IHCheck (g : gamma) (e : expr) (t : type) (HC :check g e t) : P g e t :=
+                match HC in check _ e' t' return (P g e' t') with
+                | check_unit _ => HUnit g
+                | check_var _ x t HB => HVar g x t HB
+                | check_fun _ x u v e HCev =>
+                    HFun g x u v e HCev (IHCheck (bind x u g) e v HCev)
+                | check_app _ e1 e2 t u v HS HCe1uv HCe2t =>
+                    HApp g e1 e2 t u v HS
+                        HCe1uv (IHCheck g e1 (TFun u v) HCe1uv)
+                        HCe2t (IHCheck g e2 t HCe2t)
+                | check_rec _ es ts NDes NDts HRs =>
+                    let fix rec_help {es' : fields expr} {ts' : fields type}
+                        (HRs' : relfs (check g) es' ts') : Forall2 (relf (P g)) es' ts' :=
+                        match HRs' in (Forall2 _ le lt) 
+                            return (Forall2 (relf (P g)) le lt) with
+                        | Forall2_nil _ => Forall2_nil (relf (P g))
+                        | Forall2_cons e t Het Hests =>
+                            Forall2_cons
+                                e t (relf_pred (IHCheck g) Het) 
+                                (rec_help Hests)
+                        end in
+                    HRec g es ts NDes NDts HRs (rec_help HRs)
+                | check_prj _ e x t ts Hints HCets =>
+                    HPrj g e x t ts Hints HCets (IHCheck g e (TRec ts) HCets)
+                end.
+        End CheckInduction.
+
+        Theorem Soundness :
+            forall (g : gamma) (e : expr) (t : type),
+            check g e t -> JS.check g e t.
+        Proof.
+            intros g e t H.
+            induction H using IHCheck;
+            try constructor; auto.
+            - apply JS.check_app with (u := u); auto.
+                apply JS.check_subsume with (u := t); auto.
+                apply Sound. assumption.
+            - apply JS.check_prj with (ts := ts); auto.
+        Qed.    
+    End TypeCheck.
+    
 End Algorithmic.
