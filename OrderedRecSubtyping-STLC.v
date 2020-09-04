@@ -2041,4 +2041,99 @@ Module Algorithmic.
                         (ts := (x0, hs) :: ss); auto.
         Qed.
     End TypeCheck.
+    Export TypeCheck.
+
+    Section PartialOrder.
+        (* The types under the subtype
+            relation form an
+            upper-semilattice,
+            AKA a join-semilattice. *)
+
+        Definition join (s t j : type) :=
+            subtype s j /\ subtype t j /\
+            forall (u : type), 
+            subtype s u -> 
+            subtype t u ->
+            subtype j u.
+
+        (* A join exists for
+            each pair of types. *)
+        Theorem exists_join :
+            forall (s t : type),
+            exists (j : type), join s t j.
+        Proof.
+            intros s.
+            induction s using IHType; destruct t;
+            try (exists TTop; repeat split;
+                try constructor; intros; assumption);
+            try (exists TTop; unfold join; repeat split; 
+                try constructor; intros u HS1 HS2;
+                inv HS1; inv HS2; apply Reflexive).
+            - exists TUnit. unfold join. repeat split; 
+                try constructor. auto.
+            - destruct (IHs1 t1) as [j1 J1].
+                destruct (IHs2 t2) as [j2 J2].
+                unfold join in J1.
+                unfold join in J2.
+                destruct J1 as [HS1 [HF1 H1]].
+                destruct J2 as [HS2 [HF2 H2]].
+                apply H1 in HS1 as H1'; auto.
+                apply H2 in HS2 as H2'; auto.
+                assert (HJT1 : subtype j1 t1). admit.
+                assert (HJS1 : subtype j1 s1). admit.
+                (* Induction hypothesis bad *)
+                exists (TFun j1 j2).
+                unfold join. repeat split;
+                try constructor; auto. intros u HU1 HU2.
+                inv HU1; inv HU2; constructor; auto.
+                admit.  (* I give up...for now! *)
+            - generalize dependent fs0.
+                induction H; intros gs; destruct gs;
+                try (exists (TRec []); repeat split;
+                    try constructor; auto).
+                intros u HSU1 HSU2.
+                admit.
+                (* I give up...for now! *)
+        Admitted.
+
+        (* A meet does not exist
+            for each pair of types. *)
+        Definition meet (s t m : type) :=
+            subtype m s /\ subtype m t /\
+            forall (l : type),
+            subtype l s ->
+            subtype l t ->
+            subtype l m.
+
+        Theorem nexists_meet :
+            ~ forall (s t : type),
+            exists (m : type), meet s t m.
+        Proof.
+            intros H.
+            specialize H with (s := TUnit) 
+                (t := TFun TUnit TUnit).
+            destruct H as [m M].
+            unfold meet in M.
+            destruct M as [M1 [M2 _]].
+            inv M1. inv M2.
+        Qed.     
+        
+        Theorem anti_symmetric :
+            forall (s t : type),
+            subtype s t ->
+            subtype t s -> s = t.
+        Proof.
+            intros s t HST.
+            dependent induction HST;
+            intros HTS; inv HTS;
+            try reflexivity.
+            - apply IHHST1 in H2.
+                apply IHHST2 in H4.
+                subst. reflexivity.
+            - apply IHHST1 in H1.
+                apply IHHST2 in H5.
+                subst. injintrosubst H5.
+                reflexivity.
+        Qed. 
+    End PartialOrder.
 End Algorithmic.
