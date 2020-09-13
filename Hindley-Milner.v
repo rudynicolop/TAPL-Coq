@@ -15,6 +15,7 @@ Module SE := Coq.Structures.Equalities.
 Require Import Coq.Logic.Decidable.
 Require Coq.Logic.Classical_Pred_Type.
 Module CPT := Coq.Logic.Classical_Pred_Type.
+Require Import Coq.Program.Equality.
 
 (* Hindley-Milner Type-System *)
 
@@ -475,7 +476,7 @@ Section ConstraintTyping.
     (H : constraint_type g e t X C) (s : sigma) (T : type) : Prop :=
     satisfy_constraint s C /\ sub_type s t = T.
 
-    Theorem Constraint_Typing_Soundness : 
+    Theorem Constraint_Typing_Sound : 
         forall (g : gamma) (e : expr) (t : type) 
             (X : names) (C : constraint) 
             (H : constraint_type g e t X C) 
@@ -485,16 +486,71 @@ Section ConstraintTyping.
         intros g e t X C H s T HCS.
         destruct HCS as [HSC HSE].
         unfold solution. subst.
-        apply substutution_preserves_typing.
-        induction H; try constructor; auto. inv HSC.
-        apply Forall_app in H16 as [HC1 HC2].
-        apply check_app with (t1 := t2); auto.
-        apply IHconstraint_type1 in HC1.
-        unfold satisfy_equation in H15.
-        (* maybe applying
-            helper lemma too early...*)
-    Admitted.  
+        induction H.
+        - constructor.
+        - apply substutution_preserves_typing.
+            constructor; auto.
+        - constructor.
+            fold sub_type. fold sub_expr.
+            rewrite <- bind_sub_gamma. auto.
+        - inv HSC.
+            apply Forall_app in H16 as [HC1 HC2].
+            apply check_app with (t1 := sub_type s t2); auto.
+            fold sub_expr.
+            apply IHconstraint_type1 in HC1.
+            unfold satisfy_equation in H15.
+            rewrite H15 in HC1. simpl in HC1.
+            assumption.
+    Qed.
+
+    (* s/N *)
+    Definition sigma_diff (s : sigma) (N : names) : sigma := 
+        fun X => if IS.mem X N then None else s X.
+
+    Theorem Constraint_Typing_Complete : 
+        forall (g : gamma) (e : expr) (t : type) 
+        (X : names) (C : constraint) 
+        (H : constraint_type g e t X C) 
+        (s : sigma) (T : type),
+        sigma_diff s X = s ->
+        solution g e s T ->
+        exists (s' : sigma),
+        sigma_diff s' X = s /\ constraint_solution H s' T.
+    Proof.
+        intros g e t X C H.
+        (* Coq won't let me do induction on H *)
+        (* induction H. *)
+    Admitted.
 End ConstraintTyping.
+
+Section Unification.
+    Definition sub_equation (s : sigma) (eq : equation) : equation :=
+        let (t1,t2) := eq in (sub_type s t1, sub_type s t2).
+
+    Fixpoint sub_constraint (s : sigma) (C : constraint) : constraint :=
+        map (sub_equation s) C.
+
+    Inductive unify : constraint -> sigma -> Prop :=
+        | unify_nil : unify [] sempty
+        | unify_eq : 
+            forall (t : type) (C : constraint) (s : sigma),
+            unify C s ->
+            unify ((t,t) :: C) s
+        | unify_left_var :
+            forall (X : id) (t : type) (C : constraint) (s : sigma),
+            ~ TIn X t ->
+            unify (sub_constraint (sbind X t sempty) C) s ->
+            unify ((TVar X, t) :: C) (compose_sigma (sbind X t sempty) s)
+        | unify_right_var :
+            forall (X : id) (t : type) (C : constraint) (s : sigma),
+            ~ TIn X t ->
+            unify (sub_constraint (sbind X t sempty) C) s ->
+            unify ((t, TVar X) :: C) (compose_sigma (sbind X t sempty) s)
+        | unify_fun : 
+            forall (a1 a2 b1 b2 : type) (C : constraint) (s : sigma),
+            unify ((a1,a2) :: (b1,b2) :: C) s ->
+            unify ((TFun a1 b1, TFun a2 b2) :: C) s.
+End Unification.
 
 (* Definition scheme : Type := list id * type.
 
