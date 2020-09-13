@@ -599,20 +599,37 @@ Section Unification.
         ~ TIn X t ->
         satisfy_equation (compose_sigma (sbind X t sempty) s) (TVar X, t).
     Proof.
-        intros X t s H. unfold satisfy_equation.
+        intros X t s H.
+        unfold satisfy_equation.
         unfold compose_sigma. simpl.
         rewrite sbind_correct.
-        generalize dependent X.
-        generalize dependent s.
-        induction t; intros s X H; auto.
+        (* Intuitively true. *)
+        (* generalize dependent X. *)
+        (* generalize dependent s. *)
+        induction t; 
+        (* intros s X H;  *)
+        auto.
         - assert (HXX : X <> X0).
             + intros HF. apply H. subst.
                 reflexivity.
             + simpl. rewrite (sbind_complete X X0 
                 (TVar X0) HXX). unfold sempty.
                 reflexivity.
-        - simpl. admit.
+        - simpl in H. 
+            apply CP.not_or_and in H as [H1 H2].
+            apply IHt1 in H1. apply IHt2 in H2.
+            simpl. rewrite H1. rewrite H2.
+            (* This case makes no sense. *)
     Admitted.
+
+    Lemma satisfy_equation_sym :
+        forall (s : sigma) (t1 t2 : type),
+        satisfy_equation s (t1,t2) ->
+        satisfy_equation s (t2,t1).
+    Proof.
+        intros s t1 t2 H. 
+        unfold satisfy_equation in *. auto.
+    Qed.
 
     Theorem unify_correct :
         forall (C : constraint) (s : sigma),
@@ -631,11 +648,15 @@ Section Unification.
             apply IH in H2. assumption.
         - destruct IHHU as [IH _].
             constructor.
-            + admit.
+            + apply satisfy_equation_compose. assumption.
             + unfold satisfy_constraint in IH. admit.
-        - inv HSC. destruct IHHU as [_ IH].
-            admit.
-        - admit.
+        - inv HSC. destruct IHHU as [_ IH]. admit.
+        - destruct IHHU as [IH _].
+            constructor.
+            + apply satisfy_equation_sym.
+                apply satisfy_equation_compose.
+                assumption.
+            + admit.
         - admit.
         - destruct IHHU as [IH _]. inv IH.
             inv H2. constructor; auto.
