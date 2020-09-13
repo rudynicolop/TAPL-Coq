@@ -2137,3 +2137,22 @@ Module Algorithmic.
         Qed. 
     End PartialOrder.
 End Algorithmic.
+
+(* Pollack-Inconsistency *)
+
+Coercion S : nat >-> nat.
+
+Check 0.
+
+Check 1.
+
+Definition _Prop := Prop.
+Definition _not : _Prop -> Prop := not.
+Coercion _not : _Prop >-> Sortclass.
+
+Lemma _I : _not False.
+Proof.
+    exact (fun x => x).
+Qed.
+
+Check _I.
