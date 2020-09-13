@@ -16,6 +16,8 @@ Require Import Coq.Logic.Decidable.
 Require Coq.Logic.Classical_Pred_Type.
 Module CPT := Coq.Logic.Classical_Pred_Type.
 Require Import Coq.Program.Equality.
+Require Coq.Logic.Classical_Prop.
+Module CP := Coq.Logic.Classical_Prop.
 
 (* Hindley-Milner Type-System *)
 
@@ -57,6 +59,31 @@ Inductive expr : Type :=
     | EVar (x : id)
     | EFun (x : id) (t : type) (e : expr)
     | EApp (e1 e2 : expr).
+
+Definition names : Type := IS.t.
+
+Fixpoint fv (t : type) : names :=
+    match t with
+    | TUnit => IS.empty
+    | TVar X => IS.singleton X
+    | TFun t1 t2 => IS.union (fv t1) (fv t2)
+    end.
+
+(* type variable in a type *)
+Fixpoint TIn (X : id) (t : type) : Prop :=
+    match t with
+    | TUnit => False
+    | TVar Y => X = Y
+    | TFun t1 t2 => TIn X t1 \/ TIn X t2
+    end.
+
+(* type variable in an expression *)
+Fixpoint EIn (X : id) (e : expr) : Prop :=
+    match e with
+    | EUnit | EVar _ => False
+    | EFun _ t e => TIn X t \/ EIn X e
+    | EApp e1 e2 => EIn X e1 \/ EIn X e2
+    end.
 
 Section Gamma.
     Definition gamma := id -> option type.
@@ -135,6 +162,26 @@ Section TypeSubstitution.
     Definition sbind (X : id) (t : type) (s : sigma) : sigma :=
         fun Y => if (X =? Y)%string then Some t else s Y.
 
+    Lemma sbind_correct :
+        forall (X : id) (t : type) (s : sigma),
+        sbind X t s X = Some t.
+    Proof.
+        intros X t s. unfold sbind.
+        destruct (X =? X)%string eqn:eq; auto.
+        apply eqb_neq in eq. contradiction.
+    Qed.
+
+    Lemma sbind_complete :
+        forall (X Y : id) (t : type),
+        X <> Y ->
+        forall (s : sigma),
+        sbind X t s Y = s Y.
+    Proof.
+        intros X Y t H s.
+        unfold sbind. apply eqb_neq in H.
+        rewrite H. reflexivity.
+    Qed.
+
     Fixpoint sub_type (s : sigma) (t : type) : type :=
         match t with
         | TUnit => TUnit
@@ -160,6 +207,19 @@ Section TypeSubstitution.
             | None => s2 X
             | Some t => Some (sub_type s2 t)
             end.
+
+    Lemma compose_empty :
+        forall (s : sigma),
+        s = compose_sigma sempty s.
+    Proof.
+        intros s. apply functional_extensionality.
+        intros x. reflexivity.
+    Qed.
+
+    (* Lemma compose_complete :
+        forall (s s' : sigma) (X : id) (t : type),
+        ~ TIn X t ->
+        compose_sigma (sbind X t s) s X = Some t. *)
 
     Fixpoint sub_expr (s : sigma) (e : expr) : expr :=
         match e with
@@ -273,31 +333,6 @@ Section ConstraintTyping.
     
     Definition satisfy_constraint (s : sigma) (C : constraint) : Prop :=
         Forall (satisfy_equation s) C.
-        
-    Definition names : Type := IS.t.
-
-    Fixpoint fv (t : type) : names :=
-        match t with
-        | TUnit => IS.empty
-        | TVar X => IS.singleton X
-        | TFun t1 t2 => IS.union (fv t1) (fv t2)
-        end.
-
-    (* type variable in a type *)
-    Fixpoint TIn (X : id) (t : type) : Prop :=
-        match t with
-        | TUnit => False
-        | TVar Y => X = Y
-        | TFun t1 t2 => TIn X t1 \/ TIn X t2
-        end.
-
-    (* type variable in an expression *)
-    Fixpoint EIn (X : id) (e : expr) : Prop :=
-        match e with
-        | EUnit | EVar _ => False
-        | EFun _ t e => TIn X t \/ EIn X e
-        | EApp e1 e2 => EIn X e1 \/ EIn X e2
-        end.
 
     (* type variable in an equation *)
     Fixpoint EQIn (X : id) (eq : equation) : Prop :=
@@ -520,7 +555,7 @@ Section ConstraintTyping.
         intros g e t X C H.
         (* Coq won't let me do induction on H *)
         (* induction H. *)
-    Admitted.
+    Abort.
 End ConstraintTyping.
 
 Section Unification.
@@ -550,6 +585,71 @@ Section Unification.
             forall (a1 a2 b1 b2 : type) (C : constraint) (s : sigma),
             unify ((a1,a2) :: (b1,b2) :: C) s ->
             unify ((TFun a1 b1, TFun a2 b2) :: C) s.
+
+    Definition more_general (s s' : sigma) : Prop :=
+        exists (s'' : sigma), s' = compose_sigma s s''.
+
+    Definition principal_unifier (C : constraint) (s : sigma) : Prop := 
+        satisfy_constraint s C /\ 
+        forall (s' : sigma), 
+        satisfy_constraint s' C ->  more_general s s'.
+    
+    Lemma satisfy_equation_compose :
+        forall (X : id) (t : type) (s : sigma),
+        ~ TIn X t ->
+        satisfy_equation (compose_sigma (sbind X t sempty) s) (TVar X, t).
+    Proof.
+        intros X t s H. unfold satisfy_equation.
+        unfold compose_sigma. simpl.
+        rewrite sbind_correct.
+        generalize dependent X.
+        generalize dependent s.
+        induction t; intros s X H; auto.
+        - assert (HXX : X <> X0).
+            + intros HF. apply H. subst.
+                reflexivity.
+            + simpl. rewrite (sbind_complete X X0 
+                (TVar X0) HXX). unfold sempty.
+                reflexivity.
+        - simpl. admit.
+    Admitted.
+
+    Theorem unify_correct :
+        forall (C : constraint) (s : sigma),
+        unify C s -> principal_unifier C s.
+    Proof.
+        intros C s HU. unfold principal_unifier.
+        induction HU; split;
+        try (intros s' HSC; unfold more_general).
+        - constructor.
+        - exists s'. apply compose_empty.
+        - destruct IHHU as [HS _].
+            constructor; auto.
+            unfold satisfy_equation.
+            reflexivity.
+        - inv HSC. destruct IHHU as [_ IH].
+            apply IH in H2. assumption.
+        - destruct IHHU as [IH _].
+            constructor.
+            + admit.
+            + unfold satisfy_constraint in IH. admit.
+        - inv HSC. destruct IHHU as [_ IH].
+            admit.
+        - admit.
+        - admit.
+        - destruct IHHU as [IH _]. inv IH.
+            inv H2. constructor; auto.
+            unfold satisfy_equation in *.
+            clear H2 H4. simpl.
+            rewrite H1. rewrite H3.
+            reflexivity.
+        - destruct IHHU as [_ IH].
+            assert (H : satisfy_constraint 
+                s' ((a1, a2) :: (b1, b2) :: C)).
+            + inv HSC. inv H1.
+                constructor; auto.
+            + apply IH in H. assumption.
+    Abort.    
 End Unification.
 
 (* Definition scheme : Type := list id * type.
