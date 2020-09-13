@@ -49,41 +49,43 @@ Module IS := WS.Make(IdDec).
 Module ISF := MSF.WFactsOn(IdDec)(IS).
 Module ISP := MSP.WPropertiesOn(IdDec)(IS).
 
-Inductive type : Type :=
-    | TUnit
-    | TVar (X : id)
-    | TFun (t1 t2 : type).
+Section Syntax.
+    Inductive type : Type :=
+        | TUnit
+        | TVar (X : id)
+        | TFun (t1 t2 : type).
 
-Inductive expr : Type :=
-    | EUnit
-    | EVar (x : id)
-    | EFun (x : id) (t : type) (e : expr)
-    | EApp (e1 e2 : expr).
+    Inductive expr : Type :=
+        | EUnit
+        | EVar (x : id)
+        | EFun (x : id) (t : type) (e : expr)
+        | EApp (e1 e2 : expr).
 
-Definition names : Type := IS.t.
+    Definition names : Type := IS.t.
 
-Fixpoint fv (t : type) : names :=
-    match t with
-    | TUnit => IS.empty
-    | TVar X => IS.singleton X
-    | TFun t1 t2 => IS.union (fv t1) (fv t2)
-    end.
+    Fixpoint fv (t : type) : names :=
+        match t with
+        | TUnit => IS.empty
+        | TVar X => IS.singleton X
+        | TFun t1 t2 => IS.union (fv t1) (fv t2)
+        end.
 
-(* type variable in a type *)
-Fixpoint TIn (X : id) (t : type) : Prop :=
-    match t with
-    | TUnit => False
-    | TVar Y => X = Y
-    | TFun t1 t2 => TIn X t1 \/ TIn X t2
-    end.
+    (* type variable in a type *)
+    Fixpoint TIn (X : id) (t : type) : Prop :=
+        match t with
+        | TUnit => False
+        | TVar Y => X = Y
+        | TFun t1 t2 => TIn X t1 \/ TIn X t2
+        end.
 
-(* type variable in an expression *)
-Fixpoint EIn (X : id) (e : expr) : Prop :=
-    match e with
-    | EUnit | EVar _ => False
-    | EFun _ t e => TIn X t \/ EIn X e
-    | EApp e1 e2 => EIn X e1 \/ EIn X e2
-    end.
+    (* type variable in an expression *)
+    Fixpoint EIn (X : id) (e : expr) : Prop :=
+        match e with
+        | EUnit | EVar _ => False
+        | EFun _ t e => TIn X t \/ EIn X e
+        | EApp e1 e2 => EIn X e1 \/ EIn X e2
+        end.
+End Syntax.
 
 Section Gamma.
     Definition gamma := id -> option type.
@@ -263,65 +265,10 @@ Section TypeSubstitution.
             specialize IHcheck1 with (s := s).
             simpl in IHcheck1. assumption.
     Qed.
-End TypeSubstitution.
 
-Definition solution (g : gamma) (e : expr) (s : sigma) (t : type) : Prop :=
+    Definition solution (g : gamma) (e : expr) (s : sigma) (t : type) : Prop :=
     check (sub_gamma s g) (sub_expr s e) t.
-
-Section SolutionExamples.
-    Ltac ex222 t :=
-        apply check_app with (t1 := t);
-        constructor; reflexivity.
-
-    Definition f : id := "f".
-    Definition a : id := "a".
-    Definition x : id := "x".
-    Definition y : id := "y".
-    Definition z : id := "z".
-    Definition X : id := "X".
-    Definition Y : id := "Y".
-    Definition Z : id := "Z".
-    
-    Definition g : gamma := bind f (TVar X) (bind a (TVar Y) empty).
-    Definition e : expr := EApp (EVar f) (EVar a).
-    
-    Example ex2221 : 
-        solution g e (sbind X (TFun (TVar Y) TUnit) sempty) TUnit.
-    Proof. ex222 (TVar Y). Qed.
-
-    Example ex2222 :
-        solution g e (sbind X (TFun (TVar Y) (TVar Z)) (sbind Z TUnit sempty)) (TVar Z).
-    Proof. ex222 (TVar Y). Qed.
-
-    Example ex2223 :
-        solution g e (sbind X (TFun TUnit TUnit) (sbind Y TUnit sempty)) TUnit.
-    Proof. ex222 TUnit. Qed.
-
-    Example ex224 :
-        solution g e (sbind X (TFun (TVar Y) (TVar Z)) sempty) (TVar Z).
-    Proof. ex222 (TVar Y). Qed.
-    
-    Example ex2225 :
-        solution g e (sbind X (TFun (TVar Y) (TFun TUnit TUnit)) sempty) (TFun TUnit TUnit).
-    Proof. ex222 (TVar Y). Qed.
-
-    Definition term : expr := 
-        EFun x (TVar X) (EFun y (TVar Y) (EFun z (TVar Z) 
-            (EApp (EApp (EVar x) (EVar z)) (EApp (EVar y) (EVar z))))).
-
-    Example ex2231 : 
-        let s := (sbind Y (TFun (TVar Z) TUnit) (sbind X (TFun (TVar Z) (TFun TUnit TUnit)) sempty)) in
-        solution empty term s (sub_type s (TFun (TVar X) (TFun (TVar Y) (TFun (TVar Z) TUnit)))).
-    Proof.
-        unfold solution. simpl.
-        repeat apply check_fun.
-        apply check_app with (t1 := TUnit).
-        - apply check_app with (t1 := TVar Z);
-            constructor; reflexivity.
-        - apply check_app with (t1 := TVar Z);
-            constructor; reflexivity.
-    Qed.
-End SolutionExamples.
+End TypeSubstitution.
 
 Section ConstraintTyping.
     Definition equation : Type := type * type.
@@ -375,6 +322,251 @@ Section ConstraintTyping.
             constraint_type g (EApp e1 e2) (TVar X)
                 (IS.add X (IS.union X1 X2))
                 ((t1, TFun t2 (TVar X)) :: C1 ++ C2).
+
+    (* standard library lemma *)
+    Axiom Forall_app : 
+        forall {A : Type} (P : A -> Prop) (l1 l2 : list A),
+    Forall P (l1 ++ l2) <-> Forall P l1 /\ Forall P l2.
+
+    Definition constraint_solution 
+    {g : gamma} {e : expr} {t : type} {X : names} {C : constraint}
+    (H : constraint_type g e t X C) (s : sigma) (T : type) : Prop :=
+    satisfy_constraint s C /\ sub_type s t = T.
+
+    Theorem Constraint_Typing_Sound : 
+        forall (g : gamma) (e : expr) (t : type) 
+            (X : names) (C : constraint) 
+            (H : constraint_type g e t X C) 
+            (s : sigma) (T : type),
+        constraint_solution H s T -> solution g e s T.
+    Proof.
+        intros g e t X C H s T HCS.
+        destruct HCS as [HSC HSE].
+        unfold solution. subst.
+        induction H.
+        - constructor.
+        - apply substutution_preserves_typing.
+            constructor; auto.
+        - constructor.
+            fold sub_type. fold sub_expr.
+            rewrite <- bind_sub_gamma. auto.
+        - inv HSC.
+            apply Forall_app in H16 as [HC1 HC2].
+            apply check_app with (t1 := sub_type s t2); auto.
+            fold sub_expr.
+            apply IHconstraint_type1 in HC1.
+            unfold satisfy_equation in H15.
+            rewrite H15 in HC1. simpl in HC1.
+            assumption.
+    Qed.
+
+    (* s/N *)
+    Definition sigma_diff (s : sigma) (N : names) : sigma := 
+        fun X => if IS.mem X N then None else s X.
+
+    Theorem Constraint_Typing_Complete : 
+        forall (g : gamma) (e : expr) (t : type) 
+        (X : names) (C : constraint) 
+        (H : constraint_type g e t X C) 
+        (s : sigma) (T : type),
+        sigma_diff s X = s ->
+        solution g e s T ->
+        exists (s' : sigma),
+        sigma_diff s' X = s /\ constraint_solution H s' T.
+    Proof.
+        intros g e t X C H.
+        (* Coq won't let me do induction on H *)
+        (* induction H. *)
+    Abort.
+End ConstraintTyping.
+
+Section Unification.
+    Definition sub_equation (s : sigma) (eq : equation) : equation :=
+        let (t1,t2) := eq in (sub_type s t1, sub_type s t2).
+
+    Definition sub_constraint (s : sigma) (C : constraint) : constraint :=
+        map (sub_equation s) C.
+
+    Inductive unify : constraint -> sigma -> Prop :=
+        | unify_nil : unify [] sempty
+        | unify_eq : 
+            forall (t : type) (C : constraint) (s : sigma),
+            unify C s ->
+            unify ((t,t) :: C) s
+        | unify_left_var :
+            forall (X : id) (t : type) (C : constraint) (s : sigma),
+            ~ TIn X t ->
+            unify (sub_constraint (sbind X t sempty) C) s ->
+            unify ((TVar X, t) :: C) (compose_sigma (sbind X t sempty) s)
+        | unify_right_var :
+            forall (X : id) (t : type) (C : constraint) (s : sigma),
+            ~ TIn X t ->
+            unify (sub_constraint (sbind X t sempty) C) s ->
+            unify ((t, TVar X) :: C) (compose_sigma (sbind X t sempty) s)
+        | unify_fun : 
+            forall (a1 a2 b1 b2 : type) (C : constraint) (s : sigma),
+            unify ((a1,a2) :: (b1,b2) :: C) s ->
+            unify ((TFun a1 b1, TFun a2 b2) :: C) s.
+
+    Definition more_general (s s' : sigma) : Prop :=
+        exists (s'' : sigma), s' = compose_sigma s s''.
+
+    Definition principal_unifier (C : constraint) (s : sigma) : Prop := 
+        satisfy_constraint s C /\ 
+        forall (s' : sigma), 
+        satisfy_constraint s' C ->  more_general s s'.
+    
+    Lemma satisfy_equation_compose :
+        forall (X : id) (t : type) (s : sigma),
+        ~ TIn X t ->
+        satisfy_equation (compose_sigma (sbind X t sempty) s) (TVar X, t).
+    Proof.
+        intros X t s H.
+        unfold satisfy_equation.
+        unfold compose_sigma. simpl.
+        rewrite sbind_correct.
+        (* Intuitively true. *)
+        (* generalize dependent X. *)
+        (* generalize dependent s. *)
+        induction t; 
+        (* intros s X H;  *)
+        auto.
+        - assert (HXX : X <> X0).
+            + intros HF. apply H. subst.
+                reflexivity.
+            + simpl. rewrite (sbind_complete X X0 
+                (TVar X0) HXX). unfold sempty.
+                reflexivity.
+        - simpl in H. 
+            apply CP.not_or_and in H as [H1 H2].
+            apply IHt1 in H1. apply IHt2 in H2.
+            simpl. rewrite H1. rewrite H2.
+            (* This case makes no sense. *)
+    Admitted.
+
+    Lemma satisfy_equation_sym :
+        forall (s : sigma) (t1 t2 : type),
+        satisfy_equation s (t1,t2) ->
+        satisfy_equation s (t2,t1).
+    Proof.
+        intros s t1 t2 H. 
+        unfold satisfy_equation in *. auto.
+    Qed.
+
+    Lemma satisfy_constraint_compose :
+        forall (s : sigma) (X : id) (t : type) (C : constraint),
+        satisfy_constraint s (sub_constraint (sbind X t sempty) C) ->
+        satisfy_constraint (compose_sigma (sbind X t sempty) s) C.
+    Proof.
+        intros s X t C H.
+        unfold satisfy_constraint in *.
+        induction C; constructor; inv H; auto.
+        destruct a as [t1 t2].
+        unfold satisfy_equation in *.
+        simpl in H2. clear H3 IHC H.
+        unfold compose_sigma.
+        destruct t1; destruct t2;
+        simpl in *; auto;
+        try destruct (sbind X t sempty X0); 
+        try destruct (sbind X t sempty X1);
+        auto; try discriminate.
+    Admitted.
+
+    Theorem unify_correct :
+        forall (C : constraint) (s : sigma),
+        unify C s -> principal_unifier C s.
+    Proof.
+        intros C s HU. unfold principal_unifier.
+        induction HU; split;
+        try (intros s' HSC; unfold more_general).
+        - constructor.
+        - exists s'. apply compose_empty.
+        - destruct IHHU as [HS _].
+            constructor; auto.
+            unfold satisfy_equation.
+            reflexivity.
+        - inv HSC. destruct IHHU as [_ IH].
+            apply IH in H2. assumption.
+        - destruct IHHU as [IH _].
+            constructor.
+            + apply satisfy_equation_compose. assumption.
+            + apply satisfy_constraint_compose. assumption.
+        - inv HSC. destruct IHHU as [_ IH]. admit.
+        - destruct IHHU as [IH _].
+            constructor.
+            + apply satisfy_equation_sym.
+                apply satisfy_equation_compose.
+                assumption.
+            + apply satisfy_constraint_compose. assumption.
+        - admit.
+        - destruct IHHU as [IH _]. inv IH.
+            inv H2. constructor; auto.
+            unfold satisfy_equation in *.
+            clear H2 H4. simpl.
+            rewrite H1. rewrite H3.
+            reflexivity.
+        - destruct IHHU as [_ IH].
+            assert (H : satisfy_constraint 
+                s' ((a1, a2) :: (b1, b2) :: C)).
+            + inv HSC. inv H1.
+                constructor; auto.
+            + apply IH in H. assumption.
+    Abort.    
+End Unification.
+
+Section Examples.
+    Ltac ex222 t :=
+        apply check_app with (t1 := t);
+        constructor; reflexivity.
+
+    Definition f : id := "f".
+    Definition a : id := "a".
+    Definition x : id := "x".
+    Definition y : id := "y".
+    Definition z : id := "z".
+    Definition X : id := "X".
+    Definition Y : id := "Y".
+    Definition Z : id := "Z".
+    
+    Definition g : gamma := bind f (TVar X) (bind a (TVar Y) empty).
+    Definition e : expr := EApp (EVar f) (EVar a).
+    
+    Example ex2221 : 
+        solution g e (sbind X (TFun (TVar Y) TUnit) sempty) TUnit.
+    Proof. ex222 (TVar Y). Qed.
+
+    Example ex2222 :
+        solution g e (sbind X (TFun (TVar Y) (TVar Z)) (sbind Z TUnit sempty)) (TVar Z).
+    Proof. ex222 (TVar Y). Qed.
+
+    Example ex2223 :
+        solution g e (sbind X (TFun TUnit TUnit) (sbind Y TUnit sempty)) TUnit.
+    Proof. ex222 TUnit. Qed.
+
+    Example ex224 :
+        solution g e (sbind X (TFun (TVar Y) (TVar Z)) sempty) (TVar Z).
+    Proof. ex222 (TVar Y). Qed.
+    
+    Example ex2225 :
+        solution g e (sbind X (TFun (TVar Y) (TFun TUnit TUnit)) sempty) (TFun TUnit TUnit).
+    Proof. ex222 (TVar Y). Qed.
+
+    Definition term : expr := 
+        EFun x (TVar X) (EFun y (TVar Y) (EFun z (TVar Z) 
+            (EApp (EApp (EVar x) (EVar z)) (EApp (EVar y) (EVar z))))).
+
+    Example ex2231 : 
+        let s := (sbind Y (TFun (TVar Z) TUnit) (sbind X (TFun (TVar Z) (TFun TUnit TUnit)) sempty)) in
+        solution empty term s (sub_type s (TFun (TVar X) (TFun (TVar Y) (TFun (TVar Z) TUnit)))).
+    Proof.
+        unfold solution. simpl.
+        repeat apply check_fun.
+        apply check_app with (t1 := TUnit).
+        - apply check_app with (t1 := TVar Z);
+            constructor; reflexivity.
+        - apply check_app with (t1 := TVar Z);
+            constructor; reflexivity.
+    Qed.
 
     Ltac ct_app_apply :=
         apply ct_app; 
@@ -501,177 +693,7 @@ Section ConstraintTyping.
             apply eqb_neq in Hqx. rewrite Hqx in Hq.
             unfold empty in Hq. discriminate.
     Qed.
-    (* standard library lemma *)
-    Axiom Forall_app : 
-        forall {A : Type} (P : A -> Prop) (l1 l2 : list A),
-    Forall P (l1 ++ l2) <-> Forall P l1 /\ Forall P l2.
-
-    Definition constraint_solution 
-    {g : gamma} {e : expr} {t : type} {X : names} {C : constraint}
-    (H : constraint_type g e t X C) (s : sigma) (T : type) : Prop :=
-    satisfy_constraint s C /\ sub_type s t = T.
-
-    Theorem Constraint_Typing_Sound : 
-        forall (g : gamma) (e : expr) (t : type) 
-            (X : names) (C : constraint) 
-            (H : constraint_type g e t X C) 
-            (s : sigma) (T : type),
-        constraint_solution H s T -> solution g e s T.
-    Proof.
-        intros g e t X C H s T HCS.
-        destruct HCS as [HSC HSE].
-        unfold solution. subst.
-        induction H.
-        - constructor.
-        - apply substutution_preserves_typing.
-            constructor; auto.
-        - constructor.
-            fold sub_type. fold sub_expr.
-            rewrite <- bind_sub_gamma. auto.
-        - inv HSC.
-            apply Forall_app in H16 as [HC1 HC2].
-            apply check_app with (t1 := sub_type s t2); auto.
-            fold sub_expr.
-            apply IHconstraint_type1 in HC1.
-            unfold satisfy_equation in H15.
-            rewrite H15 in HC1. simpl in HC1.
-            assumption.
-    Qed.
-
-    (* s/N *)
-    Definition sigma_diff (s : sigma) (N : names) : sigma := 
-        fun X => if IS.mem X N then None else s X.
-
-    Theorem Constraint_Typing_Complete : 
-        forall (g : gamma) (e : expr) (t : type) 
-        (X : names) (C : constraint) 
-        (H : constraint_type g e t X C) 
-        (s : sigma) (T : type),
-        sigma_diff s X = s ->
-        solution g e s T ->
-        exists (s' : sigma),
-        sigma_diff s' X = s /\ constraint_solution H s' T.
-    Proof.
-        intros g e t X C H.
-        (* Coq won't let me do induction on H *)
-        (* induction H. *)
-    Abort.
-End ConstraintTyping.
-
-Section Unification.
-    Definition sub_equation (s : sigma) (eq : equation) : equation :=
-        let (t1,t2) := eq in (sub_type s t1, sub_type s t2).
-
-    Fixpoint sub_constraint (s : sigma) (C : constraint) : constraint :=
-        map (sub_equation s) C.
-
-    Inductive unify : constraint -> sigma -> Prop :=
-        | unify_nil : unify [] sempty
-        | unify_eq : 
-            forall (t : type) (C : constraint) (s : sigma),
-            unify C s ->
-            unify ((t,t) :: C) s
-        | unify_left_var :
-            forall (X : id) (t : type) (C : constraint) (s : sigma),
-            ~ TIn X t ->
-            unify (sub_constraint (sbind X t sempty) C) s ->
-            unify ((TVar X, t) :: C) (compose_sigma (sbind X t sempty) s)
-        | unify_right_var :
-            forall (X : id) (t : type) (C : constraint) (s : sigma),
-            ~ TIn X t ->
-            unify (sub_constraint (sbind X t sempty) C) s ->
-            unify ((t, TVar X) :: C) (compose_sigma (sbind X t sempty) s)
-        | unify_fun : 
-            forall (a1 a2 b1 b2 : type) (C : constraint) (s : sigma),
-            unify ((a1,a2) :: (b1,b2) :: C) s ->
-            unify ((TFun a1 b1, TFun a2 b2) :: C) s.
-
-    Definition more_general (s s' : sigma) : Prop :=
-        exists (s'' : sigma), s' = compose_sigma s s''.
-
-    Definition principal_unifier (C : constraint) (s : sigma) : Prop := 
-        satisfy_constraint s C /\ 
-        forall (s' : sigma), 
-        satisfy_constraint s' C ->  more_general s s'.
-    
-    Lemma satisfy_equation_compose :
-        forall (X : id) (t : type) (s : sigma),
-        ~ TIn X t ->
-        satisfy_equation (compose_sigma (sbind X t sempty) s) (TVar X, t).
-    Proof.
-        intros X t s H.
-        unfold satisfy_equation.
-        unfold compose_sigma. simpl.
-        rewrite sbind_correct.
-        (* Intuitively true. *)
-        (* generalize dependent X. *)
-        (* generalize dependent s. *)
-        induction t; 
-        (* intros s X H;  *)
-        auto.
-        - assert (HXX : X <> X0).
-            + intros HF. apply H. subst.
-                reflexivity.
-            + simpl. rewrite (sbind_complete X X0 
-                (TVar X0) HXX). unfold sempty.
-                reflexivity.
-        - simpl in H. 
-            apply CP.not_or_and in H as [H1 H2].
-            apply IHt1 in H1. apply IHt2 in H2.
-            simpl. rewrite H1. rewrite H2.
-            (* This case makes no sense. *)
-    Admitted.
-
-    Lemma satisfy_equation_sym :
-        forall (s : sigma) (t1 t2 : type),
-        satisfy_equation s (t1,t2) ->
-        satisfy_equation s (t2,t1).
-    Proof.
-        intros s t1 t2 H. 
-        unfold satisfy_equation in *. auto.
-    Qed.
-
-    Theorem unify_correct :
-        forall (C : constraint) (s : sigma),
-        unify C s -> principal_unifier C s.
-    Proof.
-        intros C s HU. unfold principal_unifier.
-        induction HU; split;
-        try (intros s' HSC; unfold more_general).
-        - constructor.
-        - exists s'. apply compose_empty.
-        - destruct IHHU as [HS _].
-            constructor; auto.
-            unfold satisfy_equation.
-            reflexivity.
-        - inv HSC. destruct IHHU as [_ IH].
-            apply IH in H2. assumption.
-        - destruct IHHU as [IH _].
-            constructor.
-            + apply satisfy_equation_compose. assumption.
-            + unfold satisfy_constraint in IH. admit.
-        - inv HSC. destruct IHHU as [_ IH]. admit.
-        - destruct IHHU as [IH _].
-            constructor.
-            + apply satisfy_equation_sym.
-                apply satisfy_equation_compose.
-                assumption.
-            + admit.
-        - admit.
-        - destruct IHHU as [IH _]. inv IH.
-            inv H2. constructor; auto.
-            unfold satisfy_equation in *.
-            clear H2 H4. simpl.
-            rewrite H1. rewrite H3.
-            reflexivity.
-        - destruct IHHU as [_ IH].
-            assert (H : satisfy_constraint 
-                s' ((a1, a2) :: (b1, b2) :: C)).
-            + inv HSC. inv H1.
-                constructor; auto.
-            + apply IH in H. assumption.
-    Abort.    
-End Unification.
+End Examples.
 
 (* Definition scheme : Type := list id * type.
 
