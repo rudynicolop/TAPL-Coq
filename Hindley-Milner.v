@@ -511,8 +511,104 @@ Section Unification.
             + inv HSC. inv H1.
                 constructor; auto.
             + apply IH in H. assumption.
-    Abort.    
+    Admitted.    
 End Unification.
+
+Section PrincipalTypes.
+    Definition principal_solution
+    {g : gamma} {e : expr} {t : type} {X : names} {C : constraint}
+    (H : constraint_type g e t X C) (s : sigma) (T : type) : Prop :=
+    constraint_solution H s T /\
+    forall (s' : sigma) (T' : type),
+    constraint_solution H s' T' -> more_general s s'.
+
+    Corollary unify_principal_solution :
+        forall {g : gamma} {e : expr} {t : type} {X : names} {C : constraint}
+            (H : constraint_type g e t X C) (s : sigma),
+        unify C s ->
+        principal_solution H s (sub_type s t).
+    Proof.
+        intros g e t X C H s HU.
+        apply unify_correct in HU as HUC.
+        unfold principal_unifier in HUC.
+        unfold principal_solution.
+        destruct HUC as [HSC HMG]. split.
+        - unfold constraint_solution. split; auto.
+        - intros s' T' Hs'T'.
+            unfold constraint_solution in Hs'T'.
+            destruct Hs'T' as [HSCs' HSTs']. auto.
+    Qed.
+
+    Lemma constraint_solution_unify :
+        forall {g : gamma} {e : expr} {t : type} {X : names} {C : constraint}
+            (H : constraint_type g e t X C) (s' : sigma) (T' : type),
+        constraint_solution H s' T' ->
+        exists (s : sigma), unify C s.
+    Proof.
+        intros g e t X C H s' T' HCS.
+        unfold constraint_solution in HCS.
+        destruct HCS as [HSC HST].
+        dependent induction H; simpl in *;
+        try (exists sempty; apply unify_nil).
+        - apply IHconstraint_type
+            with (T' := sub_type s' t2) in HSC; auto.
+        - inv HSC. apply Forall_app in H16 as [HC1 HC2].
+            apply IHconstraint_type1 
+                with (T' := sub_type s' t1) in HC1; auto.
+            apply IHconstraint_type2
+                with (T' := sub_type s' t2) in HC2; auto.
+            destruct HC1 as [s1 HU1].
+            destruct HC2 as [s2 HU2].
+            destruct t1.
+            + inv H15.
+            + exists (compose_sigma (sbind X0 (TFun t2 (TVar X)) sempty) (compose_sigma s1 s2)).
+                constructor; admit.
+            + exists (compose_sigma s1 s2).
+                constructor. admit.
+    Admitted.
+
+    Theorem principal_types :
+        forall {g : gamma} {e : expr} {t : type} {X : names} {C : constraint}
+            (H : constraint_type g e t X C),
+        (exists (s' : sigma) (T' : type), constraint_solution H s' T') ->
+        exists (s : sigma) (T : type), principal_solution H s T.
+    Proof.
+        intros g e t X C H [s' [T' HCS]].
+        apply constraint_solution_unify in HCS.
+        destruct HCS as [s HU].
+        exists s. exists (sub_type s t).
+        apply unify_principal_solution; auto.
+    Qed.
+
+    (* Interleave constraint generation and unification. 
+        Should generate a principal type at each step. *)
+    Inductive interleave (g : gamma) : expr -> type -> Prop :=
+        | il_unit : interleave g EUnit TUnit
+        | il_var : 
+            forall (x : id) (t : type),
+            g x = Some t ->
+            interleave g (EVar x) t
+        | il_fun :
+            forall (x : id) (t1 t2 : type) (e : expr),
+            interleave (bind x t1 g) e t2 ->
+            interleave g (EFun x t1 e) (TFun t1 t2)
+        | il_app :
+            forall (e1 e2 : expr) (t1 t2 : type) (X : id) (s : sigma),
+            interleave g e1 t1 ->
+            interleave g e2 t2 ->
+            ~ TIn X t1 -> ~ TIn X t2 ->
+            ~ EIn X e1 -> ~ EIn X e2 -> GNIn X g ->
+            unify [(t1, TFun t2 (TVar X))] s ->
+            interleave g (EApp e1 e2) (sub_type s (TVar X)).
+End PrincipalTypes.
+
+(* Definition scheme : Type := list id * type.
+
+Definition void : scheme := (["X"],TVar "X"). *)
+
+Inductive poly : Type :=
+    | PType (t : type)
+    | PForall (X : id) (t : poly).
 
 Section Examples.
     Ltac ex222 t :=
@@ -694,11 +790,3 @@ Section Examples.
             unfold empty in Hq. discriminate.
     Qed.
 End Examples.
-
-(* Definition scheme : Type := list id * type.
-
-Definition void : scheme := (["X"],TVar "X"). *)
-
-Inductive poly : Type :=
-    | PType (t : type)
-    | PForall (X : id) (t : poly).
