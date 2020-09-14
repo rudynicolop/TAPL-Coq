@@ -195,6 +195,15 @@ Section TypeSubstitution.
         | TFun t1 t2 => TFun (sub_type s t1) (sub_type s t2)
         end.
 
+    Lemma sub_type_empty :
+        forall (t : type),
+        sub_type sempty t = t.
+    Proof.
+        intros t. induction t; try reflexivity.
+        simpl. rewrite IHt1. rewrite IHt2.
+        reflexivity.
+    Qed.
+
     Definition sub_gamma (s : sigma) (g : gamma) : gamma :=
         fun x =>
             match g x with
@@ -600,6 +609,30 @@ Section PrincipalTypes.
             ~ EIn X e1 -> ~ EIn X e2 -> GNIn X g ->
             unify [(t1, TFun t2 (TVar X))] s ->
             interleave g (EApp e1 e2) (sub_type s (TVar X)).
+
+    Proposition interleave_sound :
+        forall (g : gamma) (e : expr) (t : type),
+        interleave g e t ->
+        forall (N : names) (C : constraint)
+            (H : constraint_type g e t N C),
+        exists (s : sigma), unify C s /\ constraint_solution H s t.
+    Proof.
+        intros g e t HIL. 
+        induction HIL; intros N C HCT; inv HCT;
+        unfold constraint_solution.
+        - exists sempty. repeat split; constructor.
+        - exists sempty. repeat split; 
+            try constructor. apply sub_type_empty.
+        - pose proof IHHIL N C H5 as IH.
+            destruct IH as [s [HU HCS]].
+            unfold constraint_solution in HCS.
+            exists s. destruct HCS as [HSC HST].
+            repeat split; auto.
+            simpl. rewrite HST. admit.
+        - admit.
+        (* white flag. *)
+        (* pose proof IHHIL1 X1 C1 H8 as IH1. *)
+    Abort.
 End PrincipalTypes.
 
 (* Definition scheme : Type := list id * type.
