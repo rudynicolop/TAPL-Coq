@@ -853,5 +853,14 @@ Module Polymorphic.
             end.
 
         Definition sub_gamma (s : sigma) : gamma -> gamma := IFM.map (sub_poly s).
+
+        (* s2(s1(t)) = t' *)
+        Definition compose_sigma (s1 s2 : sigma) : sigma :=
+            let s1' := IFM.map (sub_type s2) s1 in
+            IFM.fold
+                (fun X t acc => 
+                    if IFM.mem X s1' 
+                        then acc
+                        else IFM.add X t acc) s2 s1'.
     End TypeSubstitution.
 End Polymorphic.
