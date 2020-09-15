@@ -18,6 +18,10 @@ Module CPT := Coq.Logic.Classical_Pred_Type.
 Require Import Coq.Program.Equality.
 Require Coq.Logic.Classical_Prop.
 Module CP := Coq.Logic.Classical_Prop.
+Require Coq.FSets.FMapWeakList.
+Module FMW := Coq.FSets.FMapWeakList.
+Require Coq.FSets.FMapFacts.
+Module FMF := Coq.FSets.FMapFacts.
 
 (* Hindley-Milner Type-System *)
 
@@ -49,87 +53,90 @@ Module IS := WS.Make(IdDec).
 Module ISF := MSF.WFactsOn(IdDec)(IS).
 Module ISP := MSP.WPropertiesOn(IdDec)(IS).
 
-Section TypeMap.
-    Context {T : Type}.
-
-    Definition tmap := id -> option T.
-
-    Definition tempty : tmap := fun x => None.
-
-    Definition bind (x : id) (t : T) (m : tmap) : tmap :=
-        fun y => if (x =? y)%string then Some t else m y.
-
-    Lemma bind_correct : 
-        forall (x : id) (t : T) (m : tmap),
-        bind x t m x = Some t.
-    Proof.
-        intros. unfold bind. destruct ((x =? x)%string) eqn:eq.
-        - reflexivity.
-        - apply eqb_neq in eq. contradiction.
-    Qed. 
-
-    Lemma bind_complete :
-        forall (x x' : id) (t t' : T),
-        x' <> x -> 
-        forall (m : tmap),
-        (m x = Some t <-> bind x' t' m x = Some t). 
-    Proof.
-        intros. unfold bind. apply eqb_neq in H. 
-        rewrite H. split; intros; apply H0.
-    Qed.
-
-    Lemma rebind_correct : 
-        forall (x : id) (t t' : T) (m : tmap),
-        bind x t m = bind x t (bind x t' m).
-    Proof.
-        intros. apply functional_extensionality. intros y.
-        unfold bind. destruct ((x =? y)%string); reflexivity.
-    Qed.
-
-    Lemma bind_diff_comm : 
-        forall (x y : id) (u v : T) (m : tmap),
-        x <> y ->
-        bind x u (bind y v m) = bind y v (bind x u m).
-    Proof.
-        intros. apply functional_extensionality. intros z.
-        unfold bind. destruct ((x =? z)%string) eqn:eq.
-            - apply eqb_eq in eq; subst.
-                destruct ((y =? z)%string) eqn:eeq.
-                + apply eqb_eq in eeq; subst. contradiction.
-                + reflexivity.
-            - apply eqb_neq in eq. destruct ((y =? z)%string) eqn:eeq; reflexivity.
-    Qed.
-End TypeMap.
-
 Module Monomorphic.
-    Section Syntax.
-        Inductive type : Type :=
-            | TUnit
-            | TVar (X : id)
-            | TFun (t1 t2 : type).
+    Section TypeMap.
+        Context {T : Type}.
+
+        Definition tmap := id -> option T.
+
+        Definition tempty : tmap := fun x => None.
+
+        Definition bind (x : id) (t : T) (m : tmap) : tmap :=
+            fun y => if (x =? y)%string then Some t else m y.
+
+        Lemma bind_correct : 
+            forall (x : id) (t : T) (m : tmap),
+            bind x t m x = Some t.
+        Proof.
+            intros. unfold bind. destruct ((x =? x)%string) eqn:eq.
+            - reflexivity.
+            - apply eqb_neq in eq. contradiction.
+        Qed. 
+
+        Lemma bind_complete :
+            forall (x x' : id) (t t' : T),
+            x' <> x -> 
+            forall (m : tmap),
+            (m x = Some t <-> bind x' t' m x = Some t). 
+        Proof.
+            intros. unfold bind. apply eqb_neq in H. 
+            rewrite H. split; intros; apply H0.
+        Qed.
+
+        Lemma rebind_correct : 
+            forall (x : id) (t t' : T) (m : tmap),
+            bind x t m = bind x t (bind x t' m).
+        Proof.
+            intros. apply functional_extensionality. intros y.
+            unfold bind. destruct ((x =? y)%string); reflexivity.
+        Qed.
+
+        Lemma bind_diff_comm : 
+            forall (x y : id) (u v : T) (m : tmap),
+            x <> y ->
+            bind x u (bind y v m) = bind y v (bind x u m).
+        Proof.
+            intros. apply functional_extensionality. intros z.
+            unfold bind. destruct ((x =? z)%string) eqn:eq.
+                - apply eqb_eq in eq; subst.
+                    destruct ((y =? z)%string) eqn:eeq.
+                    + apply eqb_eq in eeq; subst. contradiction.
+                    + reflexivity.
+                - apply eqb_neq in eq. destruct ((y =? z)%string) eqn:eeq; reflexivity.
+        Qed.
+    End TypeMap.
+
+    Module Syntax.
+        Module TypeSyntax.
+            Inductive type : Type :=
+                | TUnit
+                | TVar (X : id)
+                | TFun (t1 t2 : type).
+
+            Definition names : Type := IS.t.
+
+            Fixpoint fv (t : type) : names :=
+                match t with
+                | TUnit => IS.empty
+                | TVar X => IS.singleton X
+                | TFun t1 t2 => IS.union (fv t1) (fv t2)
+                end.
+    
+            (* type variable in a type *)
+            Fixpoint TIn (X : id) (t : type) : Prop :=
+                match t with
+                | TUnit => False
+                | TVar Y => X = Y
+                | TFun t1 t2 => TIn X t1 \/ TIn X t2
+                end.
+        End TypeSyntax.
+        Export TypeSyntax.
 
         Inductive expr : Type :=
             | EUnit
             | EVar (x : id)
             | EFun (x : id) (t : type) (e : expr)
             | EApp (e1 e2 : expr).
-
-        Definition names : Type := IS.t.
-
-        Fixpoint fv (t : type) : names :=
-            match t with
-            | TUnit => IS.empty
-            | TVar X => IS.singleton X
-            | TFun t1 t2 => IS.union (fv t1) (fv t2)
-            end.
-
-        (* type variable in a type *)
-        Fixpoint TIn (X : id) (t : type) : Prop :=
-            match t with
-            | TUnit => False
-            | TVar Y => X = Y
-            | TFun t1 t2 => TIn X t1 \/ TIn X t2
-            end.
 
         (* type variable in an expression *)
         Fixpoint EIn (X : id) (e : expr) : Prop :=
@@ -139,6 +146,7 @@ Module Monomorphic.
             | EApp e1 e2 => EIn X e1 \/ EIn X e2
             end.
     End Syntax.
+    Export Syntax.
 
     Section TypeCheck.
         Definition gamma : Type := @tmap type.
@@ -791,11 +799,41 @@ Module Monomorphic.
 End Monomorphic.
 
 Module Polymorphic.
-    Module M := Monomorphic.
+    Export Monomorphic.Syntax.TypeSyntax.
 
-    Definition type : Type := M.type.
+    Section Syntax.
+        Inductive poly : Type :=
+            | PType (t : type)
+            | PForall (X : id) (t : poly).
 
-    Inductive poly : Type :=
-        | PType (t : type)
-        | PForall (X : id) (t : poly).
+        Inductive expr : Type :=
+            | EUnit
+            | EVar (x : id)
+            | EFun (x : id) (t : type) (e : expr)
+            | EApp (e1 e2 : expr)
+            | ELet (x : id) (e1 e2 : expr).
+    End Syntax.
+
+    (* id map *)
+    Module IFM := FMW.Make(IdDec).
+    Module IFF := FMF.WFacts_fun(IdDec)(IFM).
+    
+    (* typing context *)
+    Definition gamma : Type := IFM.t poly.
+
+    Section TypeSubstitution.
+        Definition sigma : Type := IFM.t type.
+        
+        Fixpoint sub_type (s : sigma) (t : type) : type :=
+            match t with
+            | TUnit => TUnit
+            | TVar X =>
+                match IFM.find X s with
+                | None => TVar X
+                | Some t' => t'
+                end
+            | TFun t1 t2 =>
+                TFun (sub_type s t1) (sub_type s t2)
+            end.
+    End TypeSubstitution.
 End Polymorphic.
