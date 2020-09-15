@@ -835,5 +835,23 @@ Module Polymorphic.
             | TFun t1 t2 =>
                 TFun (sub_type s t1) (sub_type s t2)
             end.
+
+        Fixpoint sub_expr (s : sigma) (e : expr) : expr :=
+            match e with
+            | EUnit => EUnit
+            | EVar x => EVar x
+            | EFun x t e => EFun x (sub_type s t) (sub_expr s e)
+            | EApp e1 e2 => EApp (sub_expr s e1) (sub_expr s e2)
+            | ELet x e1 e2 => ELet x (sub_expr s e1) (sub_expr s e2)
+            end.
+
+        Fixpoint sub_poly (s : sigma) (p : poly) : poly :=
+            match p with
+            | PType t => PType (sub_type s t)
+            | PForall X p =>
+                PForall X (sub_poly (IFM.remove X s) p)
+            end.
+
+        Definition sub_gamma (s : sigma) : gamma -> gamma := IFM.map (sub_poly s).
     End TypeSubstitution.
 End Polymorphic.
