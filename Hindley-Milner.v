@@ -23,6 +23,11 @@ Module FMW := Coq.FSets.FMapWeakList.
 Require Coq.FSets.FMapFacts.
 Module FMF := Coq.FSets.FMapFacts.
 
+(* standard library lemma *)
+Axiom Forall_app : 
+    forall {A : Type} (P : A -> Prop) (l1 l2 : list A),
+    Forall P (l1 ++ l2) <-> Forall P l1 /\ Forall P l2.
+
 (* Hindley-Milner Type-System *)
 
 Ltac inv H := inversion H; subst.
@@ -262,24 +267,27 @@ Module Monomorphic.
         check (sub_gamma s g) (sub_expr s e) t.
     End TypeSubstitution.
 
-    Section ConstraintTyping.
-        Definition equation : Type := type * type.
+    Module ConstraintTyping.
+        Module ConstraintEquations.
+            Definition equation : Type := type * type.
 
-        Definition constraint : Type := list equation.
-        
+            Definition constraint : Type := list equation.
+
+            (* type variable in an equation *)
+            Fixpoint EQIn (X : id) (eq : equation) : Prop :=
+                let (t1,t2) := eq in TIn X t1 \/ TIn X t2.
+
+            (* type variable in a constraint *)
+            Definition CIn (X : id) (C : constraint) : Prop :=
+                Exists (EQIn X) C.
+        End ConstraintEquations.
+        Export ConstraintEquations.
+
         Definition satisfy_equation (s : sigma) (eq : equation) : Prop :=
-            let (t1,t2) := eq in sub_type s t1 = sub_type s t2.
-        
+                let (t1,t2) := eq in sub_type s t1 = sub_type s t2.
+            
         Definition satisfy_constraint (s : sigma) (C : constraint) : Prop :=
             Forall (satisfy_equation s) C.
-
-        (* type variable in an equation *)
-        Fixpoint EQIn (X : id) (eq : equation) : Prop :=
-            let (t1,t2) := eq in TIn X t1 \/ TIn X t2.
-
-        (* type variable in a constraint *)
-        Definition CIn (X : id) (C : constraint) : Prop :=
-            Exists (EQIn X) C.
 
         (* type variable not in gamma *)
         Definition GNIn (X : id) (g : gamma) : Prop :=
@@ -314,11 +322,6 @@ Module Monomorphic.
                 constraint_type g (EApp e1 e2) (TVar X)
                     (IS.add X (IS.union X1 X2))
                     ((t1, TFun t2 (TVar X)) :: C1 ++ C2).
-
-        (* standard library lemma *)
-        Axiom Forall_app : 
-            forall {A : Type} (P : A -> Prop) (l1 l2 : list A),
-        Forall P (l1 ++ l2) <-> Forall P l1 /\ Forall P l2.
 
         Definition constraint_solution 
         {g : gamma} {e : expr} {t : type} {X : names} {C : constraint}
@@ -371,6 +374,7 @@ Module Monomorphic.
             (* induction H. *)
         Abort.
     End ConstraintTyping.
+    Export ConstraintTyping.
 
     Section Unification.
         Definition sub_equation (s : sigma) (eq : equation) : equation :=
@@ -806,6 +810,46 @@ Module Polymorphic.
             | PType (t : type)
             | PForall (X : id) (t : poly).
 
+        (* isomorphic to poly. *)
+        Definition scheme : Type := list id * type.
+        
+        (* Isomorphism. *)
+
+        Fixpoint to_scheme (p : poly) : scheme :=
+            match p with
+            | PType t => ([],t)
+            | PForall X p =>
+                let (N,t) := to_scheme p in
+                (X::N,t)
+            end.
+
+        Fixpoint to_poly' (N : list id) (t : type) : poly :=
+            match N with
+            | [] => PType t
+            | X::N => PForall X (to_poly' N t)
+            end.
+
+        Definition to_poly (sch : scheme) : poly :=
+            let (N,t) := sch in to_poly' N t.
+
+        Lemma scheme_to_scheme :
+            forall (sch : scheme),
+            to_scheme (to_poly sch) = sch.
+        Proof.
+            intros [N t]. induction N; try reflexivity.
+            simpl in *. rewrite IHN. reflexivity.
+        Qed.
+
+        Lemma poly_to_poly :
+            forall (p : poly),
+            to_poly (to_scheme p) = p.
+        Proof.
+            intros p. induction p; try reflexivity.
+            simpl in *. destruct (to_scheme p).
+            simpl. unfold to_poly in IHp.
+            rewrite IHp. reflexivity.
+        Qed.
+
         Inductive expr : Type :=
             | EUnit
             | EVar (x : id)
@@ -863,4 +907,81 @@ Module Polymorphic.
                         then acc
                         else IFM.add X t acc) s2 s1'.
     End TypeSubstitution.
+
+    Section ConstraintTyping.
+        Import Monomorphic.ConstraintTyping.ConstraintEquations.
+
+        (* type name in a poly-type, accounting for bound type names *)
+        Fixpoint PIn (X : id) (p : poly) : Prop :=
+            match p with
+            | PType t => TIn X t
+            | PForall Y p => X <> Y /\ PIn X p
+            end.
+
+        Definition satisfy_equation (s : sigma) (eq : equation) : Prop :=
+                let (t1,t2) := eq in sub_type s t1 = sub_type s t2.
+            
+        Definition satisfy_constraint (s : sigma) (C : constraint) : Prop :=
+            Forall (satisfy_equation s) C.
+
+        (* type variable not in gamma *)
+        Definition GNIn (X : id) (g : gamma) : Prop :=
+            forall (x : id) (p : poly), 
+            IFM.MapsTo x p g -> ~ PIn X p.
+
+        (* type variable in an expression *)
+        Fixpoint EIn (X : id) (e : expr) : Prop :=
+            match e with
+            | EUnit | EVar _ => False
+            | EFun _ t e => TIn X t \/ EIn X e
+            | EApp e1 e2 | ELet _ e1 e2 => EIn X e1 \/ EIn X e2
+            end.
+
+        (* complete substitution of a poly-type to get 
+            a type with fresh type variables *)
+        Inductive sub_poly_type (g : gamma) (s : sigma) 
+        : poly -> type -> names -> constraint -> Prop :=
+            | spt_type : 
+                forall (t t' : type), 
+                sub_type s t = t' ->
+                sub_poly_type g s (PType t) t' IS.empty []
+            | spt_forall :
+                forall (X Y : id) (p : poly) 
+                    (N : names) (C : constraint) (t : type),
+                GNIn Y g -> ~ PIn Y p -> ~ IS.In Y N ->
+                sub_poly_type g (IFM.add X (TVar Y) s) p t N C ->
+                sub_poly_type g s (PForall X p) t (IS.add Y N) ((TVar X, TVar Y) :: C).
+
+        Inductive constraint_type (g : gamma) 
+        : expr -> type -> names -> constraint -> Prop :=
+            | ct_unit : 
+                constraint_type g EUnit TUnit IS.empty []
+            | ct_var :
+                forall (x : id) (p : poly) (t : type) 
+                    (N : names) (C : constraint),
+                IFM.MapsTo x p g ->
+                sub_poly_type g (@IFM.empty type) p t N C ->
+                constraint_type g (EVar x) t N C
+            | ct_fun :
+                forall (x : id) (t1 t2 : type) 
+                    (e : expr) (N : names) (C : constraint),
+                constraint_type (IFM.add x (PType t1) g) e t2 N C ->
+                constraint_type g (EFun x t1 e) (TFun t1 t2) N C
+            | ct_app :
+                forall (e1 e2 : expr) (t1 t2 : type) (X : id)
+                    (N1 N2 : names) (C1 C2 : constraint),
+                constraint_type g e1 t1 N1 C1 ->
+                constraint_type g e2 t2 N2 C2 ->
+                IS.Empty (IS.inter N1 N2) ->
+                IS.Empty (IS.inter N1 (fv t2)) ->
+                IS.Empty (IS.inter N2 (fv t1)) ->
+                ~ IS.In X N1 -> ~ IS.In X N2 ->
+                ~ TIn X t1 -> ~ TIn X t2 ->
+                ~ EIn X e1 -> ~ EIn X e2 ->
+                ~ CIn X C1 -> ~ CIn X C2 -> GNIn X g ->
+                constraint_type g (EApp e1 e2) (TVar X)
+                    (IS.add X (IS.union N1 N2))
+                    ((t1, TFun t2 (TVar X)) :: C1 ++ C2).
+            (* TODO: ct_let *)
+    End ConstraintTyping.
 End Polymorphic.
