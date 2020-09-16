@@ -172,6 +172,23 @@ Module SigmaSubstitution(S : Sigma).
         intros s X ty T. rewrite S.compose_correct.
         reflexivity.
     Qed.
+
+    Definition eq (s1 s2 : S.t) :=
+        forall (X : id), S.get X s1 = S.get X s2.
+
+    Lemma eq_get :
+        forall (s1 s2 : S.t),
+        s1 = s2 -> eq s1 s2.
+    Proof.
+        intros s1 s2 H. subst.
+        unfold eq. intros X.
+        reflexivity.
+    Qed.
+
+    (* should change other definitions later... *)
+    Axiom eq_extensional :
+        forall (s1 s2 : S.t),
+        eq s1 s2 -> s1 = s2.
 End SigmaSubstitution.
 
 Module ConstraintEquations.
@@ -337,17 +354,15 @@ Module Unification(S : Sigma).
             reflexivity.
     Admitted.
 
-
-
     Lemma satisfy_sub_type_constraint :
         forall (X : id) (T : type) (s : S.t),
-        ~ TIn X T ->
+        (* ~ TIn X T -> *)
         satisfy_equation s (TVar X, T) ->
         forall (C : constraint),
         satisfy_constraint s C ->
         satisfy_constraint s (sub_constraint (S.bind X T S.empty) C).
     Proof.
-        intros X T s HIN HS C HC.
+        intros X T s HS C HC.
         unfold satisfy_constraint in *.
         induction HC; constructor; auto.
         apply satisfy_sub_type_equation; auto.
@@ -363,12 +378,22 @@ Module Unification(S : Sigma).
             + exists s'. rewrite S.compose_empty.
                 reflexivity.
             + inv HSC. apply IHHU in H2. assumption.
-            + inv HSC. unfold satisfy_equation in H2.
-                simpl in H2.
-                (* s' is delta in TAPL. *)
-                specialize IHHU with
-                (s' := s').
-                unfold more_general in IHHU. admit.
+            + inv HSC.
+                apply satisfy_sub_type_constraint 
+                    with (C := C) in H2; auto.
+                apply IHHU in H2.
+                unfold more_general in H2.
+                destruct H2 as [s'' HG].
+                assert (Hs' : s' = S.compose (S.compose (S.bind X t S.empty) s) s'').
+                { apply SS.eq_extensional.
+                    apply SS.eq_get in HG.
+                    unfold SS.eq in *.
+                    intros Y. pose proof HG Y as HGY.
+                    destruct (IdDec.eq_dec Y X); subst;
+                    (* Need better notions of equality,
+                        espeically with respect to composition. *)
+                    admit. }
+                { exists s''. assumption. }
             + admit.
             + assert (H : satisfy_constraint 
                 s' ((a1, a2) :: (b1, b2) :: C)).
