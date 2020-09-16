@@ -283,7 +283,76 @@ Module Unification(S : Sigma).
             inv H3. rewrite H0. reflexivity.
         - inv IHHU. inv H2. assumption.
     Qed.
-    
+
+    Lemma satisfy_sub_type_equation :
+        forall (X : id) (T : type) (s : S.t),
+        (* ~ TIn X T -> *)
+        satisfy_equation s (TVar X, T) ->
+        forall (E : equation),
+        satisfy_equation s E ->
+        satisfy_equation s (sub_equation (S.bind X T S.empty) E).
+    Proof.
+        intros Z T s HS.
+        intros [t1 t2]. generalize dependent t2.
+        induction t1; induction t2; intros H; auto;
+        try discriminate; simpl in *;
+        try (destruct (IdDec.eq_dec X Z) as [HX | HX]; subst;
+            try rewrite S.bind_correct;
+            try (rewrite S.bind_complete; auto;
+                rewrite S.get_empty; simpl);
+                try rewrite HS in H;
+                try rewrite H in HS;
+                assumption);
+        try (destruct (IdDec.eq_dec X0 Z) as [HX0 | HX0]; 
+            destruct (IdDec.eq_dec X Z) as [HX | HX]; 
+            subst; auto;
+            try rewrite S.bind_correct;
+            try rewrite S.bind_complete;
+            try rewrite S.bind_complete; auto;
+            try rewrite S.get_empty;
+            try rewrite S.get_empty; auto; simpl;
+            rewrite <- HS; assumption).
+        - destruct (IdDec.eq_dec X Z) as [HXZ | HXZ]; subst.
+            + rewrite S.bind_correct.
+                rewrite HS in H.
+                rewrite H.
+                (* Induction is inaccurate...
+                    perhaps need to define induction
+                    for equations...?*)
+                rewrite S.bind_correct in IHt2_2.
+                rewrite S.bind_correct in IHt2_1.
+                admit.
+            + admit.
+        - destruct (S.get X s) eqn:eq;
+            try discriminate.
+            destruct (IdDec.eq_dec X Z) as [HXZ | HXZ]; subst.
+            + rewrite S.bind_correct.
+                rewrite eq in HS. rewrite <- HS.
+                admit.
+            + admit.
+        - injintrosubst H.
+            apply IHt1_1 in H1.
+            apply IHt1_2 in H0.
+            rewrite H0. rewrite H1.
+            reflexivity.
+    Admitted.
+
+
+
+    Lemma satisfy_sub_type_constraint :
+        forall (X : id) (T : type) (s : S.t),
+        ~ TIn X T ->
+        satisfy_equation s (TVar X, T) ->
+        forall (C : constraint),
+        satisfy_constraint s C ->
+        satisfy_constraint s (sub_constraint (S.bind X T S.empty) C).
+    Proof.
+        intros X T s HIN HS C HC.
+        unfold satisfy_constraint in *.
+        induction HC; constructor; auto.
+        apply satisfy_sub_type_equation; auto.
+    Qed.
+
     Theorem unify_principal :
         forall (C : constraint) (s : S.t),
         unify C s -> principal_unifier C s.
@@ -294,7 +363,12 @@ Module Unification(S : Sigma).
             + exists s'. rewrite S.compose_empty.
                 reflexivity.
             + inv HSC. apply IHHU in H2. assumption.
-            + inv HSC. admit.
+            + inv HSC. unfold satisfy_equation in H2.
+                simpl in H2.
+                (* s' is delta in TAPL. *)
+                specialize IHHU with
+                (s' := s').
+                unfold more_general in IHHU. admit.
             + admit.
             + assert (H : satisfy_constraint 
                 s' ((a1, a2) :: (b1, b2) :: C)).
@@ -579,7 +653,7 @@ Module Monomorphic.
                     (IS.add X (IS.union X1 X2))
                     ((t1, TFun t2 (TVar X)) :: C1 ++ C2).
 
-        Definition constraint_solution 
+        Definition constraint_solution
         {g : gamma} {e : expr} {t : type} {X : names} {C : constraint}
         (H : constraint_type g e t X C) (s : S.t) (T : type) : Prop :=
         satisfy_constraint s C /\ S.sub_type s t = T.
@@ -1119,6 +1193,8 @@ Module Polymorphic.
                 let (x,p) := e in (x, sub_poly s p)).
     End TypeSubstitution.
 
+    Module SS := SigmaSubstitution S.
+
     Module U := Unification S.
     Export U.
 
@@ -1227,5 +1303,10 @@ Module Polymorphic.
                     IS.Empty (IS.inter N2 (fv t1)) ->
                     constraint_type g (ELet x e1 e2) t2
                         (IS.union N1 N2) (C1 ++ C2).
+
+        Definition constraint_solution
+            {g : gamma} {e : expr} {t : type} {X : names} {C : constraint}
+            (H : constraint_type g e t X C) (s : S.t) (T : type) : Prop :=
+            satisfy_constraint s C /\ S.sub_type s t = T.
     End ConstraintTyping.
 End Polymorphic.
