@@ -1334,4 +1334,92 @@ Module Polymorphic.
             (H : constraint_type g e t X C) (s : S.t) (T : type) : Prop :=
             satisfy_constraint s C /\ S.sub_type s t = T.
     End ConstraintTyping.
+    
+    Section PrincipalTypes.
+        Definition principal_solution
+            {g : gamma} {e : expr} {t : type} {X : names} {C : constraint}
+            (H : constraint_type g e t X C) (s : S.t) (T : type) : Prop :=
+            constraint_solution H s T /\
+            forall (s' : S.t) (T' : type),
+            constraint_solution H s' T' -> more_general s s'.
+
+        Corollary unify_principal_solution :
+            forall {g : gamma} {e : expr} {t : type} {X : names} {C : constraint}
+                (H : constraint_type g e t X C) (s : S.t),
+            unify C s ->
+            principal_solution H s (S.sub_type s t).
+        Proof.
+            intros g e t X C H s HU.
+            apply unify_principal in HU as HUC.
+            unfold principal_unifier in HUC.
+            unfold principal_solution.
+            destruct HUC as [HSC HMG]. split.
+            - unfold constraint_solution. split; auto.
+            - intros s' T' Hs'T'.
+                unfold constraint_solution in Hs'T'.
+                destruct Hs'T' as [HSCs' HSTs']. auto.
+        Qed.
+
+        (* Interleave constraint generation and unification. 
+            Should generate a principal type at each step. *)
+        Inductive interleave (g : gamma) : expr -> type -> names -> Prop :=
+            | il_unit : interleave g EUnit TUnit IS.empty
+            | il_var : 
+                forall (x : id) (p : poly) (t : type) 
+                    (N : names) (C : constraint) (s : S.t),
+                tget x g = Some p ->
+                sub_poly_type g S.empty p t N C ->
+                interleave g (EVar x) t N
+            | il_fun :
+                forall (x : id) (t1 t2 : type) (e : expr) (N : names),
+                interleave (tbind x (PType t1) g) e t2 N ->
+                interleave g (EFun x t1 e) (TFun t1 t2) N
+            | il_app :
+                forall (e1 e2 : expr) (t1 t2 : type) 
+                    (X : id) (s : S.t) (N1 N2 : names),
+                interleave g e1 t1 N1 ->
+                interleave g e2 t2 N2 ->
+                IS.Empty (IS.inter N1 N2) ->
+                IS.Empty (IS.inter N1 (fv t2)) ->
+                IS.Empty (IS.inter N2 (fv t1)) ->
+                ~ IS.In X N1 -> ~ IS.In X N2 ->
+                ~ TIn X t1 -> ~ TIn X t2 ->
+                ~ EIn X e1 -> ~ EIn X e2 -> ~ GIn X g ->
+                unify [(t1, TFun t2 (TVar X))] s ->
+                interleave g (EApp e1 e2) (S.sub_type s (TVar X)) (IS.union N1 N2)
+            | il_let :
+                forall (x : id) (e1 e2 : expr) (t1 t2 : type)
+                (p1 : poly) (N1 N2 : names),
+                interleave g e1 t1 N1 ->
+                generalize_names g t1 p1 ->
+                interleave (tbind x p1 g) e2 t2 N2 ->
+                IS.Empty (IS.inter N1 N2) ->
+                IS.Empty (IS.inter N1 (fv t2)) ->
+                IS.Empty (IS.inter N2 (fv t1)) ->
+                interleave g (ELet x e1 e2) t2 (IS.union N1 N2).
+
+        Proposition interleave_sound :
+            forall (g : gamma) (e : expr) (t : type) (N : names),
+            interleave g e t N ->
+            forall (C : constraint)
+                (H : constraint_type g e t N C),
+            exists (s : S.t), unify C s /\ constraint_solution H s t.
+        Proof.
+            intros g e t N HIL C H.
+            induction HIL; inv H.
+            - exists tempty. repeat split; 
+                auto; constructor.
+            - admit.
+            - pose proof IHHIL H6 as IH.
+                destruct IH as [s [HUs [HCS1 HCS2]]].
+                exists s. repeat split; auto.
+                simpl. rewrite HCS2.
+                (* again, induction or
+                    induction hypothesis
+                    seems wrong... *)
+                admit.
+            - admit.
+            - admit.
+        Admitted.
+    End PrincipalTypes.
 End Polymorphic.
