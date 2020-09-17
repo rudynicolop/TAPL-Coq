@@ -1361,7 +1361,8 @@ Module Polymorphic.
         Qed.
 
         (* Interleave constraint generation and unification. 
-            Should generate a principal type at each step. *)
+            Should generate a principal type at each step.
+            I'm not sure this is right... *)
         Inductive interleave (g : gamma) : expr -> type -> names -> Prop :=
             | il_unit : interleave g EUnit TUnit IS.empty
             | il_var : 
@@ -1422,4 +1423,46 @@ Module Polymorphic.
             - admit.
         Admitted.
     End PrincipalTypes.
+
+    (* There are no good, concise explanations...
+        hopefully this is correct. *)
+    Section AlgorithmW.
+        Inductive W (g : gamma) : expr -> type -> S.t -> names -> Prop :=
+            | w_unit : W g EUnit TUnit S.empty IS.empty
+            | w_var : 
+                forall (x : id) (p : poly) (t : type) 
+                (N : names) (C : constraint),
+                tget x g = Some p ->
+                sub_poly_type g S.empty p t N C ->
+                W g (EVar x) t S.empty N
+            | w_fun :
+                forall (x : id) (t1 t2 : type) (e : expr) 
+                    (N : names) (s : S.t),
+                W (tbind x (PType t1) g) e t2 s N ->
+                W g (EFun x t1 e) (TFun (S.sub_type s t1) t2) s N
+            | w_app :
+                forall (e1 e2 : expr) (t1 t2 : type) (X : id) 
+                    (s1 s2 s : S.t) (N1 N2 : names),
+                W g e1 t1 s1 N1 ->
+                W (sub_gamma s1 g) e2 t2 s2 N2 ->
+                IS.Empty (IS.inter N1 N2) ->
+                IS.Empty (IS.inter N1 (fv t2)) ->
+                IS.Empty (IS.inter N2 (fv t1)) ->
+                ~ IS.In X N1 -> ~ IS.In X N2 ->
+                ~ TIn X t1 -> ~ TIn X t2 ->
+                ~ EIn X e1 -> ~ EIn X e2 -> ~ GIn X g ->
+                unify [(S.sub_type s2 t1, TFun t2 (TVar X))] s ->
+                W g (EApp e1 e2) (S.sub_type s (TVar X))
+                    (S.compose (S.compose s1 s2) s) (IS.union N1 N2)
+            | w_let :
+                forall (x : id) (e1 e2 : expr) (t1 t2 : type)
+                    (p1 : poly) (s1 s2 : S.t) (N1 N2 : names),
+                W g e1 t1 s1 N1 ->
+                generalize_names g (S.sub_type s1 t1) p1 ->
+                W (tbind x p1 (sub_gamma s1 g)) e2 t2 s2 N2 ->
+                IS.Empty (IS.inter N1 N2) ->
+                IS.Empty (IS.inter N1 (fv t2)) ->
+                IS.Empty (IS.inter N2 (fv t1)) ->
+                W g (ELet x e1 e2) t2 s2 N2.
+    End AlgorithmW.
 End Polymorphic.
