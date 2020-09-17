@@ -1464,5 +1464,23 @@ Module Polymorphic.
                 IS.Empty (IS.inter N1 (fv t2)) ->
                 IS.Empty (IS.inter N2 (fv t1)) ->
                 W g (ELet x e1 e2) t2 s2 N2.
+
+    (* uggghhhh... *)
+    Proposition W_soundish:
+        forall (g : gamma) (e : expr) (t : type) (s : S.t) (N : names),
+        W g e t s N ->
+        exists (C : constraint),
+        constraint_type g e t N C.
+    Proof.
+        intros g e t s N HW.
+        induction HW.
+        - exists []. constructor.
+        - exists C. apply ct_var 
+            with (p := p); assumption.
+        - destruct IHHW as [C HCT].
+            exists C.
+            remember (S.sub_type s t1) as t1' in *.
+            (* apply ct_fun. *)
+    Admitted.
     End AlgorithmW.
 End Polymorphic.
