@@ -13,6 +13,7 @@ Require Coq.Structures.Equalities.
 Module SE := Coq.Structures.Equalities.
 Require Import Coq.Logic.Decidable.
 Require Import Coq.Program.Equality.
+Require Import Coq.Lists.ListDec.
 
 (* 
     In Hindley-Milner.v, I defined small
@@ -73,6 +74,13 @@ Module IdDec <: SE.DecidableType.
     Proof. unfold eq. intros; subst; reflexivity. Qed.
     Theorem eq_trans : forall (x y z : t), x = y -> y = z -> x = z.
     Proof. intros; subst. reflexivity. Qed.
+    Lemma dec_eq : decidable_eq id.
+    Proof. 
+        unfold decidable_eq. intros x y.
+        unfold decidable. destruct (eq_dec x y).
+        - left. assumption.
+        - right. assumption.
+    Qed.
 End IdDec.
 
 (* variable sets *)
@@ -90,6 +98,35 @@ Inductive expr : Type :=
 Inductive value : Type :=
     VUnit | VFun (x : id) (e : expr).
 
+Fixpoint mem (N : list id) (X : id) : bool :=
+    match N with
+    | [] => false
+    | Y :: N =>
+        if (Y =? X)%string then true else mem N X
+    end.
+
+Lemma mem_spec :
+    forall (N : list id) (X : id),
+    mem N X = true <-> In X N.
+Proof.
+    intros N X. split; 
+    induction N; intros H;
+    try discriminate;
+    try (inv H; contradiction).
+    - simpl in H. destruct (a =? X) eqn:eq.
+        + apply eqb_eq in eq. subst.
+            constructor. reflexivity.
+        + apply in_cons. auto.
+    - destruct (IdDec.eq_dec a X) as [HI | HI];
+        subst; simpl.
+        + assert (X =? X = true);
+            try (apply eqb_eq; reflexivity).
+            rewrite H0. reflexivity.
+        + inv H; try contradiction.
+            apply eqb_neq in HI.
+            rewrite HI. auto.
+Qed.
+
 Section IdMap.
     Context {T : Type}.
 
@@ -98,6 +135,8 @@ Section IdMap.
     Definition iempty : imap := [].
 
     Definition ibind (x : id) (t : T) (m : imap) : imap := (x, t) :: m.
+
+    Definition domain (m : imap) : list id := map fst m.
 
     Fixpoint iremove (x : id) (m : imap) : imap :=
         match m with
@@ -111,6 +150,24 @@ Section IdMap.
         | [] => None
         | (Y,t)::m => if (Y =? X)%string then Some t else iget X m
         end.
+
+    Lemma mem_get_domain :
+        forall (m : imap) (d : list id),
+        incl (domain m) d ->
+        forall (X : id) (t : T),
+        iget X m = Some t ->
+        mem d X = true.
+    Proof.
+        intros m d HI X r HG.
+        unfold incl in HI.
+        specialize HI with (a := X).
+        apply mem_spec. apply HI.
+        clear HI. induction m;
+        try discriminate.
+        simpl in *. destruct a as [Y t].
+        simpl in *. destruct (Y =? X) eqn:eq; auto.
+        left. apply eqb_eq. assumption.
+    Qed.
 End IdMap.
 
 Definition env : Type := @imap value.
@@ -148,9 +205,7 @@ Inductive type : Type :=
     | TVar (X : id)
     | TFun (t1 t2 : type).
 
-Inductive poly : Type :=
-    | PType (t : type)
-    | PForall (X : id) (t : poly).
+Definition poly : Type := list id * type.
 
 (* Type without type variables. *)
 Inductive monotype : type -> Prop :=
@@ -185,14 +240,14 @@ Module TypeSubstitution.
     Qed.
 
     (* iget x (compose m1 m2) ~ m2(m1(x)) *)
-    Fixpoint compose (s1 s2 : T) : T :=
+    Fixpoint tcompose (s1 s2 : T) : T :=
         match s1 with
         | [] => s2
-        | (X, T) :: s1 => (X, st s2 T) :: compose s1 s2
+        | (X, T) :: s1 => (X, st s2 T) :: tcompose s1 s2
         end.
 
     Lemma compose_empty :
-        forall (s : T), compose s [] = s.
+        forall (s : T), tcompose s [] = s.
     Proof.
         induction s; try reflexivity.
         simpl. destruct a as [X T].
@@ -200,9 +255,9 @@ Module TypeSubstitution.
         reflexivity.
     Qed.
 
-    Lemma st_compose :
+    Lemma tcompose_correct :
         forall (s1 s2 : T) (t : type),
-        st (compose s1 s2) t = st s2 (st s1 t).
+        st (tcompose s1 s2) t = st s2 (st s1 t).
     Proof.
         intros s1 s2. induction t; 
         simpl in *; auto.
@@ -213,41 +268,79 @@ Module TypeSubstitution.
             reflexivity.
     Qed.
 
-    (* poly-type type substitution. *)
-    Fixpoint sp (s : T) (p : poly) : poly :=
-        match p with
-        | PType t => PType (st s t)
-        | PForall X p =>
-            PForall X (sp (iremove X s) p)
+    (* Lemma mem_compose :
+        forall (X : id) (s1 s2 : T),
+        mem s1 X = true ->
+        mem (compose s1 s2) X = true.
+    Proof.
+        intros X. induction s1; 
+        intros s2 H; simpl in *;
+        try discriminate.
+        destruct a as [Z U].
+        destruct (Z =? X) eqn:eq; simpl.
+        - apply eqb_eq in eq. subst.
+            assert (HX : X =? X = true).
+            + apply eqb_eq. reflexivity.
+            + rewrite HX. reflexivity.
+        - apply IHs1 with (s2 := s2) in H.
+            rewrite H. rewrite eq. reflexivity.
+    Qed. *)
+
+    Fixpoint sp' (s : T) (N : list id) (t : type) :=
+        match t with
+        | TUnit => TUnit
+        | TFun t1 t2 => TFun (sp' s N t1) (sp' s N t2)
+        | TVar X =>
+            if mem N X then TVar X else
+                match iget X s with
+                | None => TVar X
+                | Some T => T
+                end
         end.
+
+    (* poly-type type substitution. *)
+    Definition sp (s : T) (p : poly) : poly := 
+        let (N,t) := p in (N, sp' s N t).
 
     Lemma sp_empty :
         forall (p : poly), sp iempty p = p.
     Proof.
-        induction p; simpl in *.
-        - rewrite st_empty. reflexivity.
-        - unfold iempty in IHp. rewrite IHp.
+        intros [N t]. unfold sp.
+        induction t; simpl in *; auto.
+        - destruct (mem N X); auto.
+        - injintrosubst IHt1.
+            injintrosubst IHt2.
+            rewrite H. rewrite H0.
             reflexivity.
     Qed.
 
+    (* iget x (pcompose m1 m2) ~ m2(m1(x)) *)
+    (* Fixpoint pcompose (s1 s2 : T) : T :=
+        match s1 with
+        | [] => s2
+        | (X, T) :: s1 => (X, st s2 T) :: tcompose s1 s2
+        end. *)
+
+    Lemma sp'_compose :
+        forall (s1 s2 : T) (N : list id) (t : type),
+        sp' (tcompose s1 s2) N t = sp' s2 N (sp' s1 N t).
+    Proof.
+        intros s1 s2 N t. 
+        induction t; simpl in *; auto.
+        - destruct (mem N X) eqn:eq; simpl;
+            try (rewrite eq; reflexivity).
+            induction s1; simpl;
+            try (rewrite eq; reflexivity).
+            destruct a as [Y U]. simpl.
+            destruct (Y =? X) eqn:eqyx; auto.
+    Abort.
+
     Lemma sp_compose :
         forall (s1 s2 : T) (p :poly),
-        sp (compose s1 s2) p = sp s2 (sp s1 p).
+        sp (tcompose s1 s2) p = sp s2 (sp s1 p).
     Proof.
-        intros s1 s2 p.
-        generalize dependent s2.
-        generalize dependent s1.
-        induction p; intros s1 s2;
-        simpl in *.
-        - rewrite st_compose. reflexivity.
-        - induction s1.
-            + rewrite sp_empty.
-                reflexivity.
-            + destruct a as [Y U]. simpl.
-                destruct (Y =? X) eqn:eq; auto.
-                injection IHs1 as IH.
-                rewrite <- IHp. simpl.
-    Admitted.
+        intros s1 s2 [N t]. unfold sp.
+    Abort.
 
     (* gamma type substitution *)
     Definition sg (s : T) : gamma -> gamma :=
@@ -285,231 +378,213 @@ Module TypeSubstitution.
 End TypeSubstitution.
 Module TS := TypeSubstitution.
 
-Module Closed.
-    (* Bound type variables. *)
-    Definition bound : Type := list id.
-
-    (* No free type variables in a type. *)
-    Inductive ct (b : bound) : type -> Prop :=
-        | closed_unit : ct b TUnit
-        | closed_var : 
-            forall (X : id),
-            In X b ->
-            ct b (TVar X)
-        | closed_fun :
-            forall (t1 t2 : type),
-            ct b t1 ->
-            ct b t2 ->
-            ct b (TFun t1 t2).
-
-    (* No free type variables in a poly-type. *)
-    Inductive cp (b : bound) : poly -> Prop :=
-        | closed_type :
-            forall (t : type),
-            ct b t ->
-            cp b (PType t)
-        | closed_forall :
-            forall (X : id) (p : poly),
-            cp (X :: b) p ->
-            cp b (PForall X p).
-
-    Definition closed (p : poly) := cp [] p.
-
-    (* Closed gamma. *)
-    Definition cg (g : gamma) : Prop :=
-        Forall (fun xp : id * poly =>
-            let (_,p) := xp in closed p) g.
-End Closed.
-Module C := Closed.
-
 Module FreeVariables.
-    Fixpoint fvt (t : type) : IS.t :=
+    Fixpoint fvt (t : type) : list id :=
         match t with
-        | TUnit => IS.empty
-        | TVar X => IS.singleton X
-        | TFun t1 t2 => IS.union (fvt t1) (fvt t2)
+        | TUnit => []
+        | TVar X => [X]
+        | TFun t1 t2 => (fvt t1) ++ (fvt t2)
         end.
 
-    Fixpoint fvp (p : poly) : IS.t :=
-        match p with 
-        | PType t => fvt t
-        | PForall X p => IS.remove X (fvp p)
+    Fixpoint fvp' (N : list id) (t : type) : list id :=
+        match t with
+        | TUnit => []
+        | TFun t1 t2 => (fvp' N t1) ++ (fvp' N t2)
+        | TVar X => 
+            if mem N X then [] else [X]
         end.
 
-    Definition fvg : gamma -> IS.t :=
+    Fixpoint fvp (p : poly) : list id := fvp' (fst p) (snd p).
+
+    Definition fvg : gamma -> list id :=
         fold_right 
-            (fun (xp : id * poly) (Xs : IS.t) =>
+            (fun (xp : id * poly) (Xs : list id) =>
                 let (_,p) := xp in
-                IS.union (fvp p) Xs) IS.empty.
+                (fvp p) ++ Xs) [].
 End FreeVariables.
 Module FV := FreeVariables.
 
-Module Obtainable.
-    (* t' is obtainable from t iff
-        there exisst S such that S t = t'. *)
-    Definition RT (t t' : type) := 
-        exists (S : TS.T), TS.st S t = t'.
-    
-    Lemma RT_refl :
-        forall (t : type), RT t t.
+(* Type Specialization. *)
+Module Specialize.
+    (* bound variables N' not free in another type p *)
+    Definition FPV (N' : list id) (p : poly) : Prop :=
+        Forall (fun X' => ~ In X' (FV.fvp p)) N'.
+
+    Lemma FPV_refl' :
+        forall (X : id) (N : list id) (t : type),
+        ~ In X (FV.fvp (X :: N, t)).
     Proof.
-        intros t. exists iempty.
-        apply TS.st_empty.
+        intros Z N t. induction t; intros H;
+        simpl; try contradiction.
+        - simpl in H. destruct (Z =? X) eqn:eq.
+            + inv H.
+            + destruct (mem N X); inv H; auto.
+                apply eqb_neq in eq. contradiction.
+        - simpl in H. apply in_app_or in H as [H | H].
+            + apply IHt1. unfold FV.fvp.
+                simpl. assumption.
+            + apply IHt2. unfold FV.fvp.
+                simpl. assumption.
     Qed.
 
-    Lemma RT_trans :
-        forall (a b c : type),
-        RT a b -> RT b c -> RT a c.
+    Lemma FPV_refl :
+        forall (N : list id) (t : type), FPV N (N,t).
     Proof.
-        unfold RT. intros a b c [s1 R1] [s2 R2].
-        assert (TS.st s2 (TS.st s1 a) = c).
-        - rewrite R1. assumption.
-        - exists (TS.compose s1 s2).
-            rewrite TS.st_compose.
-            assumption.
+        intros N t. unfold FPV.
+        induction N; constructor.
+        - apply FPV_refl'.
+        - simpl in *. apply Forall_forall.
+            pose proof Forall_forall as FF.
+            pose proof FF id (fun X' : id => ~ In X' (FV.fvp' N t)) N 
+                as [FF' _]; clear FF. intros X HIN.
+                apply FF' with (x := X) in IHN; auto; clear FF'.
+                induction t; simpl in *; intros H;
+                try contradiction.
+                + destruct (a =? X0) eqn:eqaX0; auto.
+                + apply IHN. apply in_app_iff.
+                    pose proof contrapositive as CP.
+                    assert (DIN1 : decidable (In X (FV.fvp' N t1)));
+                    assert (DIN2 : decidable (In X (FV.fvp' N t2)));
+                    try apply In_decidable; try apply IdDec.dec_eq.
+                    pose proof CP (In X (FV.fvp' N t1)) 
+                        (In X (FV.fvp' (a :: N) t1)) DIN1 as [IH1 _].
+                    pose proof CP (In X (FV.fvp' N t2)) 
+                        (In X (FV.fvp' (a :: N) t2)) DIN2 as [IH2 _].
+                    clear CP DIN1 DIN2.
+                    apply in_app_iff in H as [H | H].
+                    * left. apply IH1 in IHt1; auto.
+                    * right. apply IH2 in IHt2; auto.
+        Qed.
+
+    (* p' <= p, p is more general than p' *)
+    Definition R (p p' : poly) : Prop :=
+        let (N, t) := p in
+        let (N', t') := p' in
+        exists (s : TS.T), 
+        incl (domain s) N /\ TS.st s t = t' /\
+        Forall (fun X' => ~ In X' (FV.fvp p)) N'.
+
+    Lemma R_refl : forall (p : poly), R p p.
+    Proof.
+        intros [N t]. exists iempty. 
+        repeat split.
+        - simpl. unfold incl. intros a H. inv H.
+        - apply TS.st_empty.
+        - apply FPV_refl.
     Qed.
 
-    Lemma RT_sub :
-        forall (t t' : type),
-        RT t t' ->
-        forall (s : TS.T),
-        RT (TS.st s t) (TS.st s t').
-    Proof.
-        induction t; destruct t';
-        intros [s' HR] s;
-        try apply RT_refl;
-        unfold RT; try discriminate.
-        - exists s'. simpl in *.
-    Abort.     
-
-    (* p' is obtainable from p iff
-        there exists S such that S p = p' *)
-    Definition RP (p p' : poly) := 
-        exists (S : TS.T), TS.sp S p = p'.
-
-    Lemma RP_refl :
-        forall (p : poly), RP p p.
-    Proof.
-        intros p. exists iempty.
-        apply TS.sp_empty.
-    Qed.
-
-    Lemma RP_trans :
+    Lemma R_trans :
         forall (a b c : poly),
-        RP a b -> RP b c -> RP a c.
+        R a b -> R b c -> R a c.
     Proof.
-        unfold RP. intros a b c [S1 R1] [S2 R2].
-        assert (TS.sp S2 (TS.sp S1 a) = c).
-        - rewrite R1. assumption.
-        - exists (TS.compose S1 S2).
-            rewrite TS.sp_compose.
-            assumption.
-    Qed.
-End Obtainable.
-Module O := Obtainable.
-
-Module Instantiate.
-    Inductive inst (s : TS.T) : poly -> type -> Prop :=
-        | inst_type :
-            forall (t : type),
-            inst s (PType t) t
-        | inst_forall :
-            forall (X : id) (p : poly) (t' t : type),
-            iget X s = Some t' ->
-            inst s (TS.sp s p) t ->
-            inst s (PForall X p) t.
-
-    Definition instance (p : poly) (t : type) := 
-        exists s : TS.T, inst s p t.
-
-    Lemma instance_sub :
-        forall (p : poly) (t : type),
-        instance p t ->
-        forall (S : TS.T),
-        instance (TS.sp S p) (TS.st S t).
-    Proof.
-        unfold instance. 
-        intros p t [s H] S.
-        induction H.
-        - exists iempty. constructor.
-        - destruct IHinst as [s' H'].
-            exists s. simpl.
-            apply inst_forall with (t' := t'); auto.
+        intros [NA a] [NB b] [NC c] 
+            [s1 [Hincl1 [Hst1 HPV1]]]
+            [s2 [Hincl2 [Hst2 HPV2]]].
+        rewrite <- Hst1 in Hst2.
+        (* rewrite <- TS.tcompose_correct in Hst2. *)
+        induction a; unfold R.
+        - exists (TS.tcompose s1 s2). repeat split; auto.
+            + induction s1; simpl in *.
+                * admit.
+                * destruct a as [X t]. simpl in *.
+                    admit.
     Abort.
-End Instantiate.
-Module I := Instantiate.
+
+    (* Robin, how is this true??? *)
+    Lemma R_sub :
+        forall (p p' : poly),
+        R p p' ->
+        forall (S : TS.T),
+        R (TS.sp S p) (TS.sp S p').
+    Proof.
+        intros [N t] [N' t'] [s [HID [HS HF]]] S.
+        unfold TS.sp. induction t; unfold R.
+        - exists s. repeat split; auto.
+            rewrite <- HS. reflexivity.
+        - simpl in HS. 
+            destruct (iget X s) eqn:eqg; subst.
+            { exists s. repeat split; auto.
+                - simpl. assert (Hmem : mem N X = true).
+                    + apply mem_get_domain with
+                        (m := s) (t := t'); auto.
+                    + rewrite Hmem. simpl.
+                        rewrite eqg.  admit.
+                - admit. }
+    Admitted.
+End Specialize.
+Module SP := Specialize.
 
 Module Inference.
     Inductive infer (g : gamma) : expr -> poly -> Prop :=
-        | infer_unit : infer g EUnit (PType TUnit)
+        | infer_unit : infer g EUnit ([], TUnit)
         | infer_var :
             forall (x : id) (p : poly),
             iget x g = Some p ->
             infer g (EVar x) p
         | infer_app :
             forall (e1 e2 : expr) (t t' : type),
-            infer g e1 (PType (TFun t t')) ->
-            infer g e2 (PType t) ->
-            infer g (EApp e1 e2) (PType t')
+            infer g e1 ([], (TFun t t')) ->
+            infer g e2 ([], t) ->
+            infer g (EApp e1 e2) ([], t')
         | infer_fun :
             forall (x : id) (e : expr) (t' t : type),
-            infer (ibind x (PType t') g) e (PType t) ->
-            infer g (EFun x e) (PType (TFun t' t))
+            infer (ibind x ([], t') g) e ([], t) ->
+            infer g (EFun x e) ([], (TFun t' t))
         | infer_let :
             forall (x : id) (e e' : expr) (p : poly) (t : type),
             infer g e p ->
-            infer (ibind x p g) e' (PType t) ->
-            infer g (ELet x e e') (PType t)
+            infer (ibind x p g) e' ([], t) ->
+            infer g (ELet x e e') ([], t)
         | infer_inst :
-            forall (e : expr) (p p' : poly) (t : type) (X : id),
-            TS.sp [(X,t)] p = p' ->
-            infer g e (PForall X p) ->
+            forall (e : expr) (p p' : poly),
+            SP.R p p' ->
+            infer g e p ->
             infer g e p'
         | infer_gen :
-            forall (e : expr) (X : id) (p : poly),
-            ~ IS.In X (FV.fvg g) ->
-            infer g e p ->
-            infer g e (PForall X p).
+            forall (e : expr) (X : id) (N : list id) (t : type),
+            ~ In X (FV.fvg g) ->
+            infer g e (N, t) ->
+            infer g e (X :: N, t).
 
     Example identity_fun :
         infer iempty (EFun "x" (EVar "x")) 
-            (PForall "A" (PType (TFun (TVar "A") (TVar "A")))).
+            (["A"], TFun (TVar "A") (TVar "A")).
     Proof.
         apply infer_gen.
-        - simpl. apply IS.empty_spec.
+        - simpl. intros H. assumption.
         - repeat constructor.
     Qed.
 
     Example self_app :
         infer 
             (ibind "z" 
-                (PForall "A" 
-                    (PType (TFun (TVar "A") (TVar "A")))) iempty)
+                (["A"], TFun (TVar "A") (TVar "A")) iempty)
             (EApp (EVar "z") (EVar "z"))
-            (PType (TFun (TVar "A") (TVar "A"))).
+            ([], (TFun (TVar "A") (TVar "A"))).
     Proof.
         apply infer_app with 
-            (t := TFun (TVar "A") (TVar "A")).
-        - apply infer_inst with 
-            (p := PType (TFun (TVar "A") (TVar "A")))
-            (t := TFun (TVar "A") (TVar "A")) (X := "A").
-            + reflexivity.
-            + repeat constructor.
-        - apply infer_inst with 
-            (p := PType (TFun (TVar "A") (TVar "A")))
-            (t := TVar "A") (X := "A").
-            + reflexivity.
-            + repeat constructor.
+            (t := TFun (TVar "A") (TVar "A"));
+        apply infer_inst with 
+            (p := (["A"], TFun (TVar "A") (TVar "A"))).
+            - exists [("A", TFun (TVar "A") (TVar "A"))].
+                repeat split; try constructor.
+                simpl in *. destruct H; auto.
+                contradiction.
+            - repeat constructor.
+        - exists [("A", TVar "A")]. repeat split;
+            try constructor. simpl in *. 
+            destruct H; auto. contradiction.
+        - repeat constructor.
     Qed.
 
     Example let_identity_self_app :
         infer iempty
             (ELet "z" (EFun "x" (EVar "x")) 
                 (EApp (EVar "z") (EVar "z")))
-            (PType (TFun (TVar "A") (TVar "A"))).
+            ([], TFun (TVar "A") (TVar "A")).
     Proof.
         apply infer_let with 
-            (p := PForall "A" (PType (TFun (TVar "A") (TVar "A")))).
+            (p := (["A"], TFun (TVar "A") (TVar "A"))).
         - apply identity_fun.
         - apply self_app.
     Qed.
@@ -525,24 +600,17 @@ Module Inference.
         - constructor.
         - constructor. 
             apply TS.sg_get. assumption.
-        - apply infer_app with (t := TS.st S t); auto.
+        - apply infer_app with (t := TS.sp' S [] t); auto.
         - constructor. apply IHHI.
         - apply infer_let with (p := TS.sp S p); auto.
             apply IHHI2.
         - apply infer_inst with 
-            (p := TS.sp (iremove X S) p)
-            (t := t) (X := X); auto.
-            induction S.
-            + rewrite <- TS.sp_compose. simpl.
-                rewrite TS.sp_empty.
-                assumption.
-            + simpl. destruct a as [Y u].
-                destruct (Y =? X) eqn:eq.
-                * rewrite IHS. apply eqb_eq in eq.
-                    subst. admit.
-                * admit.
-        - constructor. 
+            (p := TS.sp S p); auto.
+            apply SP.R_sub; auto.
+        - apply infer_gen.
             + admit.
+                (* Robin, how is this true??? *)
             + admit.
+                (* Robin, how is this true??? *)
     Abort.
 End Inference.
