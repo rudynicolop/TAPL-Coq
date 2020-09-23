@@ -511,6 +511,67 @@ Module Specialize.
                         rewrite eqg.  admit.
                 - admit. }
     Admitted.
+
+    Lemma R_free_vars :
+        forall (p p' : poly),
+        R p p' ->
+        forall (X : id),
+        In X (FV.fvp p) -> In X (FV.fvp p').
+    Proof.
+        intros [N t].
+        induction t;
+        intros [N' t'] [s [H1 [H2 H3]]] Z HIn; simpl.
+        - simpl in HIn. contradiction.
+        - simpl in HIn. simpl in H2.
+            destruct (mem N X) eqn:eqm; inv HIn.
+            { destruct (iget Z s) eqn:eqg.
+                - exfalso.
+                    apply mem_get_domain with
+                        (d := N) in eqg; auto.
+                        rewrite eqm in eqg.
+                        discriminate.
+                - simpl in *. destruct (mem N' Z) eqn:eqm'.
+                    + exfalso. pose proof 
+                        Forall_forall
+                        (fun X' : id =>
+                            ~ In X' (if mem N Z then [] else [Z]))
+                        N' as [FF _ ].
+                        apply FF with (x := Z) in H3;
+                            auto; clear FF.
+                        * rewrite eqm in H3. apply H3.
+                            repeat constructor.
+                        * apply mem_spec; auto.
+                    + repeat constructor. }
+            { inv H. }
+        - inv H2. simpl. apply in_app_iff.
+            simpl in HIn. simpl in H3.
+            pose proof Forall_forall
+                (fun X' : id => ~ In X' (FV.fvp' N t1 ++ FV.fvp' N t2))
+                N' as [FF _].
+            apply in_app_iff in HIn as [H' | H'].
+            + pose proof IHt1 (N',TS.st s t1) as IH.
+                clear IHt1 IHt2.
+                assert (HR : R (N, t1) (N', TS.st s t1)).
+                * exists s. repeat split; auto.
+                    apply Forall_forall.
+                    intros X HInXN'.
+                    simpl in H3.
+                    apply FF with (x := X) in H3; clear FF; auto.
+                    simpl. intros H''.
+                    apply H3. apply in_app_iff. auto.
+                * left. apply IH with (X := Z) in HR; auto.
+            + pose proof IHt2 (N',TS.st s t2) as IH.
+                clear IHt1 IHt2.
+                assert (HR : R (N, t2) (N', TS.st s t2)).
+                * exists s. repeat split; auto.
+                    apply Forall_forall.
+                    intros X HInXN'.
+                    simpl in H3.
+                    apply FF with (x := X) in H3; clear FF; auto.
+                    simpl. intros H''.
+                    apply H3. apply in_app_iff. auto.
+                * right. apply IH with (X := Z) in HR; auto.
+    Qed.
 End Specialize.
 Module SP := Specialize.
 
@@ -612,5 +673,37 @@ Module Inference.
                 (* Robin, how is this true??? *)
             + admit.
                 (* Robin, how is this true??? *)
+    Abort.
+
+    Lemma lemma_1 :
+        forall (p p' : poly),
+        SP.R p p' ->
+        forall (g : gamma) (x : id) (e : expr) (p0 : poly),
+        infer (ibind x p' g) e p0 ->
+        infer (ibind x p  g) e p0.
+    Proof.
+        intros p p' HR g x e p0 H.
+        remember (ibind x p' g) as g' in *.
+        induction H; subst.
+        - constructor.
+        - simpl in H. destruct (x =? x0) eqn:eq.
+            + injintrosubst H.
+                apply infer_inst with (p := p); auto.
+                constructor. simpl.
+                rewrite eq. reflexivity.
+            + constructor. simpl.
+                rewrite eq. assumption.
+        - apply infer_app with (t := t); auto.
+        - apply infer_fun. admit.
+            (* This case is annoying... *)
+        - apply infer_let with (p := p0); auto. admit.
+            (* also annoying *)
+        - apply infer_inst with (p := p0); auto.
+        - apply infer_gen; auto.
+            intros HIn. apply H.
+            simpl. simpl in HIn.
+            apply in_app_iff.
+            apply in_app_iff in HIn as [H' | H']; auto.
+            left. apply SP.R_free_vars with (p := p); auto.
     Abort.
 End Inference.
