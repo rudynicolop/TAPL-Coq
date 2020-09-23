@@ -279,24 +279,6 @@ Module TypeSubstitution.
             reflexivity.
     Qed.
 
-    (* Lemma mem_compose :
-        forall (X : id) (s1 s2 : T),
-        mem s1 X = true ->
-        mem (compose s1 s2) X = true.
-    Proof.
-        intros X. induction s1; 
-        intros s2 H; simpl in *;
-        try discriminate.
-        destruct a as [Z U].
-        destruct (Z =? X) eqn:eq; simpl.
-        - apply eqb_eq in eq. subst.
-            assert (HX : X =? X = true).
-            + apply eqb_eq. reflexivity.
-            + rewrite HX. reflexivity.
-        - apply IHs1 with (s2 := s2) in H.
-            rewrite H. rewrite eq. reflexivity.
-    Qed. *)
-
     Fixpoint sp' (s : T) (N : list id) (t : type) :=
         match t with
         | TUnit => TUnit
@@ -324,13 +306,6 @@ Module TypeSubstitution.
             rewrite H. rewrite H0.
             reflexivity.
     Qed.
-
-    (* iget x (pcompose m1 m2) ~ m2(m1(x)) *)
-    (* Fixpoint pcompose (s1 s2 : T) : T :=
-        match s1 with
-        | [] => s2
-        | (X, T) :: s1 => (X, st s2 T) :: tcompose s1 s2
-        end. *)
 
     Lemma sp'_compose :
         forall (s1 s2 : T) (N : list id) (t : type),
@@ -412,6 +387,26 @@ Module FreeVariables.
             (fun (xp : id * poly) (Xs : list id) =>
                 let (_,p) := xp in
                 (fvp p) ++ Xs) [].
+
+    Lemma st_notin :
+        forall (X : id) (t T : type),
+        ~ In X (fvt t) ->
+        TS.st [(X, T)] t = t.
+    Proof.
+        intros X t T H. induction t; auto.
+        - assert (HX : X <> X0).
+            + intros H'. apply H. subst.
+                repeat constructor.
+            + simpl. apply eqb_neq in HX.
+                rewrite HX. reflexivity.
+        - simpl in *.
+            assert (H12 : ~ In X (fvt t1)
+                /\ ~ In X (fvt t2)); try split;
+            try (intros H'; apply H; apply in_app_iff; auto).
+            destruct H12 as [H1 H2].
+            apply IHt1 in H1. apply IHt2 in H2.
+            rewrite H1. rewrite H2. reflexivity.
+    Qed.    
 End FreeVariables.
 Module FV := FreeVariables.
 
@@ -735,3 +730,111 @@ Module Inference.
             + apply IHinfer with (p'0 := p'); auto.
     Qed.
 End Inference.
+
+Module Unification.
+    Inductive unify : type -> type -> TS.T -> Prop :=
+        | unify_eq :
+            forall (t : type),
+            unify t t []
+        | unify_left_var :
+            forall (X : id) (t : type),
+            ~ In X (FV.fvt t) ->
+            unify (TVar X) t [(X, t)]
+        | unify_right_var :
+            forall (X : id) (t : type),
+            ~ In X (FV.fvt t) ->
+            unify t (TVar X) [(X, t)]
+        | unify_fun :
+            forall (a1 b1 a2 b2 : type) (sa sb : TS.T),
+            unify a1 a2 sa ->
+            unify (TS.st sa b1) (TS.st sa b2) sb ->
+            unify (TFun a1 b1) (TFun a2 b2) (TS.tcompose sa sb).
+    
+    Proposition unify_correct :
+        forall (t t' : type) (s : TS.T),
+        unify t t' s -> TS.st s t = TS.st s t'.
+    Proof.
+        intros t t' s H. induction H; simpl; auto.
+        - assert (HX : X =? X = true);
+            try apply eqb_eq; try reflexivity.
+            rewrite HX. symmetry.
+            apply FV.st_notin; auto.
+        - assert (HX : X =? X = true);
+            try apply eqb_eq; try reflexivity.
+            rewrite HX. apply FV.st_notin; auto.
+        - rewrite TS.tcompose_correct.
+            rewrite TS.tcompose_correct.
+            rewrite TS.tcompose_correct.
+            rewrite TS.tcompose_correct.
+            rewrite IHunify1. rewrite IHunify2.
+            reflexivity.
+    Qed.
+
+    Proposition unify_most_general :
+        forall (t t' : type) (s : TS.T),
+        TS.st s t = TS.st s t' ->
+        exists (v r : TS.T),
+        unify t t' v /\
+        TS.st (TS.tcompose v r) t  = TS.st s t /\
+        TS.st (TS.tcompose v r) t' = TS.st s t'.
+    Proof.
+        induction t;
+        destruct t'; intros s H;
+        try discriminate.
+        - exists []. exists s.
+            split; repeat constructor.
+        - exists [(X, TUnit)]. destruct s;
+            try discriminate.
+            simpl in H. admit.
+        - admit.
+    Abort.
+End Unification.
+Module U := Unification.
+
+Module AlgorithmW.
+
+    (* free variables of t not in g *)
+    Fixpoint unbound_free (g : gamma) (t : type) : list id :=
+        match t with
+        | TUnit => []
+        | TFun t1 t2 => unbound_free g t1 ++ unbound_free g t2
+        | TVar X =>
+            if mem (FV.fvg g) X then [] else [X]
+        end.
+
+    Definition closure (g : gamma) (t : type) : poly := (unbound_free g t, t).
+
+    Definition tvars : list id -> list type := map TVar.
+    
+    Definition empty_inter {A : Type} (l1 l2 : list A) :=
+        (forall (a1 : A), In a1 l1 -> ~ In a1 l2) /\
+        (forall (a2 : A), In a2 l2 -> ~ In a2 l1).
+
+    (*
+        W g e t s N, given a g and e, W gives:
+        - t: an inferred type
+        - s: a type substitution
+        - N: used names
+    *)
+    Inductive W (g : gamma) : expr -> type -> TS.T -> list id -> Prop :=
+        | w_unit : W g EUnit TUnit [] []
+        | w_var : 
+            forall (x : id) (A B : list id) (t t' : type),
+            iget x g = Some (A, t) ->
+            empty_inter A B ->
+            empty_inter (FV.fvt t) B ->
+            TS.st (combine A (tvars B)) t = t' ->
+            W g (EVar x) t' [] B
+        | w_app :
+            forall (e1 e2 : expr) (t1 t2 : type)
+                (U : id) (s1 s2 v : TS.T) (N1 N2 N : list id),
+            W g e1 t1 s1 N1 ->
+            W (TS.sg s1 g) e2 t2 s2 N2 ->
+            empty_inter N1 N2 ->
+            ~ In U N1 -> ~ In U N2 ->
+            ~ In U (FV.fvt t1) -> ~ In U (FV.fvt t2) ->
+            ~ In U (FV.fvg g) ->
+            U.unify (TS.st s2 t1) (TFun t2 (TVar U)) v ->
+            N = U :: N1 ++ N2 ->
+            W g (EApp e1 e2) (TS.st v (TVar U)) (TS.tcompose (TS.tcompose s1 s2) v) N.
+End AlgorithmW.
