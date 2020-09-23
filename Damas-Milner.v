@@ -383,6 +383,14 @@ Module TypeSubstitution.
         reflexivity.
     Qed.
 
+    Lemma stsp_empty :
+        forall (S : T) (t : type),
+        ([], st S t) = sp S ([], t).
+    Proof.
+        intros S t. rewrite stsp'_empty.
+        reflexivity.
+    Qed.
+
     Lemma compose_assoc :
         forall (s1 s2 s3 : T),
         tcompose s1 (tcompose s2 s3) =
@@ -827,7 +835,6 @@ End Unification.
 Module U := Unification.
 
 Module AlgorithmW.
-
     (* free variables of t not in g *)
     Fixpoint unbound_free (g : gamma) (t : type) : list id :=
         match t with
@@ -908,12 +915,95 @@ Module AlgorithmW.
         apply H; auto.
     Qed.
 
+    (*
+        Probably not true...
+        I was attempting to define and 
+        prove a helper lemma
+        for the soundness proof.
+     *)
+    Lemma W_closure :
+        forall (g : gamma) (e : expr)
+            (t : type) (s : TS.T) (N : list id),
+        W g e t s N ->
+        TS.sp s (closure g t) = (unbound_free g t, t).
+    Proof.
+        intros g e t s N HW.
+        induction HW; auto.
+        - rewrite TS.sp_empty. reflexivity.
+        - rewrite TS.sp_compose.
+            rewrite TS.sp_compose.
+            apply U.unify_correct in H5.
+    Abort.
+
+    Theorem WSound' :
+        forall (g : gamma) (e : expr)
+            (t : type) (s : TS.T) (N : list id),
+        W g e t s N ->
+        exists (p : poly),
+        I.infer (TS.sg s g) e p /\ SP.R p ([], t).
+    Proof.
+        intros g e t s N HW. induction HW.
+        - rewrite TS.sg_empty.
+            exists ([], TUnit).
+            repeat constructor.
+            apply SP.R_refl.
+        - rewrite TS.sg_empty.
+            exists (A, t).
+            repeat constructor; auto.
+            exists (combine A (tvars B)).
+            repeat constructor; auto.
+            assert (HL : length A = length (tvars B)).
+            + unfold tvars.
+                rewrite map_length. assumption.
+            + apply incl_combine; auto.
+        - apply U.unify_correct in H5.
+            destruct IHHW1 as [p1 [HF1 HR1]].
+            destruct IHHW2 as [p2 [HF2 HR2]].
+            exists ([], TS.st v (TVar U)).
+            repeat constructor;
+            try apply SP.R_refl.
+            apply I.infer_app with (t := TS.st v t2).
+            + simpl. simpl in H5. rewrite <- H5.
+                rewrite <- TS.tcompose_correct.
+                rewrite TS.stsp_empty.
+                rewrite TS.sg_compose.
+                apply I.infer_sub.
+                apply I.infer_inst with (p := p1); auto.
+            + rewrite TS.compose_assoc.
+                rewrite TS.sg_compose.
+                rewrite TS.stsp_empty.
+                apply I.infer_sub.
+                rewrite TS.sg_compose.
+                apply I.infer_inst with (p := p2); auto.
+        - destruct IHHW as [p [HF HR]].
+            exists ([], TFun (TS.st s (TVar U)) t).
+            repeat constructor; try apply SP.R_refl.
+            apply I.infer_inst with (p := p); auto.
+        - rewrite TS.sg_compose.
+            destruct IHHW1 as [p1 [HF1 HR1]].
+            destruct IHHW2 as [p2 [HF2 HR2]].
+            exists ([], t2).
+            split; try apply SP.R_refl.
+            apply I.infer_let with
+                (p := TS.sp s2 (TS.sp s1 (closure g t1))).
+            + apply I.infer_sub.
+                apply I.infer_inst with (p := p1); auto.
+                destruct p1 as [X1 T1].
+                destruct HR1 as [s1' [HD [HS1 HFA1]]].
+                exists s1'. repeat split; auto.
+                * admit.
+                * admit.
+                (* same problem... *)
+            + apply I.infer_inst with (p := p2); auto.
+    Admitted.
+    
     Theorem WSound : 
         forall (g : gamma) (e : expr)
             (t : type) (s : TS.T) (N : list id),
         W g e t s N -> I.infer (TS.sg s g) e ([], t).
     Proof.
-        intros g e t s N HW. induction HW.
+        intros g e t s N HW.
+        induction HW.
         - constructor.
         - rewrite TS.sg_empty.
             apply I.infer_inst with (p := (A, t)).
@@ -925,23 +1015,21 @@ Module AlgorithmW.
                 * apply incl_combine; auto.
             + constructor. assumption.
         - apply U.unify_correct in H5.
-            simpl in *. destruct (iget U v) eqn:eq.
-            + apply I.infer_app with (t := TS.st v t2).
-                { rewrite <- H5.
-                    rewrite <- TS.tcompose_correct.
-                    assert (HE : ([], TS.st (TS.tcompose s2 v) t1) =
-                        TS.sp (TS.tcompose s2 v) ([], t1)).
-                        - rewrite TS.stsp'_empty. reflexivity.
-                        - rewrite HE. rewrite TS.sg_compose.
-                            apply I.infer_sub; auto. }
-                { rewrite TS.compose_assoc.
+            simpl in *. apply I.infer_app with (t := TS.st v t2).
+                + rewrite <- H5. rewrite <- TS.tcompose_correct.
+                    rewrite TS.stsp_empty. rewrite TS.sg_compose.
+                    apply I.infer_sub; auto.
+                + rewrite TS.compose_assoc.
                     rewrite TS.sg_compose.
-                    assert (HE : ([], TS.st v t2) =
-                        TS.sp v ([], t2)).
-                    - unfold TS.sp. rewrite TS.stsp'_empty.
-                        reflexivity.
-                    - rewrite HE. apply I.infer_sub.
-                        rewrite TS.sg_compose.
-                        assumption. }
+                    rewrite TS.stsp_empty.
+                    apply I.infer_sub.
+                    rewrite TS.sg_compose.
+                    assumption.
+        - constructor; auto.
+        - rewrite TS.sg_compose.
+            apply I.infer_let with
+                (p := TS.sp s2 (TS.sp s1 (closure g t1)));
+                auto. apply I.infer_sub. admit.
+                (* Induction hypothesis too restrictive. *)
     Admitted.
 End AlgorithmW.
