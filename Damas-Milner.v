@@ -318,15 +318,17 @@ Module TypeSubstitution.
             induction s1; simpl;
             try (rewrite eq; reflexivity).
             destruct a as [Y U]. simpl.
-            destruct (Y =? X) eqn:eqyx; auto.
-    Abort.
+            destruct (Y =? X) eqn:eqyx; auto. admit.
+        - rewrite IHt1. rewrite IHt2. reflexivity.
+    Admitted.
 
     Lemma sp_compose :
         forall (s1 s2 : T) (p :poly),
         sp (tcompose s1 s2) p = sp s2 (sp s1 p).
     Proof.
         intros s1 s2 [N t]. unfold sp.
-    Abort.
+        rewrite sp'_compose. reflexivity.
+    Qed.
 
     (* gamma type substitution *)
     Definition sg (s : T) : gamma -> gamma :=
@@ -360,6 +362,37 @@ Module TypeSubstitution.
             destruct a as [X u].
             destruct (X =? x) eqn:eq; auto.
             injintrosubst HG. reflexivity.
+    Qed.
+
+    Lemma sg_compose :
+        forall (s1 s2 : T) (g : gamma),
+        sg (tcompose s1 s2) g = sg s2 (sg s1 g).
+    Proof.
+        intros s1 s2 g. induction g; auto.
+        simpl. destruct a as [x p].
+        rewrite IHg. rewrite sp_compose.
+        reflexivity.
+    Qed.
+
+    Lemma stsp'_empty :
+        forall (S : T) (t : type),
+        st S t = sp' S [] t.
+    Proof.
+        intros S t. induction t; simpl; auto.
+        rewrite IHt1. rewrite IHt2.
+        reflexivity.
+    Qed.
+
+    Lemma compose_assoc :
+        forall (s1 s2 s3 : T),
+        tcompose s1 (tcompose s2 s3) =
+            tcompose (tcompose s1 s2) s3.
+    Proof.
+        induction s1; 
+        intros s2 s3; auto; simpl;
+        destruct a as [Z t]; simpl.
+        rewrite IHs1. rewrite tcompose_correct.
+        reflexivity.
     Qed.
 End TypeSubstitution.
 Module TS := TypeSubstitution.
@@ -656,6 +689,7 @@ Module Inference.
         - apply self_app.
     Qed.
 
+    (* This is hard to prove... *)
     Proposition infer_sub :
         forall (g : gamma) (e : expr) (p : poly),
         infer g e p ->
@@ -679,7 +713,7 @@ Module Inference.
                 (* Robin, how is this true??? *)
             + admit.
                 (* Robin, how is this true??? *)
-    Abort.
+    Admitted.
 
     Lemma lemma_1 :
         forall (p p' : poly),
@@ -730,6 +764,7 @@ Module Inference.
             + apply IHinfer with (p'0 := p'); auto.
     Qed.
 End Inference.
+Module I := Inference.
 
 Module Unification.
     Inductive unify : type -> type -> TS.T -> Prop :=
@@ -821,6 +856,7 @@ Module AlgorithmW.
         | w_var : 
             forall (x : id) (A B : list id) (t t' : type),
             iget x g = Some (A, t) ->
+            length A = length B ->
             empty_inter A B ->
             empty_inter (FV.fvt t) B ->
             TS.st (combine A (tvars B)) t = t' ->
@@ -836,5 +872,76 @@ Module AlgorithmW.
             ~ In U (FV.fvg g) ->
             U.unify (TS.st s2 t1) (TFun t2 (TVar U)) v ->
             N = U :: N1 ++ N2 ->
-            W g (EApp e1 e2) (TS.st v (TVar U)) (TS.tcompose (TS.tcompose s1 s2) v) N.
+            W g (EApp e1 e2) (TS.st v (TVar U))
+                (TS.tcompose s1 (TS.tcompose s2 v)) N
+        | w_fun :
+            forall (x U : id) (e : expr)
+                (t : type) (s : TS.T) (N : list id),
+            ~ In U N ->
+            ~ In U (FV.fvg g) ->
+            W (ibind x ([], TVar U) g) e t s N ->
+            W g (EFun x e) (TFun (TS.st s (TVar U)) t) s N
+        | w_let :
+            forall (x : id) (e1 e2 : expr) (t1 t2 : type)
+                (s1 s2 : TS.T) (N1 N2 N : list id),
+            W g e1 t1 s1 N1 ->
+            W (ibind x (TS.sp s1 (closure g t1)) (TS.sg s1 g))
+                e2 t2 s2 N2 ->
+            empty_inter N1 N2 ->
+            N = N1 ++ N2 ->
+            W g (ELet x e1 e2) t2 (TS.tcompose s1 s2) N.
+
+    Lemma incl_combine :
+        forall {A : Type}
+            (N : list id) (L : list A),
+        length N = length L ->
+        incl (domain (combine N L)) N.
+    Proof.
+        intros A.
+        induction N; destruct L; intros HL;
+        unfold incl; intros X HX;
+        simpl in *; try discriminate;
+        try contradiction.
+        destruct HX as [HX | HX]; auto.
+        injintrosubst HL.
+        apply IHN in H. right.
+        apply H; auto.
+    Qed.
+
+    Theorem WSound : 
+        forall (g : gamma) (e : expr)
+            (t : type) (s : TS.T) (N : list id),
+        W g e t s N -> I.infer (TS.sg s g) e ([], t).
+    Proof.
+        intros g e t s N HW. induction HW.
+        - constructor.
+        - rewrite TS.sg_empty.
+            apply I.infer_inst with (p := (A, t)).
+            + exists (combine A (tvars B)).
+                repeat split; auto.
+                assert (HL : length A = length (tvars B)).
+                * unfold tvars. rewrite map_length.
+                    assumption.
+                * apply incl_combine; auto.
+            + constructor. assumption.
+        - apply U.unify_correct in H5.
+            simpl in *. destruct (iget U v) eqn:eq.
+            + apply I.infer_app with (t := TS.st v t2).
+                { rewrite <- H5.
+                    rewrite <- TS.tcompose_correct.
+                    assert (HE : ([], TS.st (TS.tcompose s2 v) t1) =
+                        TS.sp (TS.tcompose s2 v) ([], t1)).
+                        - rewrite TS.stsp'_empty. reflexivity.
+                        - rewrite HE. rewrite TS.sg_compose.
+                            apply I.infer_sub; auto. }
+                { rewrite TS.compose_assoc.
+                    rewrite TS.sg_compose.
+                    assert (HE : ([], TS.st v t2) =
+                        TS.sp v ([], t2)).
+                    - unfold TS.sp. rewrite TS.stsp'_empty.
+                        reflexivity.
+                    - rewrite HE. apply I.infer_sub.
+                        rewrite TS.sg_compose.
+                        assumption. }
+    Admitted.
 End AlgorithmW.
