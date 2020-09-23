@@ -168,6 +168,17 @@ Section IdMap.
         simpl in *. destruct (Y =? X) eqn:eq; auto.
         left. apply eqb_eq. assumption.
     Qed.
+
+    (* Sketchy but useful axioms. *)
+    Axiom bind_same :
+        forall (x : id) (t t' : T) (m : imap),
+        ibind x t (ibind x t' m) = ibind x t m.
+
+    Axiom bind_diff_comm :
+        forall (x y : id),
+        x <> y ->
+        forall (t1 t2 : T) (m : imap),
+        ibind x t1 (ibind y t2 m) = ibind y t2 (ibind x t1 m).
 End IdMap.
 
 Definition env : Type := @imap value.
@@ -683,8 +694,8 @@ Module Inference.
         infer (ibind x p  g) e p0.
     Proof.
         intros p p' HR g x e p0 H.
-        remember (ibind x p' g) as g' in *.
-        induction H; subst.
+        (* remember (ibind x p' g) as g' in *. *)
+        dependent induction H; subst.
         - constructor.
         - simpl in H. destruct (x =? x0) eqn:eq.
             + injintrosubst H.
@@ -693,17 +704,34 @@ Module Inference.
                 rewrite eq. reflexivity.
             + constructor. simpl.
                 rewrite eq. assumption.
-        - apply infer_app with (t := t); auto.
-        - apply infer_fun. admit.
-            (* This case is annoying... *)
-        - apply infer_let with (p := p0); auto. admit.
-            (* also annoying *)
+        - apply infer_app with (t := t).
+            + apply IHinfer1 with (p'0 := p'); auto.
+            + apply IHinfer2 with (p'0 := p'); auto.
+        - apply infer_fun.
+            destruct (IdDec.eq_dec x0 x) as [HX | HX]; subst.
+            + rewrite bind_same.
+                rewrite bind_same in H.
+                assumption.
+            + rewrite bind_diff_comm; auto.
+                apply IHinfer with (p'0 := p'); auto.
+                rewrite bind_diff_comm; auto.
+        - apply infer_let with (p := p0).
+            + apply IHinfer1 with (p'0 := p'); auto.
+            + destruct (IdDec.eq_dec x0 x) as [HX | HX]; subst.
+                * rewrite bind_same.
+                    rewrite bind_same in H0.
+                    assumption.
+                * rewrite bind_diff_comm; auto.
+                    apply IHinfer2 with (p'0 := p'); auto.
+                    rewrite bind_diff_comm; auto.
         - apply infer_inst with (p := p0); auto.
-        - apply infer_gen; auto.
-            intros HIn. apply H.
-            simpl. simpl in HIn.
-            apply in_app_iff.
-            apply in_app_iff in HIn as [H' | H']; auto.
-            left. apply SP.R_free_vars with (p := p); auto.
-    Abort.
+            apply IHinfer with (p'0 := p'); auto.
+        - apply infer_gen.
+            + intros HIn. apply H.
+                simpl. simpl in HIn.
+                apply in_app_iff.
+                apply in_app_iff in HIn as [H' | H']; auto.
+                left. apply SP.R_free_vars with (p := p); auto.
+            + apply IHinfer with (p'0 := p'); auto.
+    Qed.
 End Inference.
