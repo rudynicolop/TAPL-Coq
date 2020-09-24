@@ -746,6 +746,33 @@ Module Preservation.
                         assumption.
         Qed.
 
+        Definition sub_gamma (U : id) (u : type) (g g' : SS.gamma) : Prop := 
+            forall (t t' : type),
+            SS.sub U u t t' ->
+            forall (x : id),
+            g x = Some t -> g' x = Some t'.
+
+        Lemma tsub_gamma_lemma :
+            forall (U : id) (u : type) (e e' : expr),
+            DS.tsub U u e e' ->
+            forall (g g' : SS.gamma),
+            sub_gamma U u g g' ->
+            forall (t t' : type),
+            SS.sub U u t t' ->
+            forall (d : SS.delta),
+            SS.WF d u ->
+            SS.check (U :: d) g e t ->
+            SS.check d g' e' t'.
+        Proof.
+            intros U u e e' HDS.
+            induction HDS; 
+            intros g g' HSG;
+            unfold sub_gamma in HSG;
+            intros w w' HSS d HWF HT; inv HT.
+            - constructor. apply HSG with (t := w); auto.
+            - inv HSS. admit.
+        Admitted.
+            
         Lemma tsub_lemma :
             forall (U : id) (u : type) (e e' : expr),
             DS.tsub U u e e' ->
