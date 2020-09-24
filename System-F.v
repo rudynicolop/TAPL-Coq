@@ -11,6 +11,7 @@ Require Coq.MSets.MSetWeakList.
 Module WS := Coq.MSets.MSetWeakList.
 Require Coq.MSets.MSetFacts.
 Module MSF := Coq.MSets.MSetFacts.
+Require Import Coq.Program.Equality.
 
 (* 
     A Coq formalization of:
@@ -88,13 +89,13 @@ Section Syntax.
         | EInst e _ => fve e
         end.
 
-    (* Inductive value : expr -> Prop :=
+    Inductive value : expr -> Prop :=
         | value_fun :
             forall (x : id) (t : type) (e : expr),
             value (EFun x t e)
         | value_forall :
             forall (A : id) (e : expr),
-            value (EForall A e). *)
+            value (EForall A e).
 End Syntax.
 
 Module StaticSemantics.
@@ -210,6 +211,26 @@ Module StaticSemantics.
             sub A u t' t'' ->
             sub A u (TForall B t) (TForall C t'').
 
+    Axiom sub_total :
+        forall (A : id) (u t : type),
+        exists (t' : type), sub A u t t'.
+
+    (* Type equivalence. *)
+    Inductive teq : type -> type -> Prop :=
+        | teq_eq :
+            forall (t : type),
+            teq t t
+        | teq_fun :
+            forall (a1 b1 a2 b2 : type),
+            teq a1 a2 ->
+            teq b1 b2 ->
+            teq (TFun a1 b1) (TFun a2 b2)
+        | teq_forall :
+            forall (A B : id) (a b b' : type),
+            sub B (TVar A) b b' ->
+            teq a b' ->
+            teq (TForall A a) (TForall B b).
+
     (* Type-checking with well-formedness checking. *)
     Inductive check (d : delta) (g : gamma) : expr -> type -> Prop :=
         | check_var :
@@ -222,10 +243,11 @@ Module StaticSemantics.
             check d (bind x t g) e t' ->
             check d g (EFun x t e) (TFun t t')
         | check_app :
-            forall (e1 e2 : expr) (t t' : type),
-            check d g e1 (TFun t t') ->
-            check d g e2 t ->
-            check d g (EApp e1 e2) t'
+            forall (e1 e2 : expr) (a b c : type),
+            teq a c ->
+            check d g e1 (TFun a b) ->
+            check d g e2 c ->
+            check d g (EApp e1 e2) b
         | check_forall :
             forall (A : id) (e : expr) (t : type),
             check (A :: d) g e t ->
@@ -285,6 +307,10 @@ Module DynamicSemantics.
             sub x es e e' ->
             sub x es (EInst e t) (EInst e' t).
 
+    Axiom sub_total :
+        forall (x : id) (es e : expr),
+        exists (e' : expr), sub x es e e'.
+
     (* 
         Capture-avoiding type-substitution in an expression:
             tsub A u e e': e{u/A} = e'.
@@ -329,17 +355,43 @@ Module DynamicSemantics.
             tsub A u e' e'' ->
             tsub A u (EForall B e) (EForall C e'').
 
-    (* Normal-order reduction. *)
+    Axiom tsub_total :
+        forall (A : id) (u : type) (e : expr),
+        exists (e' : expr), tsub A u e e'.
+
+    (* Expression equivalence. *)
+    Inductive eeq : expr -> expr -> Prop :=
+        | eeq_eq :
+            forall (e : expr),
+            eeq e e
+        | eeq_fun :
+            forall (x : id) (t1 t2 : type) (e1 e2 : expr),
+            SS.teq t1 t2 ->
+            eeq e1 e2 ->
+            eeq (EFun x t1 e1) (EFun x t2 e2)
+        | eeq_app :
+            forall (ea1 eb1 ea2 eb2 : expr),
+            eeq ea1 ea2 ->
+            eeq eb1 eb2 ->
+            eeq (EApp ea1 eb1) (EApp ea2 eb2)
+        | eeq_inst :
+            forall (e1 e2 : expr) (t1 t2 : type),
+            SS.teq t1 t2 ->
+            eeq e1 e2 ->
+            eeq (EInst e1 t1) (EInst e2 t2)
+        | eeq_forall :
+            forall (A1 A2 : id) (e1 e2 e2' : expr),
+            tsub A2 (TVar A2) e2 e2' ->
+            eeq e1 e2' ->
+            eeq (EForall A1 e1) (EForall A2 e2).
+
+    (* Lazy-evaluation. *)
     Inductive step : expr -> expr -> Prop :=
         | step_redux :
             forall (x : id) (t : type) (e e' e'' : expr),
             sub x e e' e'' ->
             step (EApp (EFun x t e) e') e''
-        | step_app_right :
-            forall (x : id) (e e' : expr),
-            step e e' ->
-            step (EApp (EVar x) e) (EApp (EVar x) e')
-        | step_app_left :
+        | step_app :
             forall (e1 e2 e1' : expr),
             step e1 e1' ->
             step (EApp e1 e2) (EApp e1' e2)
@@ -350,13 +402,85 @@ Module DynamicSemantics.
         | step_inst :
             forall (e e' : expr) (t : type),
             step e e' ->
-            step (EInst e t) (EInst e' t)
-        | step_fun_inner :
-            forall (x : id) (t : type) (e e' : expr),
-            step e e' ->
-            step (EFun x t e) (EFun x t e')
-        | step_forall_inner :
-            forall (A : id) (e e' : expr),
-            step e e' ->
-            step (EForall A e) (EForall A e').
+            step (EInst e t) (EInst e' t).
 End DynamicSemantics.
+Module DS := DynamicSemantics.
+
+Module CanonicalForms.
+    Definition canon_fun (v : expr) : Prop := 
+        value v -> 
+        forall (a b : type),
+        SS.check [] SS.empty v (TFun a b) -> 
+        exists (x : id) (t : type) (e : expr), 
+        SS.teq a t /\ v = EFun x t e.
+    
+    Definition canon_forall (v : expr) : Prop :=
+        value v ->
+        forall (A : id) (t : type),
+        SS.check [] SS.empty v (TForall A t) ->
+        exists (B : id) (e : expr),
+        SS.teq (TForall A t) (TForall B t) /\ v = EForall B e.
+
+    Lemma canonical_forms_fun :
+        forall (v : expr), canon_fun v.
+    Proof.
+        intros v HV a b HT.
+        dependent induction HT; inv HV.
+        exists x. exists a. exists e.
+        repeat constructor.
+    Qed.
+
+    Lemma canonical_forms_forall :
+        forall (v : expr), canon_forall v.
+    Proof.
+        intros v HV A t HT.
+        dependent induction HT; inv HV.
+        exists A. exists e.
+        repeat constructor.
+    Qed.   
+End CanonicalForms.
+Module CF := CanonicalForms.
+
+Module Progress.
+    Theorem progress_thm : 
+        forall (e : expr) (t : type),
+        SS.check [] SS.empty e t ->
+        value e \/ exists (e' : expr), DS.step e e'.
+    Proof.
+        intros e t HT.
+        remember [] as d in HT.
+        remember SS.empty as g in HT.
+        assert (duh1 : @nil id = @nil id);
+        assert (duh2 : SS.empty = SS.empty);
+        try reflexivity.
+        dependent induction HT; subst;
+        try (pose proof IHHT  duh1 duh2 duh1 duh2 as IH;  clear IHHT);
+        try (pose proof IHHT1 duh1 duh2 duh1 duh2 as IH1; clear IHHT1);
+        try (pose proof IHHT2 duh1 duh2 duh1 duh2 as IH2; clear IHHT2);
+        try discriminate; clear duh1 duh2; try clear IHHT.
+        - left. constructor.
+        - right. destruct IH1 as [H1 | H1].
+            + pose proof 
+                CF.canonical_forms_fun
+                    e1 H1 a b HT1
+                as [x [t [e [Hteq Hfun]]]]; subst.
+                pose proof DS.sub_total x e e2
+                    as [e2' HSub].
+                exists e2'. constructor; auto.
+            + destruct H1 as [e1' Hstep].
+                exists (EApp e1' e2).
+                constructor; auto.
+        - left. constructor.
+        - right. destruct IH as [IHe | IHe].
+            + pose proof 
+                CF.canonical_forms_forall
+                    e IHe A t HT
+                as [B [ef [Hteq Hforall]]]; subst.
+                pose proof DS.tsub_total B u ef
+                    as [ef' HSub].
+                exists ef'. constructor; auto.
+            + destruct IHe as [e' Hstep].
+                exists (EInst e' u).
+                constructor; auto.
+    Qed.
+End Progress.
