@@ -128,6 +128,7 @@ Module StaticSemantics.
                 WF (A :: d) t ->
                 WF d (TForall A t).
 
+        (* Exchange. *)
         Lemma delta_perm :
             forall (d : delta) (t : type),
             WF d t ->
@@ -141,7 +142,8 @@ Module StaticSemantics.
             apply Permutation_in with (l := d); auto.
         Qed.
 
-        Lemma bind_delta :
+        (* Weakening. *)
+        Lemma weaken_delta :
             forall (d : delta) (t : type),
             WF d t ->
             forall (A : id),
@@ -157,6 +159,20 @@ Module StaticSemantics.
                 constructor.
         Qed.
 
+        (* Contraction. *)
+        Lemma contract_delta :
+            forall (A : id) (d : delta) (t : type),
+            WF (A :: A :: d) t ->
+            WF (A :: d) t.
+        Proof.
+            intros A d t H.
+            dependent induction H;
+            constructor; subst; auto.
+            - inv H; auto. constructor; auto.
+            - apply IHWF. admit.
+            (* Coq generates a jenk
+                induction hypothesis. *)
+        Admitted.
     End WellFormedness.
 
     Section Gamma.
@@ -246,9 +262,7 @@ Module StaticSemantics.
             sub A u t' t'' ->
             sub A u (TForall B t) (TForall C t'').
 
-    Axiom sub_total :
-        forall (A : id) (u t : type),
-        exists (t' : type), sub A u t t'.
+
 
     Lemma sub_eq :
         forall (U : id) (t : type),
@@ -301,76 +315,6 @@ Module StaticSemantics.
         apply teq_forall with (a' := b') (b' := a'); auto.
     Qed.
 
-    Lemma teq_sub_var :
-        forall (A B : id) (t t' : type),
-        ~ IS.In A (fvt t) ->
-        sub A (TVar B) t t' -> teq t t'.
-    Proof.
-        intros A B t t' HIn HS.
-        remember (TVar B) as b in HS.
-        dependent induction HS; subst; simpl in *.
-        - exfalso. apply HIn. constructor. reflexivity.
-        - constructor.
-        - constructor; try apply IHHS2;
-            try apply IHHS1; auto;
-            intros HI; apply HIn.
-            + apply ISF.union_2; auto.
-            + apply ISF.union_3; auto.
-        - constructor.
-        - apply teq_forall with
-            (a' := t) (b' := t'); auto;
-            try apply sub_eq;
-            apply IHHS; auto; intros HI;
-            apply HIn; apply ISF.remove_2; auto.
-        - apply ISF.singleton_1 in H2.
-            symmetry in H2. subst.
-            apply teq_forall with
-                (a' := t) (b' := t'').
-    Abort.
-
-    Lemma teq_trans :
-        forall (t1 t2 t3 : type),
-        teq t1 t2 -> teq t2 t3 -> teq t1 t3.
-    Proof.
-        intros t1 t2 t3 H12 H23.
-        generalize dependent t1.
-        induction H23;
-        intros t1 H12; inv H12;
-        try constructor; auto.
-        - apply teq_forall with
-            (a' := a') (b' := b'); auto.
-        - apply teq_forall with
-            (a' := a'0) (b' := b'); auto.
-    (* need helper lemma that
-        sub A (TVar B) t t' -> teq t t'
-    *)
-    Abort.
-
-    Lemma teq_dec : forall (t1 t2 : type),
-        teq t1 t2 \/ ~ teq t1 t2.
-    Proof.
-        induction t1; destruct t2.
-        - destruct (IdDec.eq_dec A A0) as [HA | HA]; subst.
-            + left. constructor.
-            + right. intros HT.
-                inv HT. contradiction.
-        - right. intros HT. inv HT.
-        - right. intros HT. inv HT.
-        - right. intros HT. inv HT.
-        - destruct (IHt1_1 t2_1) as [IH1 | IH1];
-            destruct (IHt1_2 t2_2) as [IH2 | IH2];
-            try (right; intros HT;
-                try apply IH1; try apply IH2;
-                inv HT; auto; constructor).
-            left. constructor; auto.
-        - right. intros HT. inv HT.
-        - right. intros HT. inv HT.
-        - right. intros HT. inv HT.
-        - pose proof sub_total 
-            A0 (TVar A) t2 as [t2' HS].
-            destruct (IHt1 t2') as [IH | IH].
-    Abort.
-
     (* Type-checking with well-formedness checking. *)
     Inductive check (d : delta) (g : gamma) : expr -> type -> Prop :=
         | check_var :
@@ -398,40 +342,6 @@ Module StaticSemantics.
             sub A u t t' ->
             check d g e (TForall A t) ->
             check d g (EInst e u) t'.
-
-    (* Type equality and checking *)
-    Theorem check_teq :
-        forall (U V : type),
-        teq U V ->
-        forall (e : expr),
-        check [] empty e U ->
-        check [] empty e V.
-    Proof.
-        intros U V H. induction H;
-        intros e HT; inv HT; auto;
-        try discriminate.
-    Abort.
-
-    (* This could've been another rule. *)
-    Axiom check_teq :
-        forall (U V : type),
-        teq U V ->
-        forall (e : expr),
-        check [] empty e U ->
-        check [] empty e V.
-
-    Lemma check_type_sub :
-        forall (U : id) (u t t' : type),
-        sub U u t t' ->
-        forall (e : expr) (d : delta) (g : gamma),
-        check (U :: d) g e t ->
-        check d g e t'.
-    Proof.
-        intros U u t t' HS e d g HT.
-        induction HT.
-        - constructor.
-    Abort.
-    
 End StaticSemantics.
 Module SS := StaticSemantics.
 
@@ -743,7 +653,7 @@ Module Preservation.
             intros d g e t H.
             induction H; intros U;
             try constructor; auto.
-            - apply SS.bind_delta; auto.
+            - apply SS.weaken_delta; auto.
             - apply SS.check_app with
                 (a := a) (c := c); auto.
             - pose proof IHcheck U as IH.
@@ -752,7 +662,7 @@ Module Preservation.
                 constructor.
             - pose proof IHcheck U as IH.
                 apply SS.check_inst with (A := A) (t := t); auto.
-                apply SS.bind_delta; auto.
+                apply SS.weaken_delta; auto.
         Qed.
 
         Lemma substitution_lemma :
@@ -795,6 +705,47 @@ Module Preservation.
                 apply IHHS with (a := a); auto.
         Qed.
 
+        (*
+            Substitution Lemmas from these notes:
+                http://www.cs.cmu.edu/~crary/814/hw4/hw4-handout.pdf
+        *)
+        Lemma type_sub_type :
+            forall (U : id) (u t t' : type),
+            SS.sub U u t t' ->
+            forall (d : SS.delta),
+            SS.WF (U :: d) t ->
+            SS.WF d u ->
+            SS.WF d t'.
+        Proof.
+            intros U u t t' HSS.
+            induction HSS;
+            intros d HWFt HWFu; inv HWFt; auto;
+            constructor; auto.
+            - assert (duh : A :: d = [A] ++ d);
+                try reflexivity.
+                rewrite duh in H1.
+                apply in_app_iff in H1 as [H1' | H1']; auto.
+                inv H1'; try contradiction.
+            - apply SS.contract_delta; auto.
+            - apply IHHSS.
+                + apply SS.delta_perm with
+                    (d := B :: A :: d); auto.
+                    constructor.
+                + apply SS.weaken_delta; auto.
+            - apply IHHSS2;
+                try apply IHHSS1.
+                    + apply SS.delta_perm with
+                        (d := C :: B :: A :: d);
+                        try apply SS.weaken_delta; auto.
+                        apply Permutation_trans
+                            with (l' := B :: C :: A :: d);
+                        repeat constructor.
+                    + apply SS.weaken_delta.
+                        repeat constructor.
+                    + apply SS.weaken_delta.
+                        assumption.
+        Qed.
+
         Lemma tsub_lemma :
             forall (U : id) (u : type) (e e' : expr),
             DS.tsub U u e e' ->
@@ -809,6 +760,17 @@ Module Preservation.
         Admitted.
     End SubstitutionLemmas.
 
+    (* 
+        This could've been part of the
+            definition of check. 
+    *)
+    Axiom check_teq :
+        forall (U V : type),
+        SS.teq U V ->
+        forall (e : expr),
+        SS.check [] SS.empty e U ->
+        SS.check [] SS.empty e V.
+
     Theorem preservation :
         forall (e e' : expr),
         DS.step e e' -> forall (t : type),
@@ -819,7 +781,7 @@ Module Preservation.
         induction HS; intros u HT; inv HT.
         - inv H3. apply substitution_lemma with
             (a := a) (b := u) (d := []) (g := SS.empty) in H; auto.
-            apply SS.check_teq with (U := c); auto.
+            apply check_teq with (U := c); auto.
             apply SS.teq_sym. assumption.
         - apply SS.check_app with (a := a) (c := c); auto.
         - inv H5. apply tsub_lemma with
