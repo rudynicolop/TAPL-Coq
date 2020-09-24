@@ -13,6 +13,8 @@ Require Coq.MSets.MSetFacts.
 Module MSF := Coq.MSets.MSetFacts.
 Require Import Coq.Program.Equality.
 Require Import Coq.Sorting.Permutation.
+Require Coq.MSets.MSetDecide.
+Module MSD := Coq.MSets.MSetDecide.
 
 (* 
     A Coq formalization of:
@@ -46,8 +48,10 @@ Module IdDec <: SE.DecidableType.
 End IdDec.
 
 (* variable sets *)
-Module IS := WS.Make(IdDec).
-Module ISF := MSF.WFactsOn(IdDec)(IS).
+Module IS := WS.Make IdDec.
+Module ISF := MSF.WFactsOn IdDec IS.
+Module ISD := MSD.WDecideOn IdDec IS.
+Module ISDA := ISD.MSetDecideAuxiliary.
 
 Section Syntax.
     Inductive type : Type :=
@@ -246,6 +250,23 @@ Module StaticSemantics.
         forall (A : id) (u t : type),
         exists (t' : type), sub A u t t'.
 
+    Lemma sub_eq :
+        forall (U : id) (t : type),
+        sub U (TVar U) t t.
+    Proof.
+        intros U t. induction t.
+        - destruct (IdDec.eq_dec U A) as [H | H]; subst.
+            + apply sub_var_hit.
+            + apply sub_var_miss; auto.
+        - constructor; auto.
+        - destruct (IdDec.eq_dec U A) as [H | H]; subst.
+            + apply sub_forall_bound.
+            + constructor; auto. simpl.
+                intros HI. apply H.
+                apply ISF.singleton_1 in HI.
+                assumption.
+    Qed.
+
     (* Type equivalence. *)
     Inductive teq : type -> type -> Prop :=
         | teq_eq :
@@ -257,10 +278,98 @@ Module StaticSemantics.
             teq b1 b2 ->
             teq (TFun a1 b1) (TFun a2 b2)
         | teq_forall :
-            forall (A B : id) (a b b' : type),
+            forall (A B : id) (a a' b b' : type),
             sub B (TVar A) b b' ->
             teq a b' ->
+            sub A (TVar B) a a' ->
+            teq a' b ->
             teq (TForall A a) (TForall B b).
+
+    (* Treating substitution like a procedure. *)
+    (* Axiom sub_deterministic :
+        forall (A : id) (a t t'1 t'2 : type),
+        sub A a t t'1 ->
+        sub A a t t'2 ->
+        teq t'1 t'2. *)
+
+    Lemma teq_sym :
+        forall (t1 t2 : type),
+        teq t1 t2 -> teq t2 t1.
+    Proof.
+        intros t1 t2 H. induction H;
+        try constructor; auto.
+        apply teq_forall with (a' := b') (b' := a'); auto.
+    Qed.
+
+    Lemma teq_sub_var :
+        forall (A B : id) (t t' : type),
+        ~ IS.In A (fvt t) ->
+        sub A (TVar B) t t' -> teq t t'.
+    Proof.
+        intros A B t t' HIn HS.
+        remember (TVar B) as b in HS.
+        dependent induction HS; subst; simpl in *.
+        - exfalso. apply HIn. constructor. reflexivity.
+        - constructor.
+        - constructor; try apply IHHS2;
+            try apply IHHS1; auto;
+            intros HI; apply HIn.
+            + apply ISF.union_2; auto.
+            + apply ISF.union_3; auto.
+        - constructor.
+        - apply teq_forall with
+            (a' := t) (b' := t'); auto;
+            try apply sub_eq;
+            apply IHHS; auto; intros HI;
+            apply HIn; apply ISF.remove_2; auto.
+        - apply ISF.singleton_1 in H2.
+            symmetry in H2. subst.
+            apply teq_forall with
+                (a' := t) (b' := t'').
+    Abort.
+
+    Lemma teq_trans :
+        forall (t1 t2 t3 : type),
+        teq t1 t2 -> teq t2 t3 -> teq t1 t3.
+    Proof.
+        intros t1 t2 t3 H12 H23.
+        generalize dependent t1.
+        induction H23;
+        intros t1 H12; inv H12;
+        try constructor; auto.
+        - apply teq_forall with
+            (a' := a') (b' := b'); auto.
+        - apply teq_forall with
+            (a' := a'0) (b' := b'); auto.
+    (* need helper lemma that
+        sub A (TVar B) t t' -> teq t t'
+    *)
+    Abort.
+
+    Lemma teq_dec : forall (t1 t2 : type),
+        teq t1 t2 \/ ~ teq t1 t2.
+    Proof.
+        induction t1; destruct t2.
+        - destruct (IdDec.eq_dec A A0) as [HA | HA]; subst.
+            + left. constructor.
+            + right. intros HT.
+                inv HT. contradiction.
+        - right. intros HT. inv HT.
+        - right. intros HT. inv HT.
+        - right. intros HT. inv HT.
+        - destruct (IHt1_1 t2_1) as [IH1 | IH1];
+            destruct (IHt1_2 t2_2) as [IH2 | IH2];
+            try (right; intros HT;
+                try apply IH1; try apply IH2;
+                inv HT; auto; constructor).
+            left. constructor; auto.
+        - right. intros HT. inv HT.
+        - right. intros HT. inv HT.
+        - right. intros HT. inv HT.
+        - pose proof sub_total 
+            A0 (TVar A) t2 as [t2' HS].
+            destruct (IHt1 t2') as [IH | IH].
+    Abort.
 
     (* Type-checking with well-formedness checking. *)
     Inductive check (d : delta) (g : gamma) : expr -> type -> Prop :=
@@ -289,6 +398,40 @@ Module StaticSemantics.
             sub A u t t' ->
             check d g e (TForall A t) ->
             check d g (EInst e u) t'.
+
+    (* Type equality and checking *)
+    Theorem check_teq :
+        forall (U V : type),
+        teq U V ->
+        forall (e : expr),
+        check [] empty e U ->
+        check [] empty e V.
+    Proof.
+        intros U V H. induction H;
+        intros e HT; inv HT; auto;
+        try discriminate.
+    Abort.
+
+    (* This could've been another rule. *)
+    Axiom check_teq :
+        forall (U V : type),
+        teq U V ->
+        forall (e : expr),
+        check [] empty e U ->
+        check [] empty e V.
+
+    Lemma check_type_sub :
+        forall (U : id) (u t t' : type),
+        sub U u t t' ->
+        forall (e : expr) (d : delta) (g : gamma),
+        check (U :: d) g e t ->
+        check d g e t'.
+    Proof.
+        intros U u t t' HS e d g HT.
+        induction HT.
+        - constructor.
+    Abort.
+    
 End StaticSemantics.
 Module SS := StaticSemantics.
 
@@ -651,6 +794,19 @@ Module Preservation.
                 (A := A) (t := t0); auto.
                 apply IHHS with (a := a); auto.
         Qed.
+
+        Lemma tsub_lemma :
+            forall (U : id) (u : type) (e e' : expr),
+            DS.tsub U u e e' ->
+            forall (t t' : type) (d : SS.delta) (g : SS.gamma),
+            SS.sub U u t t' ->
+            SS.check (U :: d) g e t ->
+            SS.check d g e' t'.
+        Proof.
+            intros U u e e' HTS.
+            induction HTS;
+            intros w w' d g HSS HT; inv HT.
+        Admitted.
     End SubstitutionLemmas.
 
     Theorem preservation :
@@ -662,13 +818,12 @@ Module Preservation.
         intros e e' HS.
         induction HS; intros u HT; inv HT.
         - inv H3. apply substitution_lemma with
-            (x := x) (es := es) (e := e) (a := a); auto.
-            admit.
-            (*
-                need helper lemma about
-                type-equality and checking
-            *)
-            
-            
-    Admitted.
+            (a := a) (b := u) (d := []) (g := SS.empty) in H; auto.
+            apply SS.check_teq with (U := c); auto.
+            apply SS.teq_sym. assumption.
+        - apply SS.check_app with (a := a) (c := c); auto.
+        - inv H5. apply tsub_lemma with
+            (U := A0) (u := t) (e := e) (t := t0); auto.
+        - apply SS.check_inst with (A := A) (t := t0); auto.
+    Qed.
 End Preservation.
