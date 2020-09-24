@@ -406,42 +406,42 @@ Module DynamicSemantics.
 End DynamicSemantics.
 Module DS := DynamicSemantics.
 
-Module CanonicalForms.
-    Definition canon_fun (v : expr) : Prop := 
-        value v -> 
-        forall (a b : type),
-        SS.check [] SS.empty v (TFun a b) -> 
-        exists (x : id) (t : type) (e : expr), 
-        SS.teq a t /\ v = EFun x t e.
-    
-    Definition canon_forall (v : expr) : Prop :=
-        value v ->
-        forall (A : id) (t : type),
-        SS.check [] SS.empty v (TForall A t) ->
-        exists (B : id) (e : expr),
-        SS.teq (TForall A t) (TForall B t) /\ v = EForall B e.
-
-    Lemma canonical_forms_fun :
-        forall (v : expr), canon_fun v.
-    Proof.
-        intros v HV a b HT.
-        dependent induction HT; inv HV.
-        exists x. exists a. exists e.
-        repeat constructor.
-    Qed.
-
-    Lemma canonical_forms_forall :
-        forall (v : expr), canon_forall v.
-    Proof.
-        intros v HV A t HT.
-        dependent induction HT; inv HV.
-        exists A. exists e.
-        repeat constructor.
-    Qed.   
-End CanonicalForms.
-Module CF := CanonicalForms.
-
 Module Progress.
+    Module CanonicalForms.
+        Definition canon_fun (v : expr) : Prop := 
+            value v -> 
+            forall (a b : type),
+            SS.check [] SS.empty v (TFun a b) -> 
+            exists (x : id) (t : type) (e : expr), 
+            SS.teq a t /\ v = EFun x t e.
+        
+        Definition canon_forall (v : expr) : Prop :=
+            value v ->
+            forall (A : id) (t : type),
+            SS.check [] SS.empty v (TForall A t) ->
+            exists (B : id) (e : expr),
+            SS.teq (TForall A t) (TForall B t) /\ v = EForall B e.
+
+        Lemma canonical_forms_fun :
+            forall (v : expr), canon_fun v.
+        Proof.
+            intros v HV a b HT.
+            dependent induction HT; inv HV.
+            exists x. exists a. exists e.
+            repeat constructor.
+        Qed.
+
+        Lemma canonical_forms_forall :
+            forall (v : expr), canon_forall v.
+        Proof.
+            intros v HV A t HT.
+            dependent induction HT; inv HV.
+            exists A. exists e.
+            repeat constructor.
+        Qed.   
+    End CanonicalForms.
+    Module CF := CanonicalForms.
+
     Theorem progress_thm : 
         forall (e : expr) (t : type),
         SS.check [] SS.empty e t ->
@@ -484,3 +484,62 @@ Module Progress.
                 constructor; auto.
     Qed.
 End Progress.
+
+Module Preservation.
+    Section SubstitutionLemmas.
+        Lemma bind_unfree_var :
+            forall (e : expr) (x : id) (a b : type) 
+                (d : SS.delta) (g : SS.gamma),
+            ~ IS.In x (fve e) ->
+            SS.check d g e a <-> SS.check d (SS.bind x b g) e a.
+        Proof.
+            intros e z a b d g HIn.
+            split; intros HT;
+            dependent induction HT; simpl in *.
+            - constructor. assert (Hxz : x <> z).
+                + intros Hxz. apply HIn.
+                    subst. constructor; auto.
+                + apply SS.bind_complete; auto.
+            - constructor; auto.
+                destruct (IdDec.eq_dec x z)
+                    as [Hxz | Hxz]; subst.
+                    + rewrite <- SS.rebind_correct; auto.
+                    + rewrite SS.bind_diff_comm;
+                        auto. apply IHHT.
+                        intros Hzf. apply HIn.
+                        apply ISF.remove_2; auto.
+            - apply SS.check_app with (a := a) (c := c); auto.
+                + apply IHHT1. intros HI.
+                    apply HIn. apply ISF.union_2; auto.
+                + apply IHHT2. intros HI.
+                    apply HIn. apply ISF.union_3; auto.
+            - constructor; auto.
+            - apply SS.check_inst with (A := A) (t := t); auto.
+            - assert (Hxz : x <> z).
+                + intros Hxz. apply HIn; subst.
+                    constructor; auto.
+                + constructor.
+                    apply SS.bind_complete in H; auto.
+            - constructor; auto.
+                destruct (IdDec.eq_dec x z)
+                    as [Hxz | Hxz]; subst.
+                    + rewrite <- SS.rebind_correct
+                        in HT. auto.
+                    + apply IHHT with (z0 := z) (b0 := b).
+                        * intros HI. apply HIn.
+                            apply ISF.remove_2; auto.
+                        * rewrite SS.bind_diff_comm; auto.
+            - apply SS.check_app with (a := a) (c := c); auto.
+                + apply IHHT1 with (z0 := z) (b1 := b); auto.
+                    intros HI. apply HIn.
+                    apply ISF.union_2; auto.
+                + apply IHHT2 with (z0 := z) (b0 := b); auto.
+                    intros HI. apply HIn.
+                    apply ISF.union_3; auto.
+            - constructor. apply IHHT with
+                (z0 := z) (b0 := b); auto.
+            - apply SS.check_inst with (A := A) (t := t); auto.
+                apply IHHT with (z0 := z) (b0 := b); auto.
+        Qed.   
+    End SubstitutionLemmas.
+End Preservation.
