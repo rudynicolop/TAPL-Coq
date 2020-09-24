@@ -12,6 +12,7 @@ Module WS := Coq.MSets.MSetWeakList.
 Require Coq.MSets.MSetFacts.
 Module MSF := Coq.MSets.MSetFacts.
 Require Import Coq.Program.Equality.
+Require Import Coq.Sorting.Permutation.
 
 (* 
     A Coq formalization of:
@@ -122,6 +123,36 @@ Module StaticSemantics.
                 forall (A : id) (t : type),
                 WF (A :: d) t ->
                 WF d (TForall A t).
+
+        Lemma delta_perm :
+            forall (d : delta) (t : type),
+            WF d t ->
+            forall (d' : delta),
+            Permutation d d' ->
+            WF d' t.
+        Proof.
+            intros d t HW.
+            induction HW; intros d' HP;
+            constructor; auto.
+            apply Permutation_in with (l := d); auto.
+        Qed.
+
+        Lemma bind_delta :
+            forall (d : delta) (t : type),
+            WF d t ->
+            forall (A : id),
+            WF (A :: d) t.
+        Proof.
+            intros d t HW.
+            induction HW; intros U;
+            constructor; auto.
+            - apply in_cons. assumption.
+            - pose proof IHHW U as IH.
+                apply delta_perm with
+                    (d := U :: A :: d); auto.
+                constructor.
+        Qed.
+
     End WellFormedness.
 
     Section Gamma.
@@ -153,7 +184,7 @@ Module StaticSemantics.
 
         Lemma rebind_correct : 
             forall (x : id) (t t' : type) (g : gamma),
-            bind x t g = bind x t (bind x t' g).
+            bind x t (bind x t' g) = bind x t g.
         Proof.
             intros. apply functional_extensionality. intros y.
             unfold bind. destruct ((x =? y)%string); reflexivity.
@@ -388,9 +419,9 @@ Module DynamicSemantics.
     (* Lazy-evaluation. *)
     Inductive step : expr -> expr -> Prop :=
         | step_redux :
-            forall (x : id) (t : type) (e e' e'' : expr),
-            sub x e e' e'' ->
-            step (EApp (EFun x t e) e') e''
+            forall (x : id) (t : type) (e e' es : expr),
+            sub x es e e' ->
+            step (EApp (EFun x t e) es) e'
         | step_app :
             forall (e1 e2 e1' : expr),
             step e1 e1' ->
@@ -464,9 +495,9 @@ Module Progress.
                 CF.canonical_forms_fun
                     e1 H1 a b HT1
                 as [x [t [e [Hteq Hfun]]]]; subst.
-                pose proof DS.sub_total x e e2
-                    as [e2' HSub].
-                exists e2'. constructor; auto.
+                pose proof DS.sub_total x e2 e
+                    as [e' HSub].
+                exists e'. constructor; auto.
             + destruct H1 as [e1' Hstep].
                 exists (EApp e1' e2).
                 constructor; auto.
@@ -503,7 +534,7 @@ Module Preservation.
             - constructor; auto.
                 destruct (IdDec.eq_dec x z)
                     as [Hxz | Hxz]; subst.
-                    + rewrite <- SS.rebind_correct; auto.
+                    + rewrite SS.rebind_correct; auto.
                     + rewrite SS.bind_diff_comm;
                         auto. apply IHHT.
                         intros Hzf. apply HIn.
@@ -523,7 +554,7 @@ Module Preservation.
             - constructor; auto.
                 destruct (IdDec.eq_dec x z)
                     as [Hxz | Hxz]; subst.
-                    + rewrite <- SS.rebind_correct
+                    + rewrite SS.rebind_correct
                         in HT. auto.
                     + apply IHHT with (z0 := z) (b0 := b).
                         * intros HI. apply HIn.
@@ -540,6 +571,104 @@ Module Preservation.
                 (z0 := z) (b0 := b); auto.
             - apply SS.check_inst with (A := A) (t := t); auto.
                 apply IHHT with (z0 := z) (b0 := b); auto.
-        Qed.   
+        Qed.
+
+        Lemma delta_perm :
+            forall (d : SS.delta) (g : SS.gamma)
+                (e : expr) (t : type),
+            SS.check d g e t ->
+            forall (d' : SS.delta),
+            Permutation d d' ->
+            SS.check d' g e t.
+        Proof.
+            intros d g e t HT.
+            induction HT; intros d' HP;
+            try constructor; auto.
+            - apply SS.delta_perm with (d := d); auto.
+            - apply SS.check_app with (a := a) (c := c); auto.
+            - apply SS.check_inst with (A := A) (t := t); auto.
+                apply SS.delta_perm with (d := d); auto.
+        Qed.
+
+        Lemma bind_delta :
+            forall (d : SS.delta) (g : SS.gamma)
+                (e : expr) (t : type),
+            SS.check d g e t ->
+            forall (A : id),
+            SS.check (A :: d) g e t.
+        Proof.
+            intros d g e t H.
+            induction H; intros U;
+            try constructor; auto.
+            - apply SS.bind_delta; auto.
+            - apply SS.check_app with
+                (a := a) (c := c); auto.
+            - pose proof IHcheck U as IH.
+                apply delta_perm with 
+                    (d := U :: A :: d); auto.
+                constructor.
+            - pose proof IHcheck U as IH.
+                apply SS.check_inst with (A := A) (t := t); auto.
+                apply SS.bind_delta; auto.
+        Qed.
+
+        Lemma substitution_lemma :
+            forall (x : id) (es e e' : expr),
+            DS.sub x es e e' ->
+            forall (a b : type) (d : SS.delta) (g : SS.gamma),
+            SS.check d (SS.bind x a g) e b -> 
+            SS.check d g es a -> 
+            SS.check d g e' b.
+        Proof.
+            intros x es e e' HS.
+            induction HS;
+            intros a b d g HTB HTS; inv HTB.
+            - rewrite SS.bind_correct in H0.
+                injintrosubst H0; auto.
+            - constructor. rewrite 
+                <- SS.bind_complete in H1; auto.
+            - apply SS.check_app with (a := a0) (c := c); auto.
+                + apply IHHS1 with (a := a); auto.
+                + apply IHHS2 with (a := a); auto.
+            - constructor; auto.
+                rewrite SS.rebind_correct in H4; auto.
+            - constructor; auto. rewrite <-
+                SS.bind_diff_comm in H6; auto.
+                apply IHHS in H6; auto.
+                apply bind_unfree_var; auto.
+            - constructor; auto.
+                apply IHHS2 with (a := a).
+                + rewrite SS.bind_diff_comm; auto.
+                    apply IHHS1 with (a := t).
+                    * rewrite SS.bind_diff_comm; auto.
+                        apply bind_unfree_var; auto.
+                    * constructor. apply SS.bind_correct.
+                + apply bind_unfree_var; auto.
+            - constructor.
+                apply IHHS with (a := a); auto.
+                apply bind_delta; auto.
+            - apply SS.check_inst with
+                (A := A) (t := t0); auto.
+                apply IHHS with (a := a); auto.
+        Qed.
     End SubstitutionLemmas.
+
+    Theorem preservation :
+        forall (e e' : expr),
+        DS.step e e' -> forall (t : type),
+        SS.check [] SS.empty e t -> 
+        SS.check [] SS.empty e' t.
+    Proof.
+        intros e e' HS.
+        induction HS; intros u HT; inv HT.
+        - inv H3. apply substitution_lemma with
+            (x := x) (es := es) (e := e) (a := a); auto.
+            admit.
+            (*
+                need helper lemma about
+                type-equality and checking
+            *)
+            
+            
+    Admitted.
 End Preservation.
