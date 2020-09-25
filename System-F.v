@@ -487,6 +487,17 @@ Module DynamicSemantics.
             forall (e e' : expr) (t : type),
             step e e' ->
             step (EInst e t) (EInst e' t).
+
+    (* Multi-step: *)
+    Inductive mstep : expr -> expr -> Prop :=
+        | mstep_refl :
+            forall (e : expr),
+            mstep e e
+        | mstep_trans :
+            forall (e e' e'' : expr),
+            step e e' ->
+            mstep e' e'' ->
+            mstep e e''.
 End DynamicSemantics.
 Module DS := DynamicSemantics.
 
@@ -833,3 +844,102 @@ Module Preservation.
         - apply SS.check_inst with (A := A) (t := t0); auto.
     Qed.
 End Preservation.
+
+Module ChurchEncodings.
+    Module Booleans.
+        Definition X : type := TVar "X".
+        
+        Definition BOOL : type := TForall "X" (TFun X (TFun X X)). 
+        
+        Definition TRUE : expr := 
+            EForall "X" (EFun "a" X (EFun "b" X (EVar "a"))).
+
+        Definition FALSE : expr := 
+            EForall "X" (EFun "a" X (EFun "b" X (EVar "b"))).
+
+        Example true_bool :
+            SS.check [] SS.empty TRUE BOOL.
+        Proof. repeat constructor. Qed.
+
+        Example false_bool :
+            SS.check [] SS.empty FALSE BOOL.
+        Proof. repeat constructor. Qed.
+
+        Definition COND : expr :=
+            EForall "X"
+                (EFun "b" BOOL
+                    (EFun "then" X
+                        (EFun "else" X
+                            (EApp
+                                (EApp
+                                    (EInst (EVar "b") X)
+                                    (EVar "then"))
+                                (EVar "else"))))).
+
+        Example COND_check :
+            SS.check [] SS.empty COND
+                (TForall "X" (TFun BOOL (TFun X (TFun X X)))).
+        Proof.
+            repeat constructor.
+            apply SS.check_app with
+                (a := X) (c := X);
+            repeat constructor.
+            apply SS.check_app with
+                (a := X) (c := X);
+            repeat constructor.
+            apply SS.check_inst with
+                (A := "X") (t := TFun X (TFun X X));
+            repeat constructor.
+        Qed.
+
+        Example COND_true :
+            forall (t : type) (e1 e2 : expr),
+            DS.mstep
+                (EApp 
+                    (EApp
+                        (EApp
+                            (EInst COND t) TRUE) e1)
+                            e2)
+                e1.
+        Proof.
+            intros t e1 e2.
+            pose proof DS.tsub_total "X" t 
+                (EFun "b" BOOL
+                (EFun "then" X
+                    (EFun "else" X
+                        (EApp
+                            (EApp
+                                (EInst (EVar "b") X)
+                                (EVar "then"))
+                            (EVar "else"))))) as [e' HTS].
+            inv HTS.
+            inv H4.
+        Admitted.
+
+        Definition NOT : expr :=
+            EFun "bool" BOOL
+                (EForall "X"
+                    (EFun "a" X
+                        (EFun "b" X
+                            (EApp 
+                                (EApp 
+                                    (EInst (EVar "bool") X)
+                                    (EVar "b"))
+                                (EVar "a"))))).
+
+        Example NOT_check :
+            SS.check [] SS.empty NOT (TFun BOOL BOOL).
+        Proof.
+            repeat constructor.
+            apply SS.check_app with
+                (a := X) (c := X);
+            repeat constructor.
+            apply SS.check_app with
+                (a := X) (c := X);
+            repeat constructor.
+            apply SS.check_inst with
+                (A := "X") (t := TFun X (TFun X X));
+            repeat constructor.
+        Qed.
+    End Booleans.
+End ChurchEncodings.
