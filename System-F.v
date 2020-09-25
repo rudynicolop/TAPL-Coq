@@ -867,6 +867,7 @@ Module ChurchEncodings.
             SS.check d g FALSE BOOL.
         Proof. repeat constructor. Qed.
 
+        (* COND b t f = if b then t else f *)
         Definition COND : expr :=
             EForall "X"
                 (EFun "b" BOOL
@@ -895,6 +896,7 @@ Module ChurchEncodings.
             repeat constructor.
         Qed.
 
+        (* NOT b = !b *)
         Definition NOT : expr :=
             EFun "bool" BOOL
                 (EForall "X"
@@ -940,6 +942,7 @@ Module ChurchEncodings.
             SS.check d g ZERO NAT.
         Proof. repeat constructor. Qed.
 
+        (* SUCC n = n + 1 *)
         Definition SUCC : expr := 
             EFun "n" NAT
                 (EForall "X"
@@ -972,6 +975,7 @@ Module ChurchEncodings.
             repeat constructor.
         Qed.
         
+        (* ADD n m = n + m *)
         Definition ADD : expr := 
             EFun "n" NAT
                 (EFun "m" NAT
@@ -982,7 +986,8 @@ Module ChurchEncodings.
                         (EVar "m"))).
 
         Example ADD_check :
-            SS.check [] SS.empty ADD (TFun NAT (TFun NAT NAT)).
+            forall (d : SS.delta) (g : SS.gamma),
+            SS.check d g ADD (TFun NAT (TFun NAT NAT)).
         Proof.
             repeat constructor.
             apply SS.check_app with
@@ -995,6 +1000,72 @@ Module ChurchEncodings.
             apply SS.check_inst with (A := "X")
             (t := TFun (TFun X X) (TFun X X));
             repeat constructor.
+        Qed.
+
+        (* MUL n m = n * m *)
+        Definition MUL : expr :=
+            EFun "n" NAT
+                (EFun "m" NAT
+                    (EApp 
+                        (EApp 
+                            (EInst (EVar "n") NAT)
+                            (EApp ADD (EVar "m")))
+                    ZERO)).
+
+        Example MUL_check :
+            forall (d : SS.delta) (g : SS.gamma),
+            SS.check d g MUL (TFun NAT (TFun NAT NAT)).
+        Proof.
+            repeat constructor.
+            apply SS.check_app with
+                (a := NAT) (c := NAT);
+            repeat constructor.
+            apply SS.check_app with
+                (a := TFun NAT NAT) (c := TFun NAT NAT);
+            repeat constructor.
+            - apply SS.check_inst with
+                (A := "X") (t := TFun (TFun X X) (TFun X X));
+                repeat constructor.
+            - apply SS.check_app with
+                (a := NAT) (c := NAT);
+                try apply ADD_check;
+                try apply zero_nat;
+                repeat constructor.
+        Qed.
+
+        (* EXP m n = m^n *)
+        Definition EXP : expr :=
+            EFun "m" NAT
+                (EFun "n" NAT
+                    (EApp 
+                        (EApp 
+                            (EInst (EVar "n") NAT)
+                            (EApp MUL (EVar "m")))
+                    (EApp SUCC ZERO))).
+
+        Example EXP_check :
+            forall (d : SS.delta) (g : SS.gamma),
+            SS.check d g EXP (TFun NAT (TFun NAT NAT)).
+        Proof.
+            repeat constructor.
+            apply SS.check_app with
+                (a := NAT) (c := NAT);
+            repeat constructor.
+            - apply SS.check_app with
+                (a := TFun NAT NAT) (c := TFun NAT NAT);
+                try constructor.
+                + apply SS.check_inst with
+                    (A := "X") (t := TFun (TFun X X) (TFun X X));
+                    repeat constructor.
+                + apply SS.check_app with 
+                    (a := NAT) (c := NAT);
+                    try apply MUL_check;
+                    repeat constructor.
+            - apply SS.check_app with 
+                (a := NAT) (c := NAT);
+                try apply SUCC_check;
+                try apply zero_nat;
+                constructor.
         Qed.
     End NaturalNumbers.
 End ChurchEncodings.
