@@ -53,6 +53,10 @@ Module ISF := MSF.WFactsOn IdDec IS.
 Module ISD := MSD.WDecideOn IdDec IS.
 Module ISDA := ISD.MSetDecideAuxiliary.
 
+Axiom exists_not_in :
+    forall (S : IS.t),
+    exists (X : id), ~ IS.In X S.
+
 Section Syntax.
     Inductive type : Type :=
         | TVar (A : id)
@@ -262,7 +266,9 @@ Module StaticSemantics.
             sub A u t' t'' ->
             sub A u (TForall B t) (TForall C t'').
 
-
+    Axiom sub_total :
+        forall (U : id) (u t : type),
+        exists (t' : type), sub U u t t'.
 
     Lemma sub_eq :
         forall (U : id) (t : type),
@@ -927,7 +933,6 @@ Module ChurchEncodings.
 
     Module NaturalNumbers.
         Definition X : type := TVar "X".
-        Definition R : type := TVar "R".
 
         Definition NAT : type := TForall "X" (TFun (TFun X X) (TFun X X)).
         
@@ -1068,4 +1073,173 @@ Module ChurchEncodings.
                 constructor.
         Qed.
     End NaturalNumbers.
+
+    Module Pairs.
+        Definition X : type := TVar "X".
+        Definition Y : type := TVar "Y".
+        Definition R : type := TVar "R".
+
+        (*
+            PROD A B = A * B.
+            System F has no type constructors,
+            i.e. no type-level functions, so
+            I need Coq's type-constructors.
+        *)
+        Definition PROD (A B : type) : type := 
+            TForall "R"
+                (TFun
+                    (TFun A (TFun B R))
+                R).
+                            
+        Definition PAIR : expr := 
+            EForall "X"
+                (EForall "Y"
+                    (EFun "x" X
+                        (EFun "y" Y
+                            (EForall "R"
+                                (EFun "continuation"
+                                    (TFun X (TFun Y R))
+                                (EApp 
+                                    (EApp
+                                        (EVar "continuation")
+                                        (EVar "x"))
+                                    (EVar "y"))))))).
+
+        Example pair_check :
+            forall (d : SS.delta) (g : SS.gamma),
+            SS.check d g PAIR
+                (TForall "X"
+                    (TForall "Y" 
+                        (TFun X (TFun Y (PROD X Y))))).
+        Proof.
+            intros d g.
+            constructor. constructor.
+            constructor.
+            - constructor. apply in_cons.
+                repeat constructor. 
+            - constructor.
+                + repeat constructor.
+                + constructor. constructor.
+                    { constructor. constructor.
+                        - apply in_cons. apply in_cons.
+                            repeat constructor.
+                        - constructor; constructor.
+                            + apply in_cons.
+                                repeat constructor.
+                            + repeat constructor. }
+                    { apply SS.check_app with
+                        (a := Y) (c := Y);
+                        repeat constructor.
+                        apply SS.check_app with
+                            (a := X) (c := X);
+                        repeat constructor. }
+        Qed.
+
+        Ltac dispatch_union HUNION :=
+            repeat split; intros HFALSE; apply HUNION; subst;
+                try (apply ISF.union_2;
+                    apply ISF.union_2;
+                    apply ISF.singleton_2;
+                    reflexivity);
+                try (apply ISF.union_2;
+                    apply ISF.union_3;
+                    apply ISF.singleton_2;
+                    reflexivity);
+                try (apply ISF.union_3;
+                    apply ISF.union_2;
+                    assumption);
+                try (apply ISF.union_3;
+                    apply ISF.union_3;
+                    assumption).
+
+        Example pair_prod :
+            forall (d : SS.delta) (g : SS.gamma)
+            (e1 e2 : expr) (A B : type),
+            SS.WF d A ->
+            SS.WF d B ->
+            SS.check d g e1 A ->
+            SS.check d g e2 B ->
+            SS.check d g
+                (EApp
+                    (EApp
+                        (EInst (EInst PAIR A) B)
+                        e1) 
+                e2)  
+                (PROD A B).
+            Proof.
+                intros d g e1 e2 A B WA WB HA HB.
+                apply SS.check_app with
+                    (a := B) (c := B);
+                repeat constructor; auto.
+                apply SS.check_app with
+                    (a := A) (c := A);
+                repeat constructor; auto.
+                apply SS.check_inst with 
+                    (A := "Y") (t := TFun A
+                        (TFun Y (PROD A Y))); auto.
+                - admit. 
+                    (* next case has a similarly (obnoxious)
+                        sub-case as this...not worth it. *)
+                - apply SS.check_inst with
+                    (A := "X") (t := TForall "Y"
+                        (TFun X (TFun Y (PROD X Y)))); auto;
+                    try apply pair_check.
+                    destruct (ISDA.dec_In "Y" (fvt A)) as [HY | HY].
+                    { pose proof exists_not_in
+                        (IS.union 
+                            (IS.union
+                                (IS.singleton "X")
+                                (IS.singleton "Y")) 
+                            (IS.union (fvt A) 
+                                (fvt (TFun X (TFun Y (PROD X Y))))))
+                        as [Z HIn].
+                        assert (HBIG : "X" <> Z /\
+                            "Y" <> Z /\
+                            ~ IS.In Z (fvt A) /\
+                            ~ IS.In Z (fvt (TFun X (TFun Y (PROD X Y)))));
+                        try dispatch_union HIn.
+                        destruct HBIG as [Hxz [Hyz [HFA HFT]]].
+                        pose proof SS.sub_total "Y" (TVar Z)
+                            (TFun X (TFun Y (PROD X Y)))
+                            as [t' Ht']. 
+                        (* too many sub-cases...not worth it... *)
+                        admit. }
+                    { apply SS.sub_forall_notfree; auto;
+                        try (intros Hxy; discriminate).
+                        constructor; constructor;
+                        try (apply SS.sub_var_miss;
+                            intros Hxy; discriminate).
+                        unfold PROD.
+                        destruct (ISDA.dec_In "R" (fvt A)) as [HR | HR].
+                        + pose proof exists_not_in
+                            (IS.union 
+                                (IS.union
+                                    (IS.singleton "X")
+                                    (IS.singleton "R")) 
+                                (IS.union (fvt A) 
+                                    (fvt (TFun (TFun X (TFun Y R)) R))))
+                            as [Z HIn].
+                            assert (HBIG : "X" <> Z /\
+                                "R" <> Z /\
+                                ~ IS.In Z (fvt A) /\
+                                ~ IS.In Z (fvt (TFun (TFun X (TFun Y R)) R)));
+                            try dispatch_union HIn.
+                            destruct HBIG as
+                                [Hxz [Hrz [HFA HFT]]].
+                            pose proof SS.sub_total "R" (TVar Z)
+                                (TFun (TFun X (TFun Y R)) R) as [t' Ht'].
+                            inv Ht'. inv H1. inv H5.
+                            inv H3; try contradiction.
+                            inv H2. inv H4. inv H7;
+                            try contradiction.
+                            apply SS.sub_forall_free with
+                                (t' := TFun (TFun (TVar "X")
+                                    (TFun (TVar "Y") (TVar Z))) (TVar Z));
+                            repeat constructor; auto. 
+                            (* 
+                                this is futile...would need another
+                                axiom for substitution and typeequality.
+                            *) }       
+            Admitted.    
+    End Pairs.
 End ChurchEncodings.
