@@ -752,6 +752,11 @@ Module Preservation.
             forall (x : id),
             g x = Some t -> g' x = Some t'.
 
+        Remark sub_gamma_empty :
+            forall (U : id) (u : type),
+            sub_gamma U u SS.empty SS.empty.
+        Proof. intros U u T T' _ x HES. inv HES. Qed.
+
         Lemma tsub_gamma_lemma :
             forall (U : id) (u : type) (e e' : expr),
             DS.tsub U u e e' ->
@@ -771,19 +776,29 @@ Module Preservation.
             intros w w' HSS d HWF HT; inv HT.
             - constructor. apply HSG with (t := w); auto.
             - inv HSS. admit.
-        Admitted.
-            
-        Lemma tsub_lemma :
-            forall (U : id) (u : type) (e e' : expr),
-            DS.tsub U u e e' ->
-            forall (t t' : type) (d : SS.delta) (g : SS.gamma),
-            SS.sub U u t t' ->
-            SS.check (U :: d) g e t ->
-            SS.check d g e' t'.
-        Proof.
-            intros U u e e' HTS.
-            induction HTS;
-            intros w w' d g HSS HT; inv HT.
+            - apply SS.check_app with (a := a) (c := c); auto.
+                + apply IHHDS1 with (g := g) (t := TFun a w); auto.
+                    constructor; auto.
+                    admit.
+                + apply IHHDS2 with (g := g) (t := c); auto.
+                    admit.
+            - apply SS.check_inst with
+                (A := A0) (t := t').
+                + apply type_sub_type with
+                    (U := A) (u := u) (t := t); auto.
+                + admit.
+                + apply IHHDS with
+                    (g := g) (t := TForall A0 t0); auto.
+                    admit.
+            - inv HSS; try contradiction.
+                constructor. admit.
+            - inv HSS; try contradiction.
+                constructor. apply IHHDS with
+                    (g := g) (t := t); auto.
+                    + apply SS.weaken_delta; auto.
+                    + admit.
+            - inv HSS; try contradiction.
+                admit.
         Admitted.
     End SubstitutionLemmas.
 
@@ -811,8 +826,10 @@ Module Preservation.
             apply check_teq with (U := c); auto.
             apply SS.teq_sym. assumption.
         - apply SS.check_app with (a := a) (c := c); auto.
-        - inv H5. apply tsub_lemma with
-            (U := A0) (u := t) (e := e) (t := t0); auto.
+        - inv H5. apply tsub_gamma_lemma with
+            (g := SS.empty) (U := A0)
+                (u := t) (e := e) (t := t0); auto.
+            apply sub_gamma_empty.
         - apply SS.check_inst with (A := A) (t := t0); auto.
     Qed.
 End Preservation.
