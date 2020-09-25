@@ -858,11 +858,13 @@ Module ChurchEncodings.
             EForall "X" (EFun "a" X (EFun "b" X (EVar "b"))).
 
         Example true_bool :
-            SS.check [] SS.empty TRUE BOOL.
+            forall (d : SS.delta) (g : SS.gamma),
+            SS.check d g TRUE BOOL.
         Proof. repeat constructor. Qed.
 
         Example false_bool :
-            SS.check [] SS.empty FALSE BOOL.
+            forall (d : SS.delta) (g : SS.gamma),
+            SS.check d g FALSE BOOL.
         Proof. repeat constructor. Qed.
 
         Definition COND : expr :=
@@ -877,7 +879,8 @@ Module ChurchEncodings.
                                 (EVar "else"))))).
 
         Example COND_check :
-            SS.check [] SS.empty COND
+            forall (d : SS.delta) (g : SS.gamma),
+            SS.check d g COND
                 (TForall "X" (TFun BOOL (TFun X (TFun X X)))).
         Proof.
             repeat constructor.
@@ -892,30 +895,6 @@ Module ChurchEncodings.
             repeat constructor.
         Qed.
 
-        Example COND_true :
-            forall (t : type) (e1 e2 : expr),
-            DS.mstep
-                (EApp 
-                    (EApp
-                        (EApp
-                            (EInst COND t) TRUE) e1)
-                            e2)
-                e1.
-        Proof.
-            intros t e1 e2.
-            pose proof DS.tsub_total "X" t 
-                (EFun "b" BOOL
-                (EFun "then" X
-                    (EFun "else" X
-                        (EApp
-                            (EApp
-                                (EInst (EVar "b") X)
-                                (EVar "then"))
-                            (EVar "else"))))) as [e' HTS].
-            inv HTS.
-            inv H4.
-        Admitted.
-
         Definition NOT : expr :=
             EFun "bool" BOOL
                 (EForall "X"
@@ -928,7 +907,8 @@ Module ChurchEncodings.
                                 (EVar "a"))))).
 
         Example NOT_check :
-            SS.check [] SS.empty NOT (TFun BOOL BOOL).
+            forall (d : SS.delta) (g : SS.gamma),
+            SS.check d g NOT (TFun BOOL BOOL).
         Proof.
             repeat constructor.
             apply SS.check_app with
@@ -942,4 +922,79 @@ Module ChurchEncodings.
             repeat constructor.
         Qed.
     End Booleans.
+
+    Module NaturalNumbers.
+        Definition X : type := TVar "X".
+        Definition R : type := TVar "R".
+
+        Definition NAT : type := TForall "X" (TFun (TFun X X) (TFun X X)).
+        
+        Definition ZERO : expr := 
+            EForall "X"
+                (EFun "f" (TFun X X)
+                    (EFun "z" X
+                        (EVar "z"))).
+
+        Example zero_nat :
+            forall (d : SS.delta) (g : SS.gamma),
+            SS.check d g ZERO NAT.
+        Proof. repeat constructor. Qed.
+
+        Definition SUCC : expr := 
+            EFun "n" NAT
+                (EForall "X"
+                    (EFun "f" (TFun X X)
+                        (EFun "z" X
+                            (EApp 
+                                (EVar "f")
+                                (EApp
+                                    (EApp
+                                        (EInst (EVar "n") X)
+                                        (EVar "f"))
+                                    (EVar "z")))))).
+
+        Example SUCC_check :
+            forall (d : SS.delta) (g : SS.gamma),
+            SS.check d g SUCC (TFun NAT NAT).
+        Proof.
+            repeat constructor.
+            apply SS.check_app with
+                (a := X) (c := X);
+            repeat constructor.
+            apply SS.check_app with
+                (a := X) (c := X);
+            repeat constructor.
+            apply SS.check_app with
+                (a := TFun X X) (c := TFun X X);
+            repeat constructor.
+            apply SS.check_inst with
+                 (A := "X") (t := TFun (TFun X X) (TFun X X));
+            repeat constructor.
+        Qed.
+        
+        Definition ADD : expr := 
+            EFun "n" NAT
+                (EFun "m" NAT
+                    (EApp 
+                        (EApp 
+                            (EInst (EVar "n") NAT)
+                            SUCC)
+                        (EVar "m"))).
+
+        Example ADD_check :
+            SS.check [] SS.empty ADD (TFun NAT (TFun NAT NAT)).
+        Proof.
+            repeat constructor.
+            apply SS.check_app with
+                (a := NAT) (c := NAT);
+            repeat constructor.
+            apply SS.check_app with
+                (a := TFun NAT NAT) (c := TFun NAT NAT);
+            try apply SUCC_check;
+            repeat constructor.
+            apply SS.check_inst with (A := "X")
+            (t := TFun (TFun X X) (TFun X X));
+            repeat constructor.
+        Qed.
+    End NaturalNumbers.
 End ChurchEncodings.
