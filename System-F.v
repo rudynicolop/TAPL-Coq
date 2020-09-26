@@ -355,128 +355,104 @@ Module Univerals.
     Module DynamicSemantics.
         Export Syntax.
 
-        (* 
-            Capture-avoiding substitution:
-                sub x es e e': e{es/x} = e'
-        *)
-        Inductive sub (x : id) (es : expr) : expr -> expr -> Prop :=
-            | sub_var_hit :
-                sub x es (EVar x) es
-            | sub_var_miss :
-                forall (y : id),
-                x <> y ->
-                sub x es (EVar y) (EVar y)
-            | sub_app :
-                forall (e1 e2 e1' e2' : expr),
-                sub x es e1 e1' ->
-                sub x es e2 e2' ->
-                sub x es (EApp e1 e2) (EApp e1' e2')
-            | sub_fun_bound :
-                forall (t : type) (e : expr),
-                sub x es (EFun x t e) (EFun x t e)
-            | sub_fun_notfree :
-                forall (y : id) (t : type) (e e' : expr),
-                x <> y ->
-                ~ IS.In y (fve es) ->
-                sub x es e e' ->
-                sub x es (EFun y t e) (EFun y t e')
-            | sub_fun_free :
-                forall (y z : id) (t : type) (e e' e'' : expr),
-                x <> y ->
-                x <> z ->
-                y <> z ->
-                IS.In y (fve es) ->
-                ~ IS.In z (fve es) ->
-                ~ IS.In z (fve e) ->
-                sub y (EVar z) e e' ->
-                sub x es e' e'' ->
-                sub x es (EFun y t e) (EFun z t e'')
-            | sub_forall :
-                forall (A : id) (e e' : expr),
-                sub x es e e' ->
-                sub x es (EForall A e) (EForall A e')
-            | sub_inst :
-                forall (e e' : expr) (t : type),
-                sub x es e e' ->
-                sub x es (EInst e t) (EInst e' t).
+        Section Substitution.
+            (* 
+                Capture-avoiding substitution:
+                    sub x es e e': e{es/x} = e'
+            *)
+            Inductive sub (x : id) (es : expr) : expr -> expr -> Prop :=
+                | sub_var_hit :
+                    sub x es (EVar x) es
+                | sub_var_miss :
+                    forall (y : id),
+                    x <> y ->
+                    sub x es (EVar y) (EVar y)
+                | sub_app :
+                    forall (e1 e2 e1' e2' : expr),
+                    sub x es e1 e1' ->
+                    sub x es e2 e2' ->
+                    sub x es (EApp e1 e2) (EApp e1' e2')
+                | sub_fun_bound :
+                    forall (t : type) (e : expr),
+                    sub x es (EFun x t e) (EFun x t e)
+                | sub_fun_notfree :
+                    forall (y : id) (t : type) (e e' : expr),
+                    x <> y ->
+                    ~ IS.In y (fve es) ->
+                    sub x es e e' ->
+                    sub x es (EFun y t e) (EFun y t e')
+                | sub_fun_free :
+                    forall (y z : id) (t : type) (e e' e'' : expr),
+                    x <> y ->
+                    x <> z ->
+                    y <> z ->
+                    IS.In y (fve es) ->
+                    ~ IS.In z (fve es) ->
+                    ~ IS.In z (fve e) ->
+                    sub y (EVar z) e e' ->
+                    sub x es e' e'' ->
+                    sub x es (EFun y t e) (EFun z t e'')
+                | sub_forall :
+                    forall (A : id) (e e' : expr),
+                    sub x es e e' ->
+                    sub x es (EForall A e) (EForall A e')
+                | sub_inst :
+                    forall (e e' : expr) (t : type),
+                    sub x es e e' ->
+                    sub x es (EInst e t) (EInst e' t).
 
-        Axiom sub_total :
-            forall (x : id) (es e : expr),
-            exists (e' : expr), sub x es e e'.
+            Axiom sub_total :
+                forall (x : id) (es e : expr),
+                exists (e' : expr), sub x es e e'.
 
-        (* 
-            Capture-avoiding type-substitution in an expression:
-                tsub A u e e': e{u/A} = e'.
-        *)
-        Inductive tsub (A : id) (u : type) : expr -> expr -> Prop :=
-            | tsub_var :
-                forall (x : id),
-                tsub A u (EVar x) (EVar x)
-            | tsub_fun :
-                forall (x : id) (t t' : type) (e e' : expr),
-                SS.sub A u t t' ->
-                tsub A u e e' ->
-                tsub A u (EFun x t e) (EFun x t' e')
-            | tsub_app :
-                forall (e1 e2 e1' e2' : expr),
-                tsub A u e1 e1' ->
-                tsub A u e2 e2' ->
-                tsub A u (EApp e1 e2) (EApp e1' e2')
-            | tsub_inst :
-                forall (e e' : expr) (t t' : type),
-                SS.sub A u t t' ->
-                tsub A u e e' ->
-                tsub A u (EInst e t) (EInst e' t')
-            | tsub_forall_bound :
-                forall (e : expr),
-                tsub A u (EForall A e) (EForall A e)
-            | tsub_forall_notfree :
-                forall (B : id) (e e' : expr),
-                A <> B ->
-                ~ IS.In B (fvt u) ->
-                tsub A u e e' ->
-                tsub A u (EForall B e) (EForall B e')
-            | tsub_forall_free :
-                forall (B C : id) (e e' e'' : expr),
-                A <> B ->
-                A <> C ->
-                B <> C ->
-                IS.In B (fvt u) ->
-                ~ IS.In C (fvt u) ->
-                ~ IS.In C (fvte e) ->
-                tsub B (TVar C) e e' ->
-                tsub A u e' e'' ->
-                tsub A u (EForall B e) (EForall C e'').
+            (* 
+                Capture-avoiding type-substitution in an expression:
+                    tsub A u e e': e{u/A} = e'.
+            *)
+            Inductive tsub (A : id) (u : type) : expr -> expr -> Prop :=
+                | tsub_var :
+                    forall (x : id),
+                    tsub A u (EVar x) (EVar x)
+                | tsub_fun :
+                    forall (x : id) (t t' : type) (e e' : expr),
+                    SS.sub A u t t' ->
+                    tsub A u e e' ->
+                    tsub A u (EFun x t e) (EFun x t' e')
+                | tsub_app :
+                    forall (e1 e2 e1' e2' : expr),
+                    tsub A u e1 e1' ->
+                    tsub A u e2 e2' ->
+                    tsub A u (EApp e1 e2) (EApp e1' e2')
+                | tsub_inst :
+                    forall (e e' : expr) (t t' : type),
+                    SS.sub A u t t' ->
+                    tsub A u e e' ->
+                    tsub A u (EInst e t) (EInst e' t')
+                | tsub_forall_bound :
+                    forall (e : expr),
+                    tsub A u (EForall A e) (EForall A e)
+                | tsub_forall_notfree :
+                    forall (B : id) (e e' : expr),
+                    A <> B ->
+                    ~ IS.In B (fvt u) ->
+                    tsub A u e e' ->
+                    tsub A u (EForall B e) (EForall B e')
+                | tsub_forall_free :
+                    forall (B C : id) (e e' e'' : expr),
+                    A <> B ->
+                    A <> C ->
+                    B <> C ->
+                    IS.In B (fvt u) ->
+                    ~ IS.In C (fvt u) ->
+                    ~ IS.In C (fvte e) ->
+                    tsub B (TVar C) e e' ->
+                    tsub A u e' e'' ->
+                    tsub A u (EForall B e) (EForall C e'').
 
-        Axiom tsub_total :
-            forall (A : id) (u : type) (e : expr),
-            exists (e' : expr), tsub A u e e'.
-
-        (* Expression equivalence. *)
-        Inductive eeq : expr -> expr -> Prop :=
-            | eeq_eq :
-                forall (e : expr),
-                eeq e e
-            | eeq_fun :
-                forall (x : id) (t1 t2 : type) (e1 e2 : expr),
-                SS.teq t1 t2 ->
-                eeq e1 e2 ->
-                eeq (EFun x t1 e1) (EFun x t2 e2)
-            | eeq_app :
-                forall (ea1 eb1 ea2 eb2 : expr),
-                eeq ea1 ea2 ->
-                eeq eb1 eb2 ->
-                eeq (EApp ea1 eb1) (EApp ea2 eb2)
-            | eeq_inst :
-                forall (e1 e2 : expr) (t1 t2 : type),
-                SS.teq t1 t2 ->
-                eeq e1 e2 ->
-                eeq (EInst e1 t1) (EInst e2 t2)
-            | eeq_forall :
-                forall (A1 A2 : id) (e1 e2 e2' : expr),
-                tsub A2 (TVar A2) e2 e2' ->
-                eeq e1 e2' ->
-                eeq (EForall A1 e1) (EForall A2 e2).
+            Axiom tsub_total :
+                forall (A : id) (u : type) (e : expr),
+                exists (e' : expr), tsub A u e e'.
+        End Substitution.
 
         (* Lazy-evaluation. *)
         Inductive step : expr -> expr -> Prop :=
@@ -1247,7 +1223,7 @@ Module Univerals.
                                 repeat constructor; auto. 
                                 (* 
                                     this is futile...would need another
-                                    axiom for substitution and typeequality.
+                                    axiom for substitution and type equality.
                                 *) }       
                 Admitted.  
         End Pairs.
@@ -1557,4 +1533,182 @@ Module Existentials.
                 check (A :: d) (bind a t1 g) e2 t2 ->
                 check d g (EUnpack A a e1 e2) t2.
     End StaticSemantics.
+    Module SS := StaticSemantics.
+
+    Module DynamicSemantics.
+        Section Substitution.
+            (* 
+                Capture-avoiding substitution:
+                    sub x es e e': e{es/x} = e'
+            *)
+            Inductive sub (x : id) (es : expr) : expr -> expr -> Prop :=
+                | sub_var_hit :
+                    sub x es (EVar x) es
+                | sub_var_miss :
+                    forall (y : id),
+                    x <> y ->
+                    sub x es (EVar y) (EVar y)
+                | sub_app :
+                    forall (e1 e2 e1' e2' : expr),
+                    sub x es e1 e1' ->
+                    sub x es e2 e2' ->
+                    sub x es (EApp e1 e2) (EApp e1' e2')
+                | sub_fun_bound :
+                    forall (t : type) (e : expr),
+                    sub x es (EFun x t e) (EFun x t e)
+                | sub_fun_notfree :
+                    forall (y : id) (t : type) (e e' : expr),
+                    x <> y ->
+                    ~ IS.In y (fve es) ->
+                    sub x es e e' ->
+                    sub x es (EFun y t e) (EFun y t e')
+                | sub_fun_free :
+                    forall (y z : id) (t : type) (e e' e'' : expr),
+                    x <> y ->
+                    x <> z ->
+                    y <> z ->
+                    IS.In y (fve es) ->
+                    ~ IS.In z (fve es) ->
+                    ~ IS.In z (fve e) ->
+                    sub y (EVar z) e e' ->
+                    sub x es e' e'' ->
+                    sub x es (EFun y t e) (EFun z t e'')
+                | sub_forall :
+                    forall (A : id) (e e' : expr),
+                    sub x es e e' ->
+                    sub x es (EForall A e) (EForall A e')
+                | sub_inst :
+                    forall (e e' : expr) (t : type),
+                    sub x es e e' ->
+                    sub x es (EInst e t) (EInst e' t)
+                | sub_pack :
+                    forall (t r : type) (e e' : expr),
+                    sub x es e e' ->
+                    sub x es (EPack t r e) (EPack t r e')
+                | sub_unpack_bound :
+                    forall (A : id) (e1 e2 e1' : expr),
+                    sub x es e1 e1' ->
+                    sub x es (EUnpack A x e1 e2) (EUnpack A x e1' e2)
+                | sub_unpack_notfree :
+                    forall (A y : id) (e1 e2 e1' e2' : expr),
+                    x <> y ->
+                    ~ IS.In y (fve es) ->
+                    sub x es e1 e1' ->
+                    sub x es e2 e2' ->
+                    sub x es (EUnpack A y e1 e2) (EUnpack A y e1' e2')
+                | sub_unpack_free :
+                    forall (A y z: id) (e1 e2 e1' e2' e2'' : expr),
+                    x <> y ->
+                    x <> z ->
+                    y <> z ->
+                    IS.In y (fve es) ->
+                    ~ IS.In z (fve es) ->
+                    ~ IS.In z (fve e2) ->
+                    sub x es e1 e1' ->
+                    sub y (EVar z) e2 e2' ->
+                    sub x es e2' e2'' ->
+                    sub x es (EUnpack A y e1 e2) (EUnpack A z e1' e2'').
+
+            Axiom sub_total :
+                forall (x : id) (es e : expr),
+                exists (e' : expr), sub x es e e'.
+
+            (* 
+                Capture-avoiding type-substitution in an expression:
+                    tsub A u e e': e{u/A} = e'.
+            *)
+            Inductive tsub (A : id) (u : type) : expr -> expr -> Prop :=
+                | tsub_var :
+                    forall (x : id),
+                    tsub A u (EVar x) (EVar x)
+                | tsub_fun :
+                    forall (x : id) (t t' : type) (e e' : expr),
+                    SS.sub A u t t' ->
+                    tsub A u e e' ->
+                    tsub A u (EFun x t e) (EFun x t' e')
+                | tsub_app :
+                    forall (e1 e2 e1' e2' : expr),
+                    tsub A u e1 e1' ->
+                    tsub A u e2 e2' ->
+                    tsub A u (EApp e1 e2) (EApp e1' e2')
+                | tsub_inst :
+                    forall (e e' : expr) (t t' : type),
+                    SS.sub A u t t' ->
+                    tsub A u e e' ->
+                    tsub A u (EInst e t) (EInst e' t')
+                | tsub_forall_bound :
+                    forall (e : expr),
+                    tsub A u (EForall A e) (EForall A e)
+                | tsub_forall_notfree :
+                    forall (B : id) (e e' : expr),
+                    A <> B ->
+                    ~ IS.In B (fvt u) ->
+                    tsub A u e e' ->
+                    tsub A u (EForall B e) (EForall B e')
+                | tsub_forall_free :
+                    forall (B C : id) (e e' e'' : expr),
+                    A <> B ->
+                    A <> C ->
+                    B <> C ->
+                    IS.In B (fvt u) ->
+                    ~ IS.In C (fvt u) ->
+                    ~ IS.In C (fvte e) ->
+                    tsub B (TVar C) e e' ->
+                    tsub A u e' e'' ->
+                    tsub A u (EForall B e) (EForall C e'')
+                | tsub_pack :
+                    forall (r t r' t' : type) (e e' : expr),
+                    SS.sub A u r r' ->
+                    SS.sub A u t t' ->
+                    tsub A u e e' ->
+                    tsub A u (EPack r t e) (EPack r' t' e')
+                | tsub_unpack_bound :
+                    forall (a : id) (e1 e2 e1' : expr),
+                    tsub A u e1 e1' ->
+                    tsub A u (EUnpack A a e1 e2) (EUnpack A a e1' e2)
+                | tsub_unpack_notfree :
+                    forall (B a : id) (e1 e2 e1' e2' : expr),
+                    A <> B ->
+                    ~ IS.In B (fvt u) ->
+                    tsub A u e1 e1' ->
+                    tsub A u e2 e2' ->
+                    tsub A u (EUnpack B a e1 e2) (EUnpack B a e1' e2')
+                | tsub_unpack_free :
+                    forall (B C a : id) (e1 e2 e1' e2' e2'' : expr),
+                    A <> B ->
+                    A <> C ->
+                    B <> C ->
+                    IS.In B (fvt u) ->
+                    ~ IS.In C (fvt u) ->
+                    ~ IS.In C (fvte e2) ->
+                    tsub A u e1 e1' ->
+                    tsub B (TVar C) e2 e2' ->
+                    tsub A u e2' e2'' ->
+                    tsub A u (EUnpack B a e1 e2) (EUnpack C a e1' e2'').
+
+            Axiom tsub_total :
+                forall (A : id) (u : type) (e : expr),
+                exists (e' : expr), tsub A u e e'.
+        End Substitution.
+
+        (* Lazy-evaluation. *)
+        Inductive step : expr -> expr -> Prop :=
+            | step_redux :
+                forall (x : id) (t : type) (e e' es : expr),
+                sub x es e e' ->
+                step (EApp (EFun x t e) es) e'
+            | step_app :
+                forall (e1 e2 e1' : expr),
+                step e1 e1' ->
+                step (EApp e1 e2) (EApp e1' e2)
+            | step_inst_forall :
+                forall (A : id) (e e' : expr) (t : type),
+                tsub A t e e' ->
+                step (EInst (EForall A e) t) e'
+            | step_inst :
+                forall (e e' : expr) (t : type),
+                step e e' ->
+                step (EInst e t) (EInst e' t).
+            (* TODO : add pack and unpack rules *)
+    End DynamicSemantics.
 End Existentials.
