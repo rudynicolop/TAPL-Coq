@@ -1225,7 +1225,7 @@ Module Univerals.
                                     this is futile...would need another
                                     axiom for substitution and type equality.
                                 *) }       
-                Admitted.  
+                Admitted.
         End Pairs.
     End ChurchEncodings.
 End Univerals.
@@ -1708,7 +1708,46 @@ Module Existentials.
             | step_inst :
                 forall (e e' : expr) (t : type),
                 step e e' ->
-                step (EInst e t) (EInst e' t).
-            (* TODO : add pack and unpack rules *)
+                step (EInst e t) (EInst e' t)
+            | step_unpack_pack :
+                forall (A a : id) (t r : type) (e1 e2 e2' e2'' : expr),
+                sub a e1 e2 e2' ->
+                tsub A r e2' e2'' ->
+                step (EUnpack A a (EPack t r e1) e2) e2''
+            | step_pack :
+                forall (t r : type) (e e' : expr),
+                step e e' ->
+                step (EPack t r e) (EPack t r e')
+            | step_unpack :
+                forall (A a : id) (e1 e2 e1' : expr),
+                step e1 e1' ->
+                step (EUnpack A a e1 e2) (EUnpack A a e1' e2).
     End DynamicSemantics.
+
+    Module Encoding.
+        Module SF := Univerals.Syntax.
+
+        Inductive tencode : type -> SF.type -> Prop :=
+            | tencode_var : 
+                forall (A : id),
+                tencode (TVar A) (SF.TVar A)
+            | tencode_fun :
+                forall (t1 t2 : type) (t1' t2' : SF.type),
+                tencode t1 t1' ->
+                tencode t2 t2' ->
+                tencode (TFun t1 t2) (SF.TFun t1' t2')
+            | tencode_forall :
+                forall (A : id) (t : type) (t' : SF.type),
+                tencode t t' ->
+                tencode (TForall A t) (SF.TForall A t')
+            | tencode_exists :
+                forall (X R : id) (t : type) (t' : SF.type),
+                ~ IS.In R (SF.fvt t') ->
+                tencode t t' ->
+                tencode (TExists X t)
+                    (SF.TForall R
+                        (SF.TFun
+                            (SF.TForall X (SF.TFun t' (SF.TVar R)))
+                            (SF.TVar R))).
+    End Encoding.
 End Existentials.
