@@ -57,6 +57,58 @@ Axiom exists_not_in :
     forall (S : IS.t),
     exists (X : id), ~ IS.In X S.
 
+Section Gamma.
+    Context {T : Type}.
+
+    Definition gamma := id -> option T.
+
+    Definition empty : gamma := fun x => None.
+
+    Definition bind (x : id) (t : T) (g : gamma) : gamma :=
+        fun y => if (x =? y)%string then Some t else g y.
+
+    Lemma bind_correct : 
+        forall (x : id) (t : T) (g : gamma),
+        bind x t g x = Some t.
+    Proof.
+        intros. unfold bind. destruct ((x =? x)%string) eqn:eq.
+        - reflexivity.
+        - apply eqb_neq in eq. contradiction.
+    Qed.
+
+    Lemma bind_complete :
+        forall (x x' : id) (t t' : T),
+        x' <> x -> 
+        forall (g : gamma),
+        (g x = Some t <-> bind x' t' g x = Some t). 
+    Proof.
+        intros. unfold bind. apply eqb_neq in H. 
+        rewrite H. split; intros; apply H0.
+    Qed.
+
+    Lemma rebind_correct : 
+        forall (x : id) (t t' : T) (g : gamma),
+        bind x t (bind x t' g) = bind x t g.
+    Proof.
+        intros. apply functional_extensionality. intros y.
+        unfold bind. destruct ((x =? y)%string); reflexivity.
+    Qed.
+
+    Lemma bind_diff_comm : 
+        forall (x y : id) (u v : T) (g : gamma),
+        x <> y ->
+        bind x u (bind y v g) = bind y v (bind x u g).
+    Proof.
+        intros. apply functional_extensionality. intros z.
+        unfold bind. destruct ((x =? z)%string) eqn:eq.
+            - apply eqb_eq in eq; subst.
+                destruct ((y =? z)%string) eqn:eeq.
+                + apply eqb_eq in eeq; subst. contradiction.
+                + reflexivity.
+            - apply eqb_neq in eq. destruct ((y =? z)%string) eqn:eeq; reflexivity.
+    Qed.
+End Gamma.
+
 Module Univerals.
     Module Syntax.
         Inductive type : Type :=
@@ -182,113 +234,66 @@ Module Univerals.
             Admitted.
         End WellFormedness.
 
-        Section Gamma.
-            Definition gamma := id -> option type.
+        Section TypeSubstitution.
+            (* 
+                Capture-avoiding type variable substitution:
+                    sub A u t t': t{u/A} = t'
+            *)
+            Inductive sub (A : id) (u : type) : type -> type -> Prop :=
+                | sub_var_hit :
+                    sub A u (TVar A) u
+                | sub_var_miss :
+                    forall (B : id),
+                    A <> B ->
+                    sub A u (TVar B) (TVar B)
+                | sub_fun :
+                    forall (a b a' b' : type),
+                    sub A u a a' ->
+                    sub A u b b' ->
+                    sub A u (TFun a b) (TFun a' b')
+                | sub_forall_bound :
+                    forall (t : type),
+                    sub A u (TForall A t) (TForall A t)
+                | sub_forall_notfree :
+                    forall (B : id) (t t' : type),
+                    A <> B ->
+                    ~ IS.In B (fvt u) ->
+                    sub A u t t' ->
+                    sub A u (TForall B t) (TForall B t')
+                | sub_forall_free :
+                    forall (B C : id) (t t' t'' : type),
+                    A <> B ->
+                    A <> C ->
+                    B <> C ->
+                    IS.In B (fvt u) ->
+                    ~ IS.In C (fvt u) ->
+                    ~ IS.In C (fvt t) ->
+                    sub B (TVar C) t t' ->
+                    sub A u t' t'' ->
+                    sub A u (TForall B t) (TForall C t'').
 
-            Definition empty : gamma := fun x => None.
+            Axiom sub_total :
+                forall (U : id) (u t : type),
+                exists (t' : type), sub U u t t'.
 
-            Definition bind (x : id) (t : type) (g : gamma) : gamma :=
-                fun y => if (x =? y)%string then Some t else g y.
-
-            Lemma bind_correct : 
-                forall (x : id) (t : type) (g : gamma),
-                bind x t g x = Some t.
+            Lemma sub_eq :
+                forall (U : id) (t : type),
+                sub U (TVar U) t t.
             Proof.
-                intros. unfold bind. destruct ((x =? x)%string) eqn:eq.
-                - reflexivity.
-                - apply eqb_neq in eq. contradiction.
+                intros U t. induction t.
+                - destruct (IdDec.eq_dec U A) as [H | H]; subst.
+                    + apply sub_var_hit.
+                    + apply sub_var_miss; auto.
+                - constructor; auto.
+                - destruct (IdDec.eq_dec U A) as [H | H]; subst.
+                    + apply sub_forall_bound.
+                    + constructor; auto. simpl.
+                        intros HI. apply H.
+                        apply ISF.singleton_1 in HI.
+                        assumption.
             Qed.
 
-            Lemma bind_complete :
-                forall (x x' : id) (t t' : type),
-                x' <> x -> 
-                forall (g : gamma),
-                (g x = Some t <-> bind x' t' g x = Some t). 
-            Proof.
-                intros. unfold bind. apply eqb_neq in H. 
-                rewrite H. split; intros; apply H0.
-            Qed.
-
-            Lemma rebind_correct : 
-                forall (x : id) (t t' : type) (g : gamma),
-                bind x t (bind x t' g) = bind x t g.
-            Proof.
-                intros. apply functional_extensionality. intros y.
-                unfold bind. destruct ((x =? y)%string); reflexivity.
-            Qed.
-
-            Lemma bind_diff_comm : 
-                forall (x y : id) (u v : type) (g : gamma),
-                x <> y ->
-                bind x u (bind y v g) = bind y v (bind x u g).
-            Proof.
-                intros. apply functional_extensionality. intros z.
-                unfold bind. destruct ((x =? z)%string) eqn:eq.
-                    - apply eqb_eq in eq; subst.
-                        destruct ((y =? z)%string) eqn:eeq.
-                        + apply eqb_eq in eeq; subst. contradiction.
-                        + reflexivity.
-                    - apply eqb_neq in eq. destruct ((y =? z)%string) eqn:eeq; reflexivity.
-            Qed.
-        End Gamma.
-
-        (* 
-            Capture-avoiding type variable substitution:
-                sub A u t t': t{u/A} = t'
-        *)
-        Inductive sub (A : id) (u : type) : type -> type -> Prop :=
-            | sub_var_hit :
-                sub A u (TVar A) u
-            | sub_var_miss :
-                forall (B : id),
-                A <> B ->
-                sub A u (TVar B) (TVar B)
-            | sub_fun :
-                forall (a b a' b' : type),
-                sub A u a a' ->
-                sub A u b b' ->
-                sub A u (TFun a b) (TFun a' b')
-            | sub_forall_bound :
-                forall (t : type),
-                sub A u (TForall A t) (TForall A t)
-            | sub_forall_notfree :
-                forall (B : id) (t t' : type),
-                A <> B ->
-                ~ IS.In B (fvt u) ->
-                sub A u t t' ->
-                sub A u (TForall B t) (TForall B t')
-            | sub_forall_free :
-                forall (B C : id) (t t' t'' : type),
-                A <> B ->
-                A <> C ->
-                B <> C ->
-                IS.In B (fvt u) ->
-                ~ IS.In C (fvt u) ->
-                ~ IS.In C (fvt t) ->
-                sub B (TVar C) t t' ->
-                sub A u t' t'' ->
-                sub A u (TForall B t) (TForall C t'').
-
-        Axiom sub_total :
-            forall (U : id) (u t : type),
-            exists (t' : type), sub U u t t'.
-
-        Lemma sub_eq :
-            forall (U : id) (t : type),
-            sub U (TVar U) t t.
-        Proof.
-            intros U t. induction t.
-            - destruct (IdDec.eq_dec U A) as [H | H]; subst.
-                + apply sub_var_hit.
-                + apply sub_var_miss; auto.
-            - constructor; auto.
-            - destruct (IdDec.eq_dec U A) as [H | H]; subst.
-                + apply sub_forall_bound.
-                + constructor; auto. simpl.
-                    intros HI. apply H.
-                    apply ISF.singleton_1 in HI.
-                    assumption.
-        Qed.
+        End TypeSubstitution.
 
         (* Type equivalence. *)
         Inductive teq : type -> type -> Prop :=
@@ -512,14 +517,14 @@ Module Univerals.
             Definition canon_fun (v : expr) : Prop := 
                 value v -> 
                 forall (a b : type),
-                SS.check [] SS.empty v (TFun a b) -> 
+                SS.check [] empty v (TFun a b) -> 
                 exists (x : id) (t : type) (e : expr), 
                 SS.teq a t /\ v = EFun x t e.
             
             Definition canon_forall (v : expr) : Prop :=
                 value v ->
                 forall (A : id) (t : type),
-                SS.check [] SS.empty v (TForall A t) ->
+                SS.check [] empty v (TForall A t) ->
                 exists (B : id) (e : expr),
                 SS.teq (TForall A t) (TForall B t) /\ v = EForall B e.
 
@@ -539,20 +544,20 @@ Module Univerals.
                 dependent induction HT; inv HV.
                 exists A. exists e.
                 repeat constructor.
-            Qed.   
+            Qed.
         End CanonicalForms.
         Module CF := CanonicalForms.
 
         Theorem progress_thm : 
             forall (e : expr) (t : type),
-            SS.check [] SS.empty e t ->
+            SS.check [] empty e t ->
             value e \/ exists (e' : expr), DS.step e e'.
         Proof.
             intros e t HT.
             remember [] as d in HT.
-            remember SS.empty as g in HT.
+            remember empty as g in HT.
             assert (duh1 : @nil id = @nil id);
-            assert (duh2 : SS.empty = SS.empty);
+            assert (duh2 : @empty type = @empty type);
             try reflexivity.
             dependent induction HT; subst;
             try (pose proof IHHT  duh1 duh2 duh1 duh2 as IH;  clear IHHT);
@@ -592,9 +597,9 @@ Module Univerals.
         Section SubstitutionLemmas.
             Lemma bind_unfree_var :
                 forall (e : expr) (x : id) (a b : type) 
-                    (d : SS.delta) (g : SS.gamma),
+                    (d : SS.delta) (g : gamma),
                 ~ IS.In x (fve e) ->
-                SS.check d g e a <-> SS.check d (SS.bind x b g) e a.
+                SS.check d g e a <-> SS.check d (bind x b g) e a.
             Proof.
                 intros e z a b d g HIn.
                 split; intros HT;
@@ -602,12 +607,12 @@ Module Univerals.
                 - constructor. assert (Hxz : x <> z).
                     + intros Hxz. apply HIn.
                         subst. constructor; auto.
-                    + apply SS.bind_complete; auto.
+                    + apply bind_complete; auto.
                 - constructor; auto.
                     destruct (IdDec.eq_dec x z)
                         as [Hxz | Hxz]; subst.
-                        + rewrite SS.rebind_correct; auto.
-                        + rewrite SS.bind_diff_comm;
+                        + rewrite rebind_correct; auto.
+                        + rewrite bind_diff_comm;
                             auto. apply IHHT.
                             intros Hzf. apply HIn.
                             apply ISF.remove_2; auto.
@@ -622,16 +627,16 @@ Module Univerals.
                     + intros Hxz. apply HIn; subst.
                         constructor; auto.
                     + constructor.
-                        apply SS.bind_complete in H; auto.
+                        apply bind_complete in H; auto.
                 - constructor; auto.
                     destruct (IdDec.eq_dec x z)
                         as [Hxz | Hxz]; subst.
-                        + rewrite SS.rebind_correct
+                        + rewrite rebind_correct
                             in HT. auto.
                         + apply IHHT with (z0 := z) (b0 := b).
                             * intros HI. apply HIn.
                                 apply ISF.remove_2; auto.
-                            * rewrite SS.bind_diff_comm; auto.
+                            * rewrite bind_diff_comm; auto.
                 - apply SS.check_app with (a := a) (c := c); auto.
                     + apply IHHT1 with (z0 := z) (b1 := b); auto.
                         intros HI. apply HIn.
@@ -646,7 +651,7 @@ Module Univerals.
             Qed.
 
             Lemma delta_perm :
-                forall (d : SS.delta) (g : SS.gamma)
+                forall (d : SS.delta) (g : gamma)
                     (e : expr) (t : type),
                 SS.check d g e t ->
                 forall (d' : SS.delta),
@@ -663,7 +668,7 @@ Module Univerals.
             Qed.
 
             Lemma bind_delta :
-                forall (d : SS.delta) (g : SS.gamma)
+                forall (d : SS.delta) (g : gamma)
                     (e : expr) (t : type),
                 SS.check d g e t ->
                 forall (A : id),
@@ -687,34 +692,34 @@ Module Univerals.
             Lemma substitution_lemma :
                 forall (x : id) (es e e' : expr),
                 DS.sub x es e e' ->
-                forall (a b : type) (d : SS.delta) (g : SS.gamma),
-                SS.check d (SS.bind x a g) e b -> 
+                forall (a b : type) (d : SS.delta) (g : gamma),
+                SS.check d (bind x a g) e b -> 
                 SS.check d g es a -> 
                 SS.check d g e' b.
             Proof.
                 intros x es e e' HS.
                 induction HS;
                 intros a b d g HTB HTS; inv HTB.
-                - rewrite SS.bind_correct in H0.
+                - rewrite bind_correct in H0.
                     injintrosubst H0; auto.
                 - constructor. rewrite 
-                    <- SS.bind_complete in H1; auto.
+                    <- bind_complete in H1; auto.
                 - apply SS.check_app with (a := a0) (c := c); auto.
                     + apply IHHS1 with (a := a); auto.
                     + apply IHHS2 with (a := a); auto.
                 - constructor; auto.
-                    rewrite SS.rebind_correct in H4; auto.
+                    rewrite rebind_correct in H4; auto.
                 - constructor; auto. rewrite <-
-                    SS.bind_diff_comm in H6; auto.
+                    bind_diff_comm in H6; auto.
                     apply IHHS in H6; auto.
                     apply bind_unfree_var; auto.
                 - constructor; auto.
                     apply IHHS2 with (a := a).
-                    + rewrite SS.bind_diff_comm; auto.
+                    + rewrite bind_diff_comm; auto.
                         apply IHHS1 with (a := t).
-                        * rewrite SS.bind_diff_comm; auto.
+                        * rewrite bind_diff_comm; auto.
                             apply bind_unfree_var; auto.
-                        * constructor. apply SS.bind_correct.
+                        * constructor. apply bind_correct.
                     + apply bind_unfree_var; auto.
                 - constructor.
                     apply IHHS with (a := a); auto.
@@ -765,7 +770,7 @@ Module Univerals.
                             assumption.
             Qed.
 
-            Definition sub_gamma (U : id) (u : type) (g g' : SS.gamma) : Prop := 
+            Definition sub_gamma (U : id) (u : type) (g g' : gamma) : Prop := 
                 forall (t t' : type),
                 SS.sub U u t t' ->
                 forall (x : id),
@@ -773,13 +778,13 @@ Module Univerals.
 
             Remark sub_gamma_empty :
                 forall (U : id) (u : type),
-                sub_gamma U u SS.empty SS.empty.
+                sub_gamma U u empty empty.
             Proof. intros U u T T' _ x HES. inv HES. Qed.
 
             Lemma tsub_gamma_lemma :
                 forall (U : id) (u : type) (e e' : expr),
                 DS.tsub U u e e' ->
-                forall (g g' : SS.gamma),
+                forall (g g' : gamma),
                 sub_gamma U u g g' ->
                 forall (t t' : type),
                 SS.sub U u t t' ->
@@ -829,24 +834,24 @@ Module Univerals.
             forall (U V : type),
             SS.teq U V ->
             forall (e : expr),
-            SS.check [] SS.empty e U ->
-            SS.check [] SS.empty e V.
+            SS.check [] empty e U ->
+            SS.check [] empty e V.
 
         Theorem preservation :
             forall (e e' : expr),
             DS.step e e' -> forall (t : type),
-            SS.check [] SS.empty e t -> 
-            SS.check [] SS.empty e' t.
+            SS.check [] empty e t -> 
+            SS.check [] empty e' t.
         Proof.
             intros e e' HS.
             induction HS; intros u HT; inv HT.
             - inv H3. apply substitution_lemma with
-                (a := a) (b := u) (d := []) (g := SS.empty) in H; auto.
+                (a := a) (b := u) (d := []) (g := empty) in H; auto.
                 apply check_teq with (U := c); auto.
                 apply SS.teq_sym. assumption.
             - apply SS.check_app with (a := a) (c := c); auto.
             - inv H5. apply tsub_gamma_lemma with
-                (g := SS.empty) (U := A0)
+                (g := empty) (U := A0)
                     (u := t) (e := e) (t := t0); auto.
                 apply sub_gamma_empty.
             - apply SS.check_inst with (A := A) (t := t0); auto.
@@ -868,12 +873,12 @@ Module Univerals.
                 EForall "X" (EFun "a" X (EFun "b" X (EVar "b"))).
 
             Example true_bool :
-                forall (d : SS.delta) (g : SS.gamma),
+                forall (d : SS.delta) (g : gamma),
                 SS.check d g TRUE BOOL.
             Proof. repeat constructor. Qed.
 
             Example false_bool :
-                forall (d : SS.delta) (g : SS.gamma),
+                forall (d : SS.delta) (g : gamma),
                 SS.check d g FALSE BOOL.
             Proof. repeat constructor. Qed.
 
@@ -890,7 +895,7 @@ Module Univerals.
                                     (EVar "else"))))).
 
             Example COND_check :
-                forall (d : SS.delta) (g : SS.gamma),
+                forall (d : SS.delta) (g : gamma),
                 SS.check d g COND
                     (TForall "X" (TFun BOOL (TFun X (TFun X X)))).
             Proof.
@@ -919,7 +924,7 @@ Module Univerals.
                                     (EVar "a"))))).
 
             Example NOT_check :
-                forall (d : SS.delta) (g : SS.gamma),
+                forall (d : SS.delta) (g : gamma),
                 SS.check d g NOT (TFun BOOL BOOL).
             Proof.
                 repeat constructor.
@@ -947,7 +952,7 @@ Module Univerals.
                             (EVar "z"))).
 
             Example zero_nat :
-                forall (d : SS.delta) (g : SS.gamma),
+                forall (d : SS.delta) (g : gamma),
                 SS.check d g ZERO NAT.
             Proof. repeat constructor. Qed.
 
@@ -966,7 +971,7 @@ Module Univerals.
                                         (EVar "z")))))).
 
             Example SUCC_check :
-                forall (d : SS.delta) (g : SS.gamma),
+                forall (d : SS.delta) (g : gamma),
                 SS.check d g SUCC (TFun NAT NAT).
             Proof.
                 repeat constructor.
@@ -995,7 +1000,7 @@ Module Univerals.
                             (EVar "m"))).
 
             Example ADD_check :
-                forall (d : SS.delta) (g : SS.gamma),
+                forall (d : SS.delta) (g : gamma),
                 SS.check d g ADD (TFun NAT (TFun NAT NAT)).
             Proof.
                 repeat constructor.
@@ -1022,7 +1027,7 @@ Module Univerals.
                         ZERO)).
 
             Example MUL_check :
-                forall (d : SS.delta) (g : SS.gamma),
+                forall (d : SS.delta) (g : gamma),
                 SS.check d g MUL (TFun NAT (TFun NAT NAT)).
             Proof.
                 repeat constructor.
@@ -1053,7 +1058,7 @@ Module Univerals.
                         (EApp SUCC ZERO))).
 
             Example EXP_check :
-                forall (d : SS.delta) (g : SS.gamma),
+                forall (d : SS.delta) (g : gamma),
                 SS.check d g EXP (TFun NAT (TFun NAT NAT)).
             Proof.
                 repeat constructor.
@@ -1110,7 +1115,7 @@ Module Univerals.
                                         (EVar "y"))))))).
 
             Example pair_check :
-                forall (d : SS.delta) (g : SS.gamma),
+                forall (d : SS.delta) (g : gamma),
                 SS.check d g PAIR
                     (TForall "X"
                         (TForall "Y" 
@@ -1157,7 +1162,7 @@ Module Univerals.
                         assumption).
 
             Example pair_prod :
-                forall (d : SS.delta) (g : SS.gamma)
+                forall (d : SS.delta) (g : gamma)
                 (e1 e2 : expr) (A B : type),
                 SS.WF d A ->
                 SS.WF d B ->
@@ -1244,7 +1249,7 @@ Module Univerals.
                                     this is futile...would need another
                                     axiom for substitution and typeequality.
                                 *) }       
-                Admitted.    
+                Admitted.  
         End Pairs.
     End ChurchEncodings.
 End Univerals.
@@ -1390,5 +1395,166 @@ Module Existentials.
                     induction hypothesis. *)
             Admitted.
         End WellFoundedness.
+
+        Section TypeSubstitution.
+            (* 
+                Capture-avoiding type variable substitution:
+                    sub A u t t': t{u/A} = t'
+            *)
+            Inductive sub (A : id) (u : type) : type -> type -> Prop :=
+                | sub_var_hit :
+                    sub A u (TVar A) u
+                | sub_var_miss :
+                    forall (B : id),
+                    A <> B ->
+                    sub A u (TVar B) (TVar B)
+                | sub_fun :
+                    forall (a b a' b' : type),
+                    sub A u a a' ->
+                    sub A u b b' ->
+                    sub A u (TFun a b) (TFun a' b')
+                | sub_forall_bound :
+                    forall (t : type),
+                    sub A u (TForall A t) (TForall A t)
+                | sub_forall_notfree :
+                    forall (B : id) (t t' : type),
+                    A <> B ->
+                    ~ IS.In B (fvt u) ->
+                    sub A u t t' ->
+                    sub A u (TForall B t) (TForall B t')
+                | sub_forall_free :
+                    forall (B C : id) (t t' t'' : type),
+                    A <> B ->
+                    A <> C ->
+                    B <> C ->
+                    IS.In B (fvt u) ->
+                    ~ IS.In C (fvt u) ->
+                    ~ IS.In C (fvt t) ->
+                    sub B (TVar C) t t' ->
+                    sub A u t' t'' ->
+                    sub A u (TForall B t) (TForall C t'')
+                | sub_exists_bound :
+                    forall (t : type),
+                    sub A u (TExists A t) (TExists A t)
+                | sub_exists_notfree :
+                    forall (R : id) (t t' : type),
+                    A <> R ->
+                    ~ IS.In R (fvt u) ->
+                    sub A u t t' ->
+                    sub A u (TExists R t) (TExists R t')
+                | sub_exists_free :
+                    forall (R R' : id) (t t' t'' : type),
+                    A <> R ->
+                    A <> R' ->
+                    R <> R' ->
+                    IS.In R (fvt u) ->
+                    ~ IS.In R' (fvt u) ->
+                    ~ IS.In R' (fvt t) ->
+                    sub R (TVar R') t t' ->
+                    sub A u t' t'' ->
+                    sub A u (TExists R t) (TExists R' t'').
+
+            Axiom sub_total :
+                forall (U : id) (u t : type),
+                exists (t' : type), sub U u t t'.
+
+            Lemma sub_eq :
+                forall (U : id) (t : type),
+                sub U (TVar U) t t.
+            Proof.
+                intros U t. induction t.
+                - destruct (IdDec.eq_dec U X) as [H | H]; subst.
+                    + apply sub_var_hit.
+                    + apply sub_var_miss; auto.
+                - constructor; auto.
+                - destruct (IdDec.eq_dec U X) as [H | H]; subst.
+                    + apply sub_forall_bound.
+                    + constructor; auto. simpl.
+                        intros HI. apply H.
+                        apply ISF.singleton_1 in HI.
+                        assumption.
+                - destruct (IdDec.eq_dec U R) as [H | H]; subst.
+                    + apply sub_exists_bound.
+                    + constructor; auto. simpl.
+                        intros HI. apply H.
+                        apply ISF.singleton_1 in HI.
+                        assumption.
+            Qed.
+
+        End TypeSubstitution.
+
+        (* Type equivalence. *)
+        Inductive teq : type -> type -> Prop :=
+            | teq_eq :
+                forall (t : type),
+                teq t t
+            | teq_fun :
+                forall (a1 b1 a2 b2 : type),
+                teq a1 a2 ->
+                teq b1 b2 ->
+                teq (TFun a1 b1) (TFun a2 b2)
+            | teq_forall :
+                forall (A B : id) (a a' b b' : type),
+                sub B (TVar A) b b' ->
+                teq a b' ->
+                sub A (TVar B) a a' ->
+                teq a' b ->
+                teq (TForall A a) (TForall B b)
+            | teq_exists :
+                forall (R1 R2 : id) (t1 t1' t2 t2' : type),
+                sub R2 (TVar R1) t2 t2' ->
+                teq t1 t2' ->
+                sub R1 (TVar R2) t1 t1' ->
+                teq t1' t2 ->
+                teq (TExists R1 t1) (TExists R2 t2).
+
+        Lemma teq_sym :
+            forall (t1 t2 : type),
+            teq t1 t2 -> teq t2 t1.
+        Proof.
+            intros t1 t2 H. induction H;
+            try constructor; auto.
+            - apply teq_forall with (a' := b') (b' := a'); auto.
+            - apply teq_exists with (t1' := t2') (t2' := t1'); auto.
+        Qed.
+
+        (* Type-checking with well-formedness checking. *)
+        Inductive check (d : delta) (g : gamma) : expr -> type -> Prop :=
+            | check_var :
+                forall (x : id) (t : type),
+                g x = Some t ->
+                check d g (EVar x) t
+            | check_fun :
+                forall (x : id) (t t' : type) (e : expr),
+                WF d t ->
+                check d (bind x t g) e t' ->
+                check d g (EFun x t e) (TFun t t')
+            | check_app :
+                forall (e1 e2 : expr) (a b c : type),
+                teq a c ->
+                check d g e1 (TFun a b) ->
+                check d g e2 c ->
+                check d g (EApp e1 e2) b
+            | check_forall :
+                forall (A : id) (e : expr) (t : type),
+                check (A :: d) g e t ->
+                check d g (EForall A e) (TForall A t)
+            | check_inst :
+                forall (e : expr) (u t t' : type) (A : id),
+                WF d u ->
+                sub A u t t' ->
+                check d g e (TForall A t) ->
+                check d g (EInst e u) t'
+            | check_pack :
+                forall (R : id) (t r t' : type) (e : expr),
+                sub R r t t' ->
+                check d g e t' ->
+                check d g (EPack (TExists R t) r e) (TExists R t)
+            | check_unpack :
+                forall (A a R : id) (e1 e2 : expr) (t1 t2 : type),
+                WF d t2 ->
+                check d g e1 (TExists R t1) ->
+                check (A :: d) (bind a t1 g) e2 t2 ->
+                check d g (EUnpack A a e1 e2) t2.
     End StaticSemantics.
 End Existentials.
