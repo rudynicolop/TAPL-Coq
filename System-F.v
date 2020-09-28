@@ -1788,6 +1788,16 @@ Module Existentials.
                 eencode (EPack (TExists X t) r e)
                     (SF.EForall R
                         (SF.EFun k (SF.TForall X (SF.TFun t' (SF.TVar R)))
-                             (SF.EApp (SF.EInst (SF.EVar k) r') e'))).
+                             (SF.EApp (SF.EInst (SF.EVar k) r') e')))
+            | eencode_unpack :
+                forall (A x : id) (e1 e2 : expr) (e1' e2' : SF.expr)
+                    (t2 : type) (t2' : SF.type) (d : SS.delta) (g : gamma),
+                SS.check d g e2 t2 ->
+                tencode t2 t2' ->
+                eencode e1 e1' ->
+                eencode e2 e2' ->
+                eencode (EUnpack A x e1 e2)
+                    (SF.EApp (SF.EInst e1' t2')
+                        (SF.EForall A (SF.EFun x (SF.TVar A) e2'))).
     End Encoding.
 End Existentials.
