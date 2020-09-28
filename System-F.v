@@ -1749,5 +1749,45 @@ Module Existentials.
                         (SF.TFun
                             (SF.TForall X (SF.TFun t' (SF.TVar R)))
                             (SF.TVar R))).
+
+        Inductive eencode : expr -> SF.expr -> Prop :=
+            | eencode_var :
+                forall (x : id),
+                eencode (EVar x) (SF.EVar x)
+            | eencode_fun :
+                forall (x : id) (t : type) (e : expr)
+                    (t' : SF.type) (e' : SF.expr),
+                tencode t t' ->
+                eencode e e' ->
+                eencode (EFun x t e) (SF.EFun x t' e')
+            | eencode_app :
+                forall (e1 e2 : expr) (e1' e2' : SF.expr),
+                eencode e1 e1' ->
+                eencode e2 e2' ->
+                eencode (EApp e1 e2) (SF.EApp e1' e2')
+            | eencode_forall :
+                forall (X : id) (e : expr) (e' : SF.expr),
+                eencode e e' ->
+                eencode (EForall X e) (SF.EForall X e')
+            | eencode_inst :
+                forall (e : expr) (t : type)
+                    (e' : SF.expr) (t' : SF.type),
+                tencode t t' ->
+                eencode e e' ->
+                eencode (EInst e t) (SF.EInst e' t')
+            | eencode_pack :
+                forall (X R k : id) (t r : type) (e : expr)
+                    (t' r' : SF.type) (e' : SF.expr),
+                ~ IS.In R (SF.fvt t') ->
+                ~ IS.In R (SF.fvt r') ->
+                ~ IS.In R (SF.fvte e') ->
+                ~ IS.In k (SF.fve e') ->
+                tencode t t' ->
+                tencode r r' ->
+                eencode e e' ->
+                eencode (EPack (TExists X t) r e)
+                    (SF.EForall R
+                        (SF.EFun k (SF.TForall X (SF.TFun t' (SF.TVar R)))
+                             (SF.EApp (SF.EInst (SF.EVar k) r') e'))).
     End Encoding.
 End Existentials.
