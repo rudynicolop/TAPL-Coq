@@ -272,6 +272,10 @@ Module Univerals.
                     sub A u t' t'' ->
                     sub A u (TForall B t) (TForall C t'').
 
+            (* 
+                Type substitution in types is a total function.
+                TODO: maybe provable with axiom.
+            *)
             Axiom sub_total :
                 forall (U : id) (u t : type),
                 exists (t' : type), sub U u t t'.
@@ -401,6 +405,10 @@ Module Univerals.
                     sub x es e e' ->
                     sub x es (EInst e t) (EInst e' t).
 
+            (* 
+                Expression Substitution is a total function.
+                TODO: maybe provable with axiom.
+            *)
             Axiom sub_total :
                 forall (x : id) (es e : expr),
                 exists (e' : expr), sub x es e e'.
@@ -449,6 +457,10 @@ Module Univerals.
                     tsub A u e' e'' ->
                     tsub A u (EForall B e) (EForall C e'').
 
+            (* 
+                Type substitution in expressions is a total function.
+                TODO: maybe provable with axiom.
+             *)
             Axiom tsub_total :
                 forall (A : id) (u : type) (e : expr),
                 exists (e' : expr), tsub A u e e'.
@@ -1430,6 +1442,10 @@ Module Existentials.
                     sub A u t' t'' ->
                     sub A u (TExists R t) (TExists R' t'').
 
+            (* 
+                Type substitution is a total function.
+                TODO: maybe provable with axiom.
+             *)
             Axiom sub_total :
                 forall (U : id) (u t : type),
                 exists (t' : type), sub U u t t'.
@@ -1609,6 +1625,10 @@ Module Existentials.
                     sub x es e2' e2'' ->
                     sub x es (EUnpack A y e1 e2) (EUnpack A z e1' e2'').
 
+            (*
+                Expression substitution is a total function.
+                TODO: maybe provable with axiom.
+             *)
             Axiom sub_total :
                 forall (x : id) (es e : expr),
                 exists (e' : expr), sub x es e e'.
@@ -1686,6 +1706,10 @@ Module Existentials.
                     tsub A u e2' e2'' ->
                     tsub A u (EUnpack B a e1 e2) (EUnpack C a e1' e2'').
 
+            (* 
+                Type substitution in expressions is a total function.
+                TODO: maybe axiom makes this provable.
+             *)
             Axiom tsub_total :
                 forall (A : id) (u : type) (e : expr),
                 exists (e' : expr), tsub A u e e'.
@@ -1727,6 +1751,10 @@ Module Existentials.
     Module Encoding.
         Module SF := Univerals.Syntax.
 
+        (* 
+            Type encodings.
+            TODO: maybe provable with other axiom.
+        *)
         Inductive tencode : type -> SF.type -> Prop :=
             | tencode_var : 
                 forall (A : id),
@@ -1750,54 +1778,102 @@ Module Existentials.
                             (SF.TForall X (SF.TFun t' (SF.TVar R)))
                             (SF.TVar R))).
 
-        Inductive eencode : expr -> SF.expr -> Prop :=
+        (* Type-encoding is a total function. *)
+        Axiom tencode_total :
+            forall (t : type), exists (t' : SF.type),
+            tencode t t'.
+        
+        (* Expression encodings, with type-checking embedded in premises. *)
+        Inductive eencode (d : SS.delta) (g : gamma) : type -> expr -> SF.expr -> Prop :=
             | eencode_var :
-                forall (x : id),
-                eencode (EVar x) (SF.EVar x)
+                forall (x : id) (t : type),
+                g x = Some t ->
+                eencode d g t (EVar x) (SF.EVar x)
             | eencode_fun :
-                forall (x : id) (t : type) (e : expr)
-                    (t' : SF.type) (e' : SF.expr),
-                tencode t t' ->
-                eencode e e' ->
-                eencode (EFun x t e) (SF.EFun x t' e')
+                forall (x : id) (t1 t2 : type) (e : expr)
+                    (t1' : SF.type) (e' : SF.expr),
+                SS.WF d t1 ->
+                SS.check d (bind x t1 g) e t2 ->    
+                tencode t1 t1' ->
+                eencode d (bind x t1 g) t2 e e' ->
+                eencode d g (TFun t1 t2) (EFun x t1 e) (SF.EFun x t1' e')
             | eencode_app :
-                forall (e1 e2 : expr) (e1' e2' : SF.expr),
-                eencode e1 e1' ->
-                eencode e2 e2' ->
-                eencode (EApp e1 e2) (SF.EApp e1' e2')
+                forall (t1 t2 : type) (e1 e2 : expr) (e1' e2' : SF.expr),
+                SS.check d g e1 (TFun t1 t2) ->
+                SS.check d g e2 t1 ->
+                eencode d g (TFun t1 t2) e1 e1' ->
+                eencode d g t1 e2 e2' ->
+                eencode d g t2 (EApp e1 e2) (SF.EApp e1' e2')
             | eencode_forall :
-                forall (X : id) (e : expr) (e' : SF.expr),
-                eencode e e' ->
-                eencode (EForall X e) (SF.EForall X e')
+                forall (X : id) (t : type) (e : expr) (e' : SF.expr),
+                SS.check (X :: d) g e t ->
+                eencode (X :: d) g t e e' ->
+                eencode d g (TForall X t) (EForall X e) (SF.EForall X e')
             | eencode_inst :
-                forall (e : expr) (t : type)
-                    (e' : SF.expr) (t' : SF.type),
-                tencode t t' ->
-                eencode e e' ->
-                eencode (EInst e t) (SF.EInst e' t')
+                forall (e : expr) (u t ts : type) (A : id)
+                    (e' : SF.expr) (u' : SF.type),
+                SS.WF d u ->
+                SS.sub A u t ts ->
+                SS.check d g e (TForall A t) ->
+                tencode u u' ->
+                eencode d g (TForall A t) e e' ->
+                eencode d g ts (EInst e u) (SF.EInst e' u')
             | eencode_pack :
-                forall (X R k : id) (t r : type) (e : expr)
+                forall (X R k : id) (t r ts : type) (e : expr)
                     (t' r' : SF.type) (e' : SF.expr),
                 ~ IS.In R (SF.fvt t') ->
                 ~ IS.In R (SF.fvt r') ->
                 ~ IS.In R (SF.fvte e') ->
                 ~ IS.In k (SF.fve e') ->
+                SS.sub X r t ts ->
+                SS.check d g e ts ->
                 tencode t t' ->
                 tencode r r' ->
-                eencode e e' ->
-                eencode (EPack (TExists X t) r e)
+                eencode d g ts e e' ->
+                eencode d g (TExists X t) (EPack (TExists X t) r e)
                     (SF.EForall R
                         (SF.EFun k (SF.TForall X (SF.TFun t' (SF.TVar R)))
                              (SF.EApp (SF.EInst (SF.EVar k) r') e')))
             | eencode_unpack :
-                forall (A x : id) (e1 e2 : expr) (e1' e2' : SF.expr)
-                    (t2 : type) (t2' : SF.type) (d : SS.delta) (g : gamma),
-                SS.check d g e2 t2 ->
+                forall (A R x : id) (e1 e2 : expr) (e1' e2' : SF.expr)
+                    (t1 t2 : type) (t2' : SF.type),
+                SS.WF d t2 ->
+                SS.check d g e1 (TExists R t1) ->
+                SS.check (A :: d) (bind x t1 g) e2 t2 ->
                 tencode t2 t2' ->
-                eencode e1 e1' ->
-                eencode e2 e2' ->
-                eencode (EUnpack A x e1 e2)
+                eencode d g (TExists R t1) e1 e1' ->
+                eencode (A :: d) (bind x t1 g) t2 e2 e2' ->
+                eencode d g t2 (EUnpack A x e1 e2)
                     (SF.EApp (SF.EInst e1' t2')
                         (SF.EForall A (SF.EFun x (SF.TVar A) e2'))).
+
+        (* 
+            Expression-encoding is a total function. 
+            TODO: maybe provable with other axiom.
+        *)
+        Axiom eencode_total :
+            forall (d : SS.delta) (g : gamma) (t : type) (e : expr),
+            SS.check d g e t ->
+            exists (e' : SF.expr), eencode d g t e e'.
+
+        (* Encoding type-checks. *)
+        Lemma encode_check :
+            forall (d : SS.delta) (g : gamma)
+                (t : type) (e : expr),
+            SS.check d g e t <-> 
+            exists (e' : SF.expr),
+            eencode d g t e e'.
+        Proof.
+            intros d g t e. split; intros H;
+            try destruct H as [e' H];
+            inv H; try apply eencode_total; auto;
+            try constructor; auto.
+            - apply SS.check_app with (a := t1) (c := t1);
+                auto; constructor.
+            - apply SS.check_inst with
+                (A := A) (t := t0); auto.
+            - apply SS.check_pack with (t' := ts); auto.
+            - apply SS.check_unpack with (R := R) (t1 := t1); auto.
+        Qed.
     End Encoding.
 End Existentials.
