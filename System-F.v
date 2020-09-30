@@ -57,6 +57,29 @@ Axiom exists_not_in :
     forall (S : IS.t),
     exists (X : id), ~ IS.In X S.
 
+Ltac dispatch_union HUNION :=
+    repeat split; intros HFALSE; apply HUNION; subst;
+        try (apply ISF.union_2;
+            apply ISF.union_2;
+            apply ISF.singleton_2;
+            reflexivity);
+        try (apply ISF.union_2;
+            apply ISF.union_3;
+            apply ISF.singleton_2;
+            reflexivity);
+        try (apply ISF.union_2;
+            apply ISF.union_2;
+            assumption);
+        try (apply ISF.union_2;
+            apply ISF.union_3;
+            assumption);
+        try (apply ISF.union_3;
+            apply ISF.union_2;
+            assumption);
+        try (apply ISF.union_3;
+            apply ISF.union_3;
+            assumption).
+
 Section Gamma.
     Context {T : Type}.
 
@@ -272,13 +295,48 @@ Module Univerals.
                     sub A u t' t'' ->
                     sub A u (TForall B t) (TForall C t'').
 
-            (* 
-                Type substitution in types is a total function.
-                TODO: maybe provable with axiom.
-            *)
-            Axiom sub_total :
+            (* Type substitution in types is a total function. *)
+            Lemma sub_total :
                 forall (U : id) (u t : type),
                 exists (t' : type), sub U u t t'.
+            Proof.
+                intros U u t.
+                generalize dependent u.
+                generalize dependent U.
+                dependent induction t; intros U u.
+                - destruct (IdDec.eq_dec U A) as [HE | HE]; subst.
+                    + exists u. constructor.
+                    + exists (TVar A). constructor; auto.
+                - pose proof IHt1 U u as [t1' IH1].
+                    pose proof IHt2 U u as [t2' IH2].
+                    exists (TFun t1' t2').
+                    constructor; auto.
+                - destruct (IdDec.eq_dec U A) as [HE | HE]; subst.
+                    + exists (TForall A t). constructor; auto.
+                    + destruct (ISDA.dec_In A (fvt u)) as [HAt | HAt].
+                        * pose proof exists_not_in
+                            (IS.union
+                                (IS.union (IS.singleton A) (IS.singleton U))
+                                (IS.union (fvt u) (fvt t))) as [C HNI].
+                            assert (HBIG :
+                                A <> C /\
+                                U <> C /\
+                                ~ IS.In C (fvt u) /\
+                                ~ IS.In C (fvt t));
+                            try dispatch_union HNI.
+                            destruct HBIG as [HAC [HUC [HCu HCt]]];
+                            clear HNI.
+                            pose proof IHt A (TVar C) as [t' IHt'].
+                            assert (HS : exists t'', sub U u t' t'').
+                            admit.
+                            (* Induction hypothesis not strong enough. *)
+                            destruct HS as [t'' IHt''].
+                            exists (TForall C t'').
+                            apply sub_forall_free with (t' := t'); auto.
+                        * pose proof IHt U u as [t' IHt'].
+                            exists (TForall A t').
+                            constructor; auto.
+            Admitted.
 
             Lemma sub_eq :
                 forall (U : id) (t : type),
@@ -296,7 +354,6 @@ Module Univerals.
                         apply ISF.singleton_1 in HI.
                         assumption.
             Qed.
-
         End TypeSubstitution.
 
         (* Type equivalence. *)
@@ -1132,23 +1189,6 @@ Module Univerals.
                             repeat constructor. }
             Qed.
 
-            Ltac dispatch_union HUNION :=
-                repeat split; intros HFALSE; apply HUNION; subst;
-                    try (apply ISF.union_2;
-                        apply ISF.union_2;
-                        apply ISF.singleton_2;
-                        reflexivity);
-                    try (apply ISF.union_2;
-                        apply ISF.union_3;
-                        apply ISF.singleton_2;
-                        reflexivity);
-                    try (apply ISF.union_3;
-                        apply ISF.union_2;
-                        assumption);
-                    try (apply ISF.union_3;
-                        apply ISF.union_3;
-                        assumption).
-
             Example pair_prod :
                 forall (d : SS.delta) (g : gamma)
                 (e1 e2 : expr) (A B : type),
@@ -1751,10 +1791,7 @@ Module Existentials.
     Module Encoding.
         Module SF := Univerals.Syntax.
 
-        (* 
-            Type encodings.
-            TODO: maybe provable with other axiom.
-        *)
+        (* Type encodings. *)
         Inductive tencode : type -> SF.type -> Prop :=
             | tencode_var : 
                 forall (A : id),
@@ -1779,9 +1816,27 @@ Module Existentials.
                             (SF.TVar R))).
 
         (* Type-encoding is a total function. *)
-        Axiom tencode_total :
+        Lemma tencode_total :
             forall (t : type), exists (t' : SF.type),
             tencode t t'.
+        Proof.
+            intros t. induction t.
+            - exists (SF.TVar X). constructor.
+            - destruct IHt1 as [t1' IH1].
+                destruct IHt2 as [t2' IH2].
+                exists (SF.TFun t1' t2').
+                constructor; auto.
+            - destruct IHt as [t' IHt].
+                exists (SF.TForall X t').
+                constructor; auto.
+            - destruct IHt as [t' IHt].
+                destruct (exists_not_in (SF.fvt t')) as [K HK].
+                exists (SF.TForall K
+                    (SF.TFun
+                        (SF.TForall R (SF.TFun t' (SF.TVar K)))
+                        (SF.TVar K))).
+                constructor; auto.
+        Qed.
         
         (* Expression encodings, with type-checking embedded in premises. *)
         Inductive eencode (d : SS.delta) (g : gamma) : type -> expr -> SF.expr -> Prop :=
@@ -1798,12 +1853,13 @@ Module Existentials.
                 eencode d (bind x t1 g) t2 e e' ->
                 eencode d g (TFun t1 t2) (EFun x t1 e) (SF.EFun x t1' e')
             | eencode_app :
-                forall (t1 t2 : type) (e1 e2 : expr) (e1' e2' : SF.expr),
-                SS.check d g e1 (TFun t1 t2) ->
-                SS.check d g e2 t1 ->
-                eencode d g (TFun t1 t2) e1 e1' ->
-                eencode d g t1 e2 e2' ->
-                eencode d g t2 (EApp e1 e2) (SF.EApp e1' e2')
+                forall (a b c : type) (e1 e2 : expr) (e1' e2' : SF.expr),
+                SS.teq a c ->
+                SS.check d g e1 (TFun a b) ->
+                SS.check d g e2 c ->
+                eencode d g (TFun a b) e1 e1' ->
+                eencode d g c e2 e2' ->
+                eencode d g b (EApp e1 e2) (SF.EApp e1' e2')
             | eencode_forall :
                 forall (X : id) (t : type) (e : expr) (e' : SF.expr),
                 SS.check (X :: d) g e t ->
@@ -1821,6 +1877,7 @@ Module Existentials.
             | eencode_pack :
                 forall (X R k : id) (t r ts : type) (e : expr)
                     (t' r' : SF.type) (e' : SF.expr),
+                X <> R ->
                 ~ IS.In R (SF.fvt t') ->
                 ~ IS.In R (SF.fvt r') ->
                 ~ IS.In R (SF.fvte e') ->
@@ -1847,14 +1904,58 @@ Module Existentials.
                     (SF.EApp (SF.EInst e1' t2')
                         (SF.EForall A (SF.EFun x (SF.TVar A) e2'))).
 
-        (* 
-            Expression-encoding is a total function. 
-            TODO: maybe provable with other axiom.
-        *)
-        Axiom eencode_total :
+        (* Expression-encoding is a total function. *)
+        Lemma eencode_total :
             forall (d : SS.delta) (g : gamma) (t : type) (e : expr),
             SS.check d g e t ->
             exists (e' : SF.expr), eencode d g t e e'.
+        Proof.
+            intros d g e e' H.
+            induction H.
+            - exists (SF.EVar x).
+                constructor; auto.
+            - destruct IHcheck as [e' IH].
+                pose proof tencode_total t as [t1' IH1].
+                exists (SF.EFun x t1' e').
+                constructor; auto.
+            - destruct IHcheck1 as [e1' IH1].
+                destruct IHcheck2 as [e2' IH2].
+                exists (SF.EApp e1' e2').
+                apply eencode_app with (a := a) (c := c); auto.
+            - destruct IHcheck as [e' IH].
+                exists (SF.EForall A e').
+                constructor; auto.
+            - destruct IHcheck as [e' IH].
+                pose proof tencode_total u as [u' Httu].
+                exists (SF.EInst e' u').
+                pose proof tencode_total t as [ts Httts].
+                apply eencode_inst with (A := A) (t := t); auto.
+            - destruct IHcheck as [e' IH].
+                pose proof tencode_total r as [r' IHr].
+                pose proof tencode_total t as [tt IHt].
+                pose proof exists_not_in
+                    (IS.union 
+                        (IS.union (IS.singleton R) (SF.fvte e'))
+                        (IS.union (SF.fvt r') (SF.fvt tt))) as [K HK].
+                assert (HBIG : 
+                    R <> K /\
+                    ~ IS.In K (SF.fvte e') /\
+                    ~ IS.In K (SF.fvt r') /\
+                    ~ IS.In K (SF.fvt tt));
+                try dispatch_union HK.
+                destruct HBIG as [HRK [Hke' [HKr' HKtt]]].
+                pose proof exists_not_in (SF.fve e') as [k IHk].
+                exists (SF.EForall K
+                (SF.EFun k (SF.TForall R (SF.TFun tt (SF.TVar K)))
+                     (SF.EApp (SF.EInst (SF.EVar k) r') e'))).
+                apply eencode_pack with (ts := t'); auto.
+            - destruct IHcheck1 as [e1' IH1].
+                destruct IHcheck2 as [e2' IH2].
+                pose proof tencode_total t2 as [t2' Ht2].
+                exists (SF.EApp (SF.EInst e1' t2')
+                    (SF.EForall A (SF.EFun a (SF.TVar A) e2'))).
+                apply eencode_unpack with (R := R) (t1 := t1); auto.
+        Qed.
 
         (* Encoding type-checks. *)
         Lemma encode_check :
@@ -1868,7 +1969,7 @@ Module Existentials.
             try destruct H as [e' H];
             inv H; try apply eencode_total; auto;
             try constructor; auto.
-            - apply SS.check_app with (a := t1) (c := t1);
+            - apply SS.check_app with (a := a) (c := c);
                 auto; constructor.
             - apply SS.check_inst with
                 (A := A) (t := t0); auto.
