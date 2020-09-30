@@ -53,6 +53,8 @@ Module ISF := MSF.WFactsOn IdDec IS.
 Module ISD := MSD.WDecideOn IdDec IS.
 Module ISDA := ISD.MSetDecideAuxiliary.
 
+Definition delta := list id.
+
 Axiom exists_not_in :
     forall (S : IS.t),
     exists (X : id), ~ IS.In X S.
@@ -194,8 +196,6 @@ Module Univerals.
                 CS 4110 System F Lecture Notes:
                     https://www.cs.cornell.edu/courses/cs4110/2018fa/lectures/lecture22.pdf
             *)
-            Definition delta := list id.
-
             Inductive WF (d : delta) : type -> Prop := 
                 | wf_var : 
                     forall (A : id),
@@ -642,7 +642,7 @@ Module Univerals.
         Section SubstitutionLemmas.
             Lemma bind_unfree_var :
                 forall (e : expr) (x : id) (a b : type) 
-                    (d : SS.delta) (g : gamma),
+                    (d : delta) (g : gamma),
                 ~ IS.In x (fve e) ->
                 SS.check d g e a <-> SS.check d (bind x b g) e a.
             Proof.
@@ -696,10 +696,10 @@ Module Univerals.
             Qed.
 
             Lemma delta_perm :
-                forall (d : SS.delta) (g : gamma)
+                forall (d : delta) (g : gamma)
                     (e : expr) (t : type),
                 SS.check d g e t ->
-                forall (d' : SS.delta),
+                forall (d' : delta),
                 Permutation d d' ->
                 SS.check d' g e t.
             Proof.
@@ -713,7 +713,7 @@ Module Univerals.
             Qed.
 
             Lemma bind_delta :
-                forall (d : SS.delta) (g : gamma)
+                forall (d : delta) (g : gamma)
                     (e : expr) (t : type),
                 SS.check d g e t ->
                 forall (A : id),
@@ -737,7 +737,7 @@ Module Univerals.
             Lemma substitution_lemma :
                 forall (x : id) (es e e' : expr),
                 DS.sub x es e e' ->
-                forall (a b : type) (d : SS.delta) (g : gamma),
+                forall (a b : type) (d : delta) (g : gamma),
                 SS.check d (bind x a g) e b -> 
                 SS.check d g es a -> 
                 SS.check d g e' b.
@@ -781,7 +781,7 @@ Module Univerals.
             Lemma type_sub_type :
                 forall (U : id) (u t t' : type),
                 SS.sub U u t t' ->
-                forall (d : SS.delta),
+                forall (d : delta),
                 SS.WF (U :: d) t ->
                 SS.WF d u ->
                 SS.WF d t'.
@@ -833,7 +833,7 @@ Module Univerals.
                 sub_gamma U u g g' ->
                 forall (t t' : type),
                 SS.sub U u t t' ->
-                forall (d : SS.delta),
+                forall (d : delta),
                 SS.WF d u ->
                 SS.check (U :: d) g e t ->
                 SS.check d g' e' t'.
@@ -918,12 +918,12 @@ Module Univerals.
                 EForall "X" (EFun "a" X (EFun "b" X (EVar "b"))).
 
             Example true_bool :
-                forall (d : SS.delta) (g : gamma),
+                forall (d : delta) (g : gamma),
                 SS.check d g TRUE BOOL.
             Proof. repeat constructor. Qed.
 
             Example false_bool :
-                forall (d : SS.delta) (g : gamma),
+                forall (d : delta) (g : gamma),
                 SS.check d g FALSE BOOL.
             Proof. repeat constructor. Qed.
 
@@ -940,7 +940,7 @@ Module Univerals.
                                     (EVar "else"))))).
 
             Example COND_check :
-                forall (d : SS.delta) (g : gamma),
+                forall (d : delta) (g : gamma),
                 SS.check d g COND
                     (TForall "X" (TFun BOOL (TFun X (TFun X X)))).
             Proof.
@@ -969,7 +969,7 @@ Module Univerals.
                                     (EVar "a"))))).
 
             Example NOT_check :
-                forall (d : SS.delta) (g : gamma),
+                forall (d : delta) (g : gamma),
                 SS.check d g NOT (TFun BOOL BOOL).
             Proof.
                 repeat constructor.
@@ -997,7 +997,7 @@ Module Univerals.
                             (EVar "z"))).
 
             Example zero_nat :
-                forall (d : SS.delta) (g : gamma),
+                forall (d : delta) (g : gamma),
                 SS.check d g ZERO NAT.
             Proof. repeat constructor. Qed.
 
@@ -1016,7 +1016,7 @@ Module Univerals.
                                         (EVar "z")))))).
 
             Example SUCC_check :
-                forall (d : SS.delta) (g : gamma),
+                forall (d : delta) (g : gamma),
                 SS.check d g SUCC (TFun NAT NAT).
             Proof.
                 repeat constructor.
@@ -1045,7 +1045,7 @@ Module Univerals.
                             (EVar "m"))).
 
             Example ADD_check :
-                forall (d : SS.delta) (g : gamma),
+                forall (d : delta) (g : gamma),
                 SS.check d g ADD (TFun NAT (TFun NAT NAT)).
             Proof.
                 repeat constructor.
@@ -1072,7 +1072,7 @@ Module Univerals.
                         ZERO)).
 
             Example MUL_check :
-                forall (d : SS.delta) (g : gamma),
+                forall (d : delta) (g : gamma),
                 SS.check d g MUL (TFun NAT (TFun NAT NAT)).
             Proof.
                 repeat constructor.
@@ -1103,7 +1103,7 @@ Module Univerals.
                         (EApp SUCC ZERO))).
 
             Example EXP_check :
-                forall (d : SS.delta) (g : gamma),
+                forall (d : delta) (g : gamma),
                 SS.check d g EXP (TFun NAT (TFun NAT NAT)).
             Proof.
                 repeat constructor.
@@ -1160,7 +1160,7 @@ Module Univerals.
                                         (EVar "y"))))))).
 
             Example pair_check :
-                forall (d : SS.delta) (g : gamma),
+                forall (d : delta) (g : gamma),
                 SS.check d g PAIR
                     (TForall "X"
                         (TForall "Y" 
@@ -1190,7 +1190,7 @@ Module Univerals.
             Qed.
 
             Example pair_prod :
-                forall (d : SS.delta) (g : gamma)
+                forall (d : delta) (g : gamma)
                 (e1 e2 : expr) (A B : type),
                 SS.WF d A ->
                 SS.WF d B ->
@@ -1352,8 +1352,6 @@ Module Existentials.
 
     Module StaticSemantics.
         Section WellFoundedness.
-            Definition delta := list id.
-
             Inductive WF (d : delta) : type -> Prop := 
                 | wf_var : 
                     forall (A : id),
@@ -1790,6 +1788,7 @@ Module Existentials.
 
     Module Encoding.
         Module SF := Univerals.Syntax.
+        Module USS := Univerals.SS.
 
         (* Type encodings. *)
         Inductive tencode : type -> SF.type -> Prop :=
@@ -1837,9 +1836,40 @@ Module Existentials.
                         (SF.TVar K))).
                 constructor; auto.
         Qed.
+
+        (*
+            Helpful, would need to rewrite
+            type-checking laws otherwise.
+        *)
+        Axiom tencode_eq :
+            forall (t : type) (t' t'' : SF.type),
+            tencode t t' -> tencode t t'' -> t' = t''.
         
+        Lemma tencode_well_founded :
+            forall (t : type) (t' : SF.type),
+            tencode t t' ->
+            forall (d : delta),
+            SS.WF d t ->
+            USS.WF d t'.
+        Proof.
+            intros t t' HT.
+            induction HT; intros d HWF;
+            inv HWF; constructor; auto.
+            constructor.
+            - constructor. constructor.
+                + apply IHHT.
+                    apply SS.delta_perm with
+                        (d := R :: X :: d);
+                        try constructor.
+                        apply SS.weaken_delta; auto.
+                + constructor.
+                    apply in_cons.
+                    repeat constructor.
+            - repeat constructor.
+        Qed.
+
         (* Expression encodings, with type-checking embedded in premises. *)
-        Inductive eencode (d : SS.delta) (g : gamma) : type -> expr -> SF.expr -> Prop :=
+        Inductive eencode (d : delta) (g : gamma) : type -> expr -> SF.expr -> Prop :=
             | eencode_var :
                 forall (x : id) (t : type),
                 g x = Some t ->
@@ -1893,20 +1923,21 @@ Module Existentials.
                              (SF.EApp (SF.EInst (SF.EVar k) r') e')))
             | eencode_unpack :
                 forall (A R x : id) (e1 e2 : expr) (e1' e2' : SF.expr)
-                    (t1 t2 : type) (t2' : SF.type),
+                    (t1 t2 : type) (t1' t2' : SF.type),
                 SS.WF d t2 ->
                 SS.check d g e1 (TExists R t1) ->
                 SS.check (A :: d) (bind x t1 g) e2 t2 ->
+                tencode t1 t1' ->
                 tencode t2 t2' ->
                 eencode d g (TExists R t1) e1 e1' ->
                 eencode (A :: d) (bind x t1 g) t2 e2 e2' ->
                 eencode d g t2 (EUnpack A x e1 e2)
                     (SF.EApp (SF.EInst e1' t2')
-                        (SF.EForall A (SF.EFun x (SF.TVar A) e2'))).
+                        (SF.EForall A (SF.EFun x t1' e2'))).
 
         (* Expression-encoding is a total function. *)
         Lemma eencode_total :
-            forall (d : SS.delta) (g : gamma) (t : type) (e : expr),
+            forall (d : delta) (g : gamma) (t : type) (e : expr),
             SS.check d g e t ->
             exists (e' : SF.expr), eencode d g t e e'.
         Proof.
@@ -1951,15 +1982,16 @@ Module Existentials.
                 apply eencode_pack with (ts := t'); auto.
             - destruct IHcheck1 as [e1' IH1].
                 destruct IHcheck2 as [e2' IH2].
+                pose proof tencode_total t1 as [t1' Ht1].
                 pose proof tencode_total t2 as [t2' Ht2].
                 exists (SF.EApp (SF.EInst e1' t2')
-                    (SF.EForall A (SF.EFun a (SF.TVar A) e2'))).
+                    (SF.EForall A (SF.EFun a t1' e2'))).
                 apply eencode_unpack with (R := R) (t1 := t1); auto.
         Qed.
 
         (* Encoding type-checks. *)
         Lemma encode_check :
-            forall (d : SS.delta) (g : gamma)
+            forall (d : delta) (g : gamma)
                 (t : type) (e : expr),
             SS.check d g e t <-> 
             exists (e' : SF.expr),
@@ -1976,5 +2008,125 @@ Module Existentials.
             - apply SS.check_pack with (t' := ts); auto.
             - apply SS.check_unpack with (R := R) (t1 := t1); auto.
         Qed.
+
+        (* Encore gamma. *)
+        Definition gencode
+        (g : @gamma type) (g' : @gamma SF.type) : Prop := 
+            forall (x : id) (t : type) (t' : SF.type),
+            tencode t t' ->
+            g x = Some t ->
+            g' x = Some t'.
+        
+        Lemma gencode_bind :
+            forall (g : @gamma type) (g' : @gamma SF.type)
+                (z : id) (u : type) (u' : SF.type),
+            tencode u u' ->
+            gencode g g' ->
+            gencode (bind z u g) (bind z u' g').
+        Proof.
+            intros g g' z u u' HTu HG.
+            intros x t t' HTt HB.
+            destruct (IdDec.eq_dec z x) as
+                [Hxz | Hxz]; subst.
+                - rewrite bind_correct.
+                    rewrite bind_correct in HB.
+                    injintrosubst HB.
+                    pose proof tencode_eq t u' t' HTu HTt
+                        as HTEQ. subst. reflexivity.
+                - rewrite <- bind_complete; auto.
+                    rewrite <- bind_complete in HB; auto.
+                    apply HG with (t := t); auto.
+        Qed.
+
+        Lemma tencode_sub :
+            forall (U : id) (u t ts : type)
+                (u' t' ts' : SF.type),
+            tencode u u' ->
+            tencode t t' ->
+            tencode ts ts' ->
+            SS.sub U u t ts ->
+            USS.sub U u' t' ts'.
+        Proof. Admitted.
+
+        Lemma tencode_teq :
+            forall (a c : type) (a' c' : SF.type),
+            tencode a a' ->
+            tencode c c' ->
+            SS.teq a c ->
+            USS.teq a' c'.
+        Proof.
+            intros a c a' c' Ha Hc Hteq.
+            generalize dependent c'.
+            generalize dependent a'.
+            induction Hteq;
+            intros aa Ha cc Hc.
+            - pose proof tencode_eq t aa cc Ha Hc as Heq.
+                subst. constructor.
+            - inv Ha. inv Hc.
+                constructor; auto.
+            - inv Ha. inv Hc.
+                apply USS.teq_forall with
+                    (a' := t') (b' := t'0); admit.
+            - inv Ha. inv Hc. admit.
+        Admitted.
+
+        (* Encoding produces correctly typed expressions *)
+        Theorem encode_types : 
+            forall (d : delta) (g : @gamma type) (t : type) (e : expr)
+                (g' : @gamma SF.type) (t' : SF.type) (e' : SF.expr),
+            tencode t t' ->
+            gencode g g' ->
+            eencode d g t e e' ->
+            USS.check d g' e' t'.
+        Proof.
+            intros d g t e g' t' e' HT HG HE.
+            generalize dependent HG.
+            generalize dependent HT.
+            generalize dependent t'.
+            generalize dependent g'.
+            induction HE; intros gg tt HT HG.
+            - constructor. apply HG with (t := t); auto.
+            - inv HT. assert (Ht1' : t1'0 = t1').
+                + apply tencode_eq with (t := t1); auto.
+                + subst. constructor.
+                    * apply tencode_well_founded
+                        with (t := t1); auto.
+                    * apply IHHE; auto.
+                        apply gencode_bind; auto.
+            - pose proof tencode_total a as [a' Ha].
+                pose proof tencode_total c as [c' Hc].
+                apply USS.check_app with (a := a') (c := c'); auto.
+                + apply tencode_teq with (a := a) (c := c); auto.
+                + apply IHHE1; auto.
+                    constructor; auto.
+            - inv HT. constructor. auto.
+            - pose proof tencode_total t as [te Hte].
+                apply USS.check_inst with
+                    (A := A) (t := te).
+                + apply tencode_well_founded with
+                    (t := u); auto.
+                + apply tencode_sub with 
+                    (u := u) (t := t) (ts := ts); auto.
+                + apply IHHE; auto.
+                    constructor. assumption.
+            - inv HT. pose proof tencode_eq t t'0 t' H12 H6 as Ht'.
+                subst. assert (R0 = R). admit. subst.
+                constructor. constructor.
+                + constructor. constructor.
+                    * admit.
+                    * constructor.
+                        apply in_cons.
+                        repeat constructor.
+                + pose proof tencode_total ts as [ts' Hts].
+                    apply USS.check_app with
+                        (a := t') (c := t');
+                    try constructor.
+                    { pose proof USS.sub_total X r' t'
+                        as [tsub' Hts'].
+                        apply USS.check_inst with
+                        (A := X) (t := SF.TFun t' (SF.TVar R)).
+                        - admit.
+                        - constructor.
+        Admitted.
     End Encoding.
 End Existentials.
