@@ -1,3 +1,5 @@
+(* Coq 8.9.1 *)
+
 (* Here are definitions and proofs of an algorithm to 
     verify a pattern matching is exhaustive.
     See the below for the algorithm specification.

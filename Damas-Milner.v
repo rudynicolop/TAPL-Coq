@@ -1,3 +1,5 @@
+(* Coq 8.9.1 *)
+
 Require Import String.
 Require Import Coq.Strings.String.
 Local Open Scope string_scope.

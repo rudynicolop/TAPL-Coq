@@ -1,3 +1,5 @@
+(* Coq 8.9.1 *)
+
 (* STLC with references *)
 
 Require Import String.

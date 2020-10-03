@@ -1,3 +1,5 @@
+(* Coq 8.9.1 *)
+
 (* The Simply-Typed Lambda Calculus with minimal extensions,
     with unit, pairs, and either types. 
     

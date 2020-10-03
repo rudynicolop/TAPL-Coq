@@ -1,3 +1,5 @@
+(* Coq 8.9.1 *)
+
 (* In Subsumption-STLC I defined an
     STLC extended with records and 
     subtyping, and proved 

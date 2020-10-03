@@ -1,3 +1,5 @@
+(* Coq 8.9.1 *)
+
 (* An extended STLC with subtyping via the Subsumption Rule *)
 
 Require Import String.

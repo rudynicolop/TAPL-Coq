@@ -1,3 +1,5 @@
+(* Coq 8.9.1 *)
+
 Set Warnings "-notation-overridden,-parsing".
 Require Import String.
 Require Import Coq.Init.Nat.
